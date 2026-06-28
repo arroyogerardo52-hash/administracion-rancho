@@ -8,10 +8,10 @@ st.set_page_config(page_title="Sistema Integral Rancho AE", layout="wide", page_
 
 # --- APARTADO DE IDENTIDAD CORPORATIVA (LOGO Y NOMBRE) ---
 # Título principal de la empresa en la parte superior del cuerpo
-st.title("🤠 Rancho AE - Ganadería y Logística")
+st.title(" Rancho AE - Ganadería ")
 
 # Recuadro en la barra lateral para personalizar el logotipo del rancho
-st.sidebar.markdown("### 🏷️ Identidad del Rancho")
+st.sidebar.markdown("### 🏷️ Admistracion ")
 archivo_logo = st.sidebar.file_uploader("Subir logotipo de la empresa (PNG/JPG)", type=["png", "jpg", "jpeg"])
 
 if archivo_logo is not None:
@@ -49,7 +49,7 @@ for clave, archivo in ARCHIVOS.items():
         dfs[clave] = pd.DataFrame(columns=columnas)
 
 # --- MENÚ DE NAVEGACIÓN PRINCIPAL ---
-st.sidebar.markdown("### 🚀 Operaciones")
+st.sidebar.markdown("###  Operaciones")
 opcion_menu = st.sidebar.radio("📋 MENÚ PRINCIPAL", [
     "📊 Panel Financiero y Balances",
     "💰 Registro de Movimientos y Deudas",
