@@ -11,7 +11,7 @@ st.set_page_config(page_title="Sistema Integral Rancho AE", layout="wide", page_
 st.title(" Rancho AE - Ganadería ")
 
 # Recuadro en la barra lateral para personalizar el logotipo del rancho
-st.sidebar.markdown("### 🏷️ Admistracion ")
+st.sidebar.markdown("### 🏷️ Administracion ")
 archivo_logo = st.sidebar.file_uploader("Subir logotipo de la empresa (PNG/JPG)", type=["png", "jpg", "jpeg"])
 
 if archivo_logo is not None:
