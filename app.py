@@ -68,13 +68,14 @@ st.sidebar.markdown("---")
 # ==========================================
 if opcion_menu == "📊 Panel Financiero y Balances":
     st.header("📊 Resumen Ejecutivo y Flujo de Caja")
-    df_f = dfs['finanzas']
+    df_f = dfs['finanzas'].copy()
     
     if not df_f.empty:
-        df_f['Fecha'] = pd.to_datetime(df_f['Fecha'])
-        df_f['Monto ($)'] = pd.to_numeric(df_f['Monto ($)'])
+        # Asegurar conversión correcta de fechas de texto a datetime
+        df_f['Fecha'] = pd.to_datetime(df_f['Fecha'], errors='coerce')
+        df_f['Monto ($)'] = pd.to_numeric(df_f['Monto ($)'], errors='coerce').fillna(0.0)
         
-        # --- 1. VISTA TEMPORAL OPTIMIZADA CON RANGO PERSONALIZADO ---
+        # Filtro de tiempo en la interfaz
         filtro_tiempo = st.selectbox("📅 Vista Temporal del Balance:", [
             "Total Histórico", 
             "Anual (Año Actual)", 
@@ -86,6 +87,7 @@ if opcion_menu == "📊 Panel Financiero y Balances":
         fecha_actual = datetime.now()
         df_filtrado = df_f.copy()
         
+        # --- SOLUCCIÓN AL ERROR 1: FILTRADO DE FECHAS HOMOGÉNEO ---
         if filtro_tiempo == "Anual (Año Actual)":
             df_filtrado = df_f[df_f['Fecha'].dt.year == fecha_actual.year]
         elif filtro_tiempo == "Mensual (Mes Actual)":
@@ -98,9 +100,13 @@ if opcion_menu == "📊 Panel Financiero y Balances":
                 f_inicio = st.date_input("Fecha Inicio:", datetime(fecha_actual.year, 1, 1))
             with col_p2:
                 f_fin = st.date_input("Fecha Fin:", fecha_actual)
-            df_filtrado = df_f[(df_f['Fecha'].dt.date >= f_inicio) & (df_f['Fecha'].dt.date <= f_fin)]
+            
+            # Convertir los inputs de streamlit a datetime para que la comparación no falle
+            t_inicio = pd.to_datetime(f_inicio)
+            t_fin = pd.to_datetime(f_fin).replace(hour=23, minute=59, second=59)
+            df_filtrado = df_f[(df_f['Fecha'] >= t_inicio) & (df_f['Fecha'] <= t_fin)]
 
-        # Cálculos de los Balances
+        # Cálculos de los Balances con los datos filtrados
         ingresos = df_filtrado[(df_filtrado['Tipo'] == 'Ingreso') & (df_filtrado['Estado Deuda'] == 'Liquidado')]['Monto ($)'].sum()
         gastos = df_filtrado[(df_filtrado['Tipo'] == 'Gasto') & (df_filtrado['Estado Deuda'] == 'Liquidado')]['Monto ($)'].sum()
         
@@ -117,20 +123,31 @@ if opcion_menu == "📊 Panel Financiero y Balances":
         cold1.metric("📥 Total por Cobrar (Clientes)", f"${por_cobrar:,.2f}")
         cold2.metric("📤 Total por Pagar (Proveedores)", f"${por_pagar:,.2f}")
         
-        # --- 2. BOTÓN DE IMPRESIÓN DE REPORTE EN GOOGLE DOCS ---
+        # --- SOLUCIÓN AL ERROR 2: DESCARGA DIRECTA AL DISPOSITIVO ---
         st.markdown("---")
-        st.markdown("### 🖨️ Generación de Reportes Oficiales")
-        if st.button("📄 Generar e Imprimir Reporte Desglosado en Google Docs"):
-            st.success("¡Tu reporte completo ha sido procesado! El desglose completo con tablas de balances se ha sincronizado con tu documento conector.")
-            st.info("Puedes visualizarlo, imprimirlo o descargarlo en PDF abriendo el enlace de tu reporte de Google Docs provisto arriba.")
+        st.markdown("### 🖨️ Generación y Descarga de Reportes Financieros")
+        
+        # Formatear el reporte para descarga limpia
+        df_reporte = df_filtrado.copy()
+        if not df_reporte.empty:
+            df_reporte['Fecha'] = df_reporte['Fecha'].dt.strftime('%Y-%m-%d')
+            
+        # Convertir la tabla actual a formato CSV de texto listo para descargar
+        csv_data = df_reporte.sort_values(by='Fecha', ascending=False).to_csv(index=False).encode('utf-8')
+        
+        st.download_button(
+            label="📥 Descargar Reporte Desglosado Actual (Excel / CSV)",
+            data=csv_data,
+            file_name=f"Reporte_Financiero_RanchoAE_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            help="Haz clic aquí para descargar el desglose completo del período seleccionado directamente a tu dispositivo."
+        )
 
         st.markdown("---")
         t1, t2, t3 = st.tabs(["📋 Libro de Movimientos y Edición", "📊 Gráficas de Rendimiento", "🔍 Análisis por Lote"])
         
         with t1:
             st.subheader("Historial y Modificación de Transacciones")
-            
-            # Sub-pestañas internas para separar Limpieza/Edición de la Vista General
             sub_tab_vista, sub_tab_editar = st.tabs(["🔍 Ver Tabla de Datos", "⚙️ Corregir o Eliminar Registro"])
             
             with sub_tab_vista:
@@ -141,10 +158,10 @@ if opcion_menu == "📊 Panel Financiero y Balances":
                 
             with sub_tab_editar:
                 st.markdown("#### ⚙️ Panel de Corrección de Datos")
-                id_editar = st.selectbox("Selecciona el ID del movimiento que deseas corregir o borrar:", df_f['ID'].tolist())
+                id_editar = st.selectbox("Selecciona el ID del movimiento que deseas corregir o borrar:", dfs['finanzas']['ID'].tolist())
                 
-                # Cargar datos actuales para editar
-                datos_mov = df_f[df_f['ID'] == id_editar].iloc[0]
+                # Cargar datos actuales para editar desde la base original fija
+                datos_mov = dfs['finanzas'][dfs['finanzas']['ID'] == id_editar].iloc[0]
                 
                 col_ed1, col_ed2 = st.columns(2)
                 with col_ed1:
@@ -159,19 +176,21 @@ if opcion_menu == "📊 Panel Financiero y Balances":
                 col_b_acts = st.columns(2)
                 with col_b_acts[0]:
                     if st.button("💾 Guardar Corrección Manual"):
-                        df_f.loc[df_f['ID'] == id_editar, 'Concepto'] = edit_concepto
-                        df_f.loc[df_f['ID'] == id_editar, 'Monto ($)'] = edit_monto
-                        df_f.loc[df_f['ID'] == id_editar, 'Categoría'] = edit_cat
-                        df_f.loc[df_f['ID'] == id_editar, 'Estado Deuda'] = edit_estado
-                        df_f.loc[df_f['ID'] == id_editar, 'Lote Asociado'] = edit_lote
-                        df_f.loc[df_f['ID'] == id_editar, 'Método Pago'] = edit_metodo
-                        df_f.to_csv(ARCHIVOS['finanzas'], index=False)
+                        df_original = dfs['finanzas']
+                        df_original.loc[df_original['ID'] == id_editar, 'Concepto'] = edit_concepto
+                        df_original.loc[df_original['ID'] == id_editar, 'Monto ($)'] = edit_monto
+                        df_original.loc[df_original['ID'] == id_original, 'Categoría'] = edit_cat
+                        df_original.loc[df_original['ID'] == id_editar, 'Estado Deuda'] = edit_estado
+                        df_original.loc[df_original['ID'] == id_editar, 'Lote Asociado'] = edit_lote
+                        df_original.loc[df_original['ID'] == id_editar, 'Método Pago'] = edit_metodo
+                        df_original.to_csv(ARCHIVOS['finanzas'], index=False)
                         st.success(f"¡El movimiento con ID {id_editar} ha sido corregido con éxito!")
                         st.rerun()
                 with col_b_acts[1]:
                     if st.button("❌ Eliminar Registro Definitivamente"):
-                        df_f = df_f[df_f['ID'] != id_editar]
-                        df_f.to_csv(ARCHIVOS['finanzas'], index=False)
+                        df_original = dfs['finanzas']
+                        df_original = df_original[df_original['ID'] != id_editar]
+                        df_original.to_csv(ARCHIVOS['finanzas'], index=False)
                         st.warning(f"Movimiento con ID {id_editar} eliminado.")
                         st.rerun()
             
@@ -194,7 +213,7 @@ if opcion_menu == "📊 Panel Financiero y Balances":
             if lote_sel != "Todos":
                 df_lote = df_f[df_f['Lote Asociado'] == lote_sel]
                 if not df_lote.empty:
-                    df_lote['Fecha'] = pd.to_datetime(df_lote['Fecha']).dt.strftime('%Y-%m-%d')
+                    df_lote['Fecha'] = df_lote['Fecha'].dt.strftime('%Y-%m-%d')
                 st.dataframe(df_lote, use_container_width=True)
                 il = df_lote[df_lote['Tipo'] == 'Ingreso']['Monto ($)'].sum()
                 gl = df_lote[df_lote['Tipo'] == 'Gasto']['Monto ($)'].sum()
