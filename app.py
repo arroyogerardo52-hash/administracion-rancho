@@ -87,7 +87,7 @@ if opcion_menu == "📊 Panel Financiero y Balances":
         fecha_actual = datetime.now()
         df_filtrado = df_f.copy()
         
-        # --- SOLUCCIÓN AL ERROR 1: FILTRADO DE FECHAS HOMOGÉNEO ---
+        # Filtrado de fechas homogéneo
         if filtro_tiempo == "Anual (Año Actual)":
             df_filtrado = df_f[df_f['Fecha'].dt.year == fecha_actual.year]
         elif filtro_tiempo == "Mensual (Mes Actual)":
@@ -101,7 +101,6 @@ if opcion_menu == "📊 Panel Financiero y Balances":
             with col_p2:
                 f_fin = st.date_input("Fecha Fin:", fecha_actual)
             
-            # Convertir los inputs de streamlit a datetime para que la comparación no falle
             t_inicio = pd.to_datetime(f_inicio)
             t_fin = pd.to_datetime(f_fin).replace(hour=23, minute=59, second=59)
             df_filtrado = df_f[(df_f['Fecha'] >= t_inicio) & (df_f['Fecha'] <= t_fin)]
@@ -123,16 +122,14 @@ if opcion_menu == "📊 Panel Financiero y Balances":
         cold1.metric("📥 Total por Cobrar (Clientes)", f"${por_cobrar:,.2f}")
         cold2.metric("📤 Total por Pagar (Proveedores)", f"${por_pagar:,.2f}")
         
-        # --- SOLUCIÓN AL ERROR 2: DESCARGA DIRECTA AL DISPOSITIVO ---
+        # Descarga Directa
         st.markdown("---")
         st.markdown("### 🖨️ Generación y Descarga de Reportes Financieros")
         
-        # Formatear el reporte para descarga limpia
         df_reporte = df_filtrado.copy()
         if not df_reporte.empty:
             df_reporte['Fecha'] = df_reporte['Fecha'].dt.strftime('%Y-%m-%d')
             
-        # Convertir la tabla actual a formato CSV de texto listo para descargar
         csv_data = df_reporte.sort_values(by='Fecha', ascending=False).to_csv(index=False).encode('utf-8')
         
         st.download_button(
@@ -160,7 +157,6 @@ if opcion_menu == "📊 Panel Financiero y Balances":
                 st.markdown("#### ⚙️ Panel de Corrección de Datos")
                 id_editar = st.selectbox("Selecciona el ID del movimiento que deseas corregir o borrar:", dfs['finanzas']['ID'].tolist())
                 
-                # Cargar datos actuales para editar desde la base original fija
                 datos_mov = dfs['finanzas'][dfs['finanzas']['ID'] == id_editar].iloc[0]
                 
                 col_ed1, col_ed2 = st.columns(2)
@@ -179,7 +175,7 @@ if opcion_menu == "📊 Panel Financiero y Balances":
                         df_original = dfs['finanzas']
                         df_original.loc[df_original['ID'] == id_editar, 'Concepto'] = edit_concepto
                         df_original.loc[df_original['ID'] == id_editar, 'Monto ($)'] = edit_monto
-                        df_original.loc[df_original['ID'] == id_original, 'Categoría'] = edit_cat
+                        df_original.loc[df_original['ID'] == id_editar, 'Categoría'] = edit_cat  # CORREGIDO: id_original -> id_editar
                         df_original.loc[df_original['ID'] == id_editar, 'Estado Deuda'] = edit_estado
                         df_original.loc[df_original['ID'] == id_editar, 'Lote Asociado'] = edit_lote
                         df_original.loc[df_original['ID'] == id_editar, 'Método Pago'] = edit_metodo
@@ -355,6 +351,7 @@ elif opcion_menu == "🤠 Gestión de Empleados":
             col_ed1, col_ed2 = st.columns(2)
             with col_ed1:
                 nuevo_tel = st.text_input("Modificar Teléfono:", value=str(datos_emp['Teléfono']))
+            with col_ed2:
                 nuevo_puesto = st.selectbox("Modificar Puesto:", ["Chofer de Camión/Logística", "Caporal / Vaquero", "Administrador", "Encargado de Alimentos", "Otro"], index=["Chofer de Camión/Logística", "Caporal / Vaquero", "Administrador", "Encargado de Alimentos", "Otro"].index(datos_emp['Puesto / Función']) if datos_emp['Puesto / Función'] in ["Chofer de Camión/Logística", "Caporal / Vaquero", "Administrador", "Encargado de Alimentos", "Otro"] else 0)
             
             col_actions = st.columns(2)
@@ -415,12 +412,12 @@ elif opcion_menu == "🤝 Clientes y Ventas":
             cli_seleccionado = st.selectbox("Selecciona el cliente a editar/eliminar:", df_c['Nombre / Razón Social'].tolist())
             datos_cli = df_c[df_c['Nombre / Razón Social'] == cli_seleccionado].iloc[0]
             
-            col_ced1, col_ced2 = st.columns(3)
+            col_ced1, col_ced2, col_ced3 = st.columns(3)  # CORREGIDO: Declaración limpia de 3 columnas
             with col_ced1:
                 nuevo_cont_cli = st.text_input("Contacto:", value=str(datos_cli['Contacto']))
             with col_ced2:
                 nuevo_tel_cli = st.text_input("Teléfono:", value=str(datos_cli['Teléfono']))
-            with col_ced2:
+            with col_ced3:  # CORREGIDO: col_ced2 -> col_ced3
                 nuevas_notas_cli = st.text_input("Notas comerciales:", value=str(datos_cli['Notas']))
                 
             col_c_acts = st.columns(2)
@@ -482,12 +479,12 @@ elif opcion_menu == "🚜 Proveedores e Insumos":
             prov_seleccionado = st.selectbox("Selecciona el proveedor a editar/eliminar:", df_p['Nombre Proveedor'].tolist())
             datos_prov = df_p[df_p['Nombre Proveedor'] == prov_seleccionado].iloc[0]
             
-            col_ped1, col_ped2 = st.columns(3)
+            col_ped1, col_ped2, col_ped3 = st.columns(3)  # CORREGIDO: Declaración limpia de 3 columnas
             with col_ped1:
                 nuevo_cont_prov = st.text_input("Atendido por:", value=str(datos_prov['Contacto']))
             with col_ped2:
                 nuevo_tel_prov = st.text_input("Teléfono:", value=str(datos_prov['Teléfono']))
-            with col_ped2:
+            with col_ped3:  # CORREGIDO: col_ped2 -> col_ped3
                 nuevo_ins_prov = st.selectbox("Modificar Insumo:", ["Alimento / Granos", "Diésel / Combustible", "Fierro / Refacciones", "Medicinas / Veterinaria", "Otros"], index=["Alimento / Granos", "Diésel / Combustible", "Fierro / Refacciones", "Medicinas / Veterinaria", "Otros"].index(datos_prov['Insumo Principal']) if datos_prov['Insumo Principal'] in ["Alimento / Granos", "Diésel / Combustible", "Fierro / Refacciones", "Medicinas / Veterinaria", "Otros"] else 0)
                 
             col_p_acts = st.columns(2)
