@@ -12,7 +12,7 @@ st.title("🤠 Rancho AE: Sistema de Administración")
 st.markdown("---")
 
 # Inicializar la conexión segura con la Base de Datos en la Nube
-conn = st.connection("postgresql", type="sql")
+conn = st.connection("sql")
 
 # ==========================================
 # 2. INICIALIZACIÓN DE TABLAS EN LA NUBE
