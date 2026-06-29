@@ -7,18 +7,14 @@ import os
 st.set_page_config(page_title="Sistema Integral Rancho AE", layout="wide", page_icon="🤠")
 
 # --- APARTADO DE IDENTIDAD CORPORATIVA (LOGO Y NOMBRE) ---
-# Título principal de la empresa en la parte superior del cuerpo
-st.title(" Rancho AE - Ganadería ")
+st.title("🤠 Rancho AE - Ganadería y Logística")
 
-# Recuadro en la barra lateral para personalizar el logotipo del rancho
-st.sidebar.markdown("### 🏷️ Administracion ")
+st.sidebar.markdown("### 🏷️ Identidad del Rancho")
 archivo_logo = st.sidebar.file_uploader("Subir logotipo de la empresa (PNG/JPG)", type=["png", "jpg", "jpeg"])
 
 if archivo_logo is not None:
-    # Si subes un logo, lo muestra en la barra lateral
     st.sidebar.image(archivo_logo, use_container_width=True)
 else:
-    # Imagen o aviso por defecto si aún no se ha subido un logo
     st.sidebar.info("💡 Consejo: Sube el logo de Rancho AE aquí arriba para personalizar tu plataforma.")
 
 st.sidebar.markdown("---")
@@ -39,17 +35,24 @@ COL_CLIENTES = ['Nombre / Razón Social', 'Contacto', 'Teléfono', 'Notas']
 COL_PROVEEDORES = ['Nombre Proveedor', 'Contacto', 'Teléfono', 'Insumo Principal']
 COL_LOTES = ['Nombre del Lote', 'Descripción / Notas', 'Fecha Creación']
 
-# Cargar o inicializar archivos
+# Cargar o inicializar archivos de forma segura
 dfs = {}
 for clave, archivo in ARCHIVOS.items():
     columnas = locals()[f"COL_{clave.upper()}"]
     if os.path.exists(archivo):
-        dfs[clave] = pd.read_csv(archivo)
+        try:
+            dfs[clave] = pd.read_csv(archivo)
+            # Asegurar que tengan las columnas correctas si el archivo venía vacío o incompleto
+            for col in columnas:
+                if col not in dfs[clave].columns:
+                    dfs[clave][col] = ""
+        except:
+            dfs[clave] = pd.DataFrame(columns=columnas)
     else:
         dfs[clave] = pd.DataFrame(columns=columnas)
 
 # --- MENÚ DE NAVEGACIÓN PRINCIPAL ---
-st.sidebar.markdown("###  Operaciones")
+st.sidebar.markdown("### 🚀 Operaciones")
 opcion_menu = st.sidebar.radio("📋 MENÚ PRINCIPAL", [
     "📊 Panel Financiero y Balances",
     "💰 Registro de Movimientos y Deudas",
@@ -66,14 +69,12 @@ st.sidebar.markdown("---")
 # ==========================================
 if opcion_menu == "📊 Panel Financiero y Balances":
     st.header("📊 Resumen Ejecutivo y Flujo de Caja")
-    
     df_f = dfs['finanzas']
     
     if not df_f.empty:
         df_f['Fecha'] = pd.to_datetime(df_f['Fecha'])
         df_f['Monto ($)'] = pd.to_numeric(df_f['Monto ($)'])
         
-        # Filtro de Tiempo
         filtro_tiempo = st.selectbox("📅 Vista Temporal del Balance:", ["Total Histórico", "Anual (Año Actual)", "Mensual (Mes Actual)", "Semanal (Últimos 7 días)"])
         
         fecha_actual = datetime.now()
@@ -86,11 +87,9 @@ if opcion_menu == "📊 Panel Financiero y Balances":
         else:
             df_filtrado = df_f
 
-        # Cálculos de balances normales
         ingresos = df_filtrado[(df_filtrado['Tipo'] == 'Ingreso') & (df_filtrado['Estado Deuda'] == 'Liquidado')]['Monto ($)'].sum()
         gastos = df_filtrado[(df_filtrado['Tipo'] == 'Gasto') & (df_filtrado['Estado Deuda'] == 'Liquidado')]['Monto ($)'].sum()
         
-        # Cálculos de Deudas
         por_cobrar = df_f[(df_f['Tipo'] == 'Ingreso') & (df_f['Estado Deuda'] == 'Por Cobrar')]['Monto ($)'].sum()
         por_pagar = df_f[(df_f['Tipo'] == 'Gasto') & (df_f['Estado Deuda'] == 'Por Pagar')]['Monto ($)'].sum()
 
@@ -104,20 +103,17 @@ if opcion_menu == "📊 Panel Financiero y Balances":
         cold1.metric("📥 Total por Cobrar (Clientes)", f"${por_cobrar:,.2f}")
         cold2.metric("📤 Total por Pagar (Proveedores)", f"${por_pagar:,.2f}")
         
-        # Pestañas de Análisis
         t1, t2, t3 = st.tabs(["📋 Libro de Movimientos", "📊 Gráficas de Rendimiento", "🔍 Análisis por Lote"])
         with t1:
             st.subheader("Historial de Transacciones Registradas")
             
-            # Opción de Eliminar Movimiento
             st.markdown("#### 🗑️ Eliminar un registro por error")
-            if not df_f.empty:
-                id_eliminar = st.selectbox("Selecciona el ID del movimiento a borrar:", df_f['ID'].tolist())
-                if st.button("❌ Eliminar Registro Seleccionado"):
-                    df_f = df_f[df_f['ID'] != id_eliminar]
-                    df_f.to_csv(ARCHIVOS['finanzas'], index=False)
-                    st.success(f"Movimiento con ID {id_eliminar} eliminado con éxito.")
-                    st.rerun()
+            id_eliminar = st.selectbox("Selecciona el ID del movimiento a borrar:", df_f['ID'].tolist())
+            if st.button("❌ Eliminar Registro Seleccionado"):
+                df_f = df_f[df_f['ID'] != id_eliminar]
+                df_f.to_csv(ARCHIVOS['finanzas'], index=False)
+                st.success(f"Movimiento con ID {id_eliminar} eliminado con éxito.")
+                st.rerun()
             
             st.dataframe(df_filtrado.sort_values(by='Fecha', ascending=False), use_container_width=True)
             
@@ -147,38 +143,34 @@ if opcion_menu == "📊 Panel Financiero y Balances":
         st.info("No hay datos financieros registrados aún.")
 
 # ==========================================
-# 2. REGISTRO DE MOVIMIENTOS
+# 2. REGISTRO DE MOVIMIENTOS (Solución de Categorías)
 # ==========================================
 elif opcion_menu == "💰 Registro de Movimientos y Deudas":
     st.header("💰 Registrar Nueva Operación Financiera")
     
+    # El tipo de movimiento se selecciona afuera del formulario para actualizar las categorías dinámicamente sin errores
+    tipo_m = st.selectbox("Tipo de Movimiento", ["Ingreso", "Gasto"])
+    
+    if tipo_m == "Ingreso":
+        cat_base = ["Liquidación / Venta de Ganado", "Cobro de Fletes / Logística", "Venta de Forraje", "OTRA (Agregar de forma manual)"]
+    else:
+        cat_base = ["Alimentación (Sorgo, pollinaza)", "Combustible (Diésel)", "Mantenimiento", "Salud Animal", "Nóminas", "OTRA (Agregar de forma manual)"]
+        
+    cat_sel = st.selectbox("Categoría de la Operación", cat_base)
+    
+    categoria_final = cat_sel
+    if cat_sel == "OTRA (Agregar de forma manual)":
+        categoria_final = st.text_input("Escribe la nueva categoría manual:")
+
     with st.form("form_finanzas", clear_on_submit=True):
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             fecha_c = st.date_input("Fecha de Operación", datetime.now())
-            tipo_m = st.selectbox("Tipo de Movimiento", ["Ingreso", "Gasto"])
-            
-            # Categorías base + Opción Manual
-            if tipo_m == "Ingreso":
-                cat_base = ["Liquidación / Venta de Ganado", "Cobro de Fletes / Logística", "Venta de Forraje", "OTRA (Agregar de forma manual)"]
-                cat_sel = st.selectbox("Categoría", cat_base)
-            else:
-                cat_base = ["Alimentación (Sorgo, pollinaza)", "Combustible (Diésel)", "Mantenimiento", "Salud Animal", "Nóminas", "OTRA (Agregar de forma manual)"]
-                cat_sel = st.selectbox("Categoría", cat_base)
-                
-            if cat_sel == "OTRA (Agregar de forma manual)":
-                categoria_final = st.text_input("Escribe la nueva categoría manual:")
-            else:
-                categoria_final = cat_sel
-
-        with col_f2:
             concepto_c = st.text_input("Detalle / Concepto")
             monto_c = st.number_input("Monto ($)", min_value=0.0, step=100.0)
-            
-            # Métodos de Pago
+
+        with col_f2:
             metodo_p = st.selectbox("Método de Pago", ["Efectivo", "Tarjeta de Crédito/Débito", "Transferencia Bancaria", "Otro"])
-            
-            # Asociar a Lote de Ganado
             lista_lotes = ["Ninguno / Administración General"] + dfs['lotes']['Nombre del Lote'].tolist()
             lote_asoc = st.selectbox("Asociar este movimiento al Lote:", lista_lotes)
             
@@ -190,22 +182,25 @@ elif opcion_menu == "💰 Registro de Movimientos y Deudas":
         btn_guardar_f = st.form_submit_button("💾 Guardar Registro Contable")
         
     if btn_guardar_f:
-        df_f = dfs['finanzas']
-        nuevo_id = int(df_f['ID'].max() + 1) if not df_f.empty else 1000
-        nueva_fila = pd.DataFrame([[
-            nuevo_id, fecha_c.strftime('%Y-%m-%d'), tipo_m, categoria_final, concepto_c, monto_c, metodo_p, lote_asoc, estado_d, fecha_venc.strftime('%Y-%m-%d')
-        ]], columns=COL_FINANZAS)
-        
-        df_f = pd.concat([df_f, nueva_fila], ignore_index=True)
-        df_f.to_csv(ARCHIVOS['finanzas'], index=False)
-        st.success("¡Movimiento contable guardado exitosamente!")
+        if categoria_final.strip() == "":
+            st.error("Por favor, especifica una categoría válida.")
+        else:
+            df_f = dfs['finanzas']
+            nuevo_id = int(df_f['ID'].max() + 1) if not df_f.empty else 1000
+            nueva_fila = pd.DataFrame([[
+                nuevo_id, fecha_c.strftime('%Y-%m-%d'), tipo_m, categoria_final, concepto_c, monto_c, metodo_p, lote_asoc, estado_d, fecha_venc.strftime('%Y-%m-%d')
+            ]], columns=COL_FINANZAS)
+            
+            df_f = pd.concat([df_f, nueva_fila], ignore_index=True)
+            df_f.to_csv(ARCHIVOS['finanzas'], index=False)
+            st.success("¡Movimiento contable guardado exitosamente!")
+            st.rerun()
 
 # ==========================================
 # 3. CONTROL DE LOTES DE GANADO
 # ==========================================
 elif opcion_menu == "🐂 Control de Lotes de Ganado":
     st.header("🐂 Administración de Lotes de Ganado")
-    
     col_l1, col_l2 = st.columns([1, 2])
     
     with col_l1:
@@ -240,93 +235,199 @@ elif opcion_menu == "🐂 Control de Lotes de Ganado":
             st.info("No hay lotes registrados todavía.")
 
 # ==========================================
-# 4. GESTIÓN DE EMPLEADOS
+# 4. GESTIÓN DE EMPLEADOS (Con Edición y Baja)
 # ==========================================
 elif opcion_menu == "🤠 Gestión de Empleados":
     st.header("🤠 Personal y Miembros de la Empresa")
     
-    col_e1, col_e2 = st.columns([1, 2])
-    with col_e1:
-        st.subheader("➕ Registrar Empleado")
-        with st.form("form_emp", clear_on_submit=True):
-            nom_emp = st.text_input("Nombre Completo")
-            tel_emp = st.text_input("Número de Teléfono")
-            puesto_emp = st.selectbox("Función / Puesto Asignado:", ["Chofer de Camión/Logística", "Caporal / Vaquero", "Administrador", "Encargado de Alimentos", "Otro"])
-            btn_emp = st.form_submit_button("Registrar Empleado")
-            
-        if btn_emp and nom_emp.strip() != "":
-            df_e = dfs['empleados']
-            nueva_fila = pd.DataFrame([[nom_emp, tel_emp, puesto_emp, datetime.now().strftime('%Y-%m-%d')]], columns=COL_EMPLEADOS)
-            df_e = pd.concat([df_e, nueva_fila], ignore_index=True)
-            df_e.to_csv(ARCHIVOS['empleados'], index=False)
-            st.success("Empleado registrado correctamente.")
-            st.rerun()
-            
-    with col_e2:
-        st.subheader("📋 Plantilla de Trabajo")
+    tab_reg, tab_edit = st.tabs(["➕ Registrar / Ver Lista", "⚙️ Editar o Eliminar Manualmente"])
+    
+    with tab_reg:
+        col_e1, col_e2 = st.columns([1, 2])
+        with col_e1:
+            st.subheader("Registrar Empleado")
+            with st.form("form_emp", clear_on_submit=True):
+                nom_emp = st.text_input("Nombre Completo")
+                tel_emp = st.text_input("Número de Teléfono")
+                puesto_emp = st.selectbox("Función / Puesto Asignado:", ["Chofer de Camión/Logística", "Caporal / Vaquero", "Administrador", "Encargado de Alimentos", "Otro"])
+                btn_emp = st.form_submit_button("Registrar Empleado")
+                
+            if btn_emp and nom_emp.strip() != "":
+                df_e = dfs['empleados']
+                nueva_fila = pd.DataFrame([[nom_emp, tel_emp, puesto_emp, datetime.now().strftime('%Y-%m-%d')]], columns=COL_EMPLEADOS)
+                df_e = pd.concat([df_e, nueva_fila], ignore_index=True)
+                df_e.to_csv(ARCHIVOS['empleados'], index=False)
+                st.success("Empleado registrado correctamente.")
+                st.rerun()
+                
+        with col_e2:
+            st.subheader("📋 Plantilla de Trabajo Actual")
+            if not dfs['empleados'].empty:
+                st.dataframe(dfs['empleados'], use_container_width=True)
+            else:
+                st.info("Aún no tienes empleados registrados.")
+
+    with tab_edit:
+        st.subheader("⚙️ Modificar o Dar de Baja Personal")
         if not dfs['empleados'].empty:
-            st.dataframe(dfs['empleados'], use_container_width=True)
+            df_e = dfs['empleados']
+            emp_seleccionado = st.selectbox("Selecciona el empleado que deseas modificar o eliminar:", df_e['Nombre'].tolist())
+            
+            # Obtener datos actuales del renglón elegido
+            datos_emp = df_e[df_e['Nombre'] == emp_seleccionado].iloc[0]
+            
+            col_ed1, col_ed2 = st.columns(2)
+            with col_ed1:
+                nuevo_tel = st.text_input("Modificar Teléfono:", value=str(datos_emp['Teléfono']))
+                nuevo_puesto = st.selectbox("Modificar Puesto:", ["Chofer de Camión/Logística", "Caporal / Vaquero", "Administrador", "Encargado de Alimentos", "Otro"], index=["Chofer de Camión/Logística", "Caporal / Vaquero", "Administrador", "Encargado de Alimentos", "Otro"].index(datos_emp['Puesto / Función']) if datos_emp['Puesto / Función'] in ["Chofer de Camión/Logística", "Caporal / Vaquero", "Administrador", "Encargado de Alimentos", "Otro"] else 0)
+            
+            col_actions = st.columns(2)
+            with col_actions[0]:
+                if st.button("💾 Guardar Cambios del Empleado"):
+                    df_e.loc[df_e['Nombre'] == emp_seleccionado, 'Teléfono'] = nuevo_tel
+                    df_e.loc[df_e['Nombre'] == emp_seleccionado, 'Puesto / Función'] = nuevo_puesto
+                    df_e.to_csv(ARCHIVOS['empleados'], index=False)
+                    st.success(f"Datos de {emp_seleccionado} actualizados.")
+                    st.rerun()
+            with col_actions[1]:
+                if st.button("❌ Eliminar Empleado de la Empresa"):
+                    df_e = df_e[df_e['Nombre'] != emp_seleccionado]
+                    df_e.to_csv(ARCHIVOS['empleados'], index=False)
+                    st.warning(f"{emp_seleccionado} ha sido removido del registro.")
+                    st.rerun()
         else:
-            st.info("Aún no tienes empleados registrados.")
+            st.info("No hay empleados para modificar.")
 
 # ==========================================
-# 5. CLIENTES Y VENTAS
+# 5. CLIENTES Y VENTAS (Con Edición y Baja)
 # ==========================================
 elif opcion_menu == "🤝 Clientes y Ventas":
     st.header("🤝 Registro de Clientes Comerciales")
     
-    col_c1, col_c2 = st.columns([1, 2])
-    with col_c1:
-        st.subheader("➕ Registrar Cliente")
-        with st.form("form_cli", clear_on_submit=True):
-            nom_cli = st.text_input("Nombre o Razón Social")
-            cont_cli = st.text_input("Persona de Contacto")
-            tel_cli = st.text_input("Teléfono de Contacto")
-            notas_cli = st.text_input("¿Qué le vendemos? / Notas")
-            btn_cli = st.form_submit_button("Guardar Cliente")
-            
-        if btn_cli and nom_cli.strip() != "":
-            df_c = dfs['clientes']
-            nueva_fila = pd.DataFrame([[nom_cli, cont_cli, tel_cli, notas_cli]], columns=COL_CLIENTES)
-            df_c = pd.concat([df_c, nueva_fila], ignore_index=True)
-            df_c.to_csv(ARCHIVOS['clientes'], index=False)
-            st.success("Cliente guardado en catálogo.")
-            st.rerun()
-            
-    with col_c2:
-        st.subheader("📋 Directorio de Clientes")
+    tab_cli_ver, tab_cli_edit = st.tabs(["➕ Registrar / Ver Lista", "⚙️ Editar o Eliminar Manualmente"])
+    
+    with tab_cli_ver:
+        col_c1, col_c2 = st.columns([1, 2])
+        with col_c1:
+            st.subheader("Registrar Cliente")
+            with st.form("form_cli", clear_on_submit=True):
+                nom_cli = st.text_input("Nombre o Razón Social")
+                cont_cli = st.text_input("Persona de Contacto")
+                tel_cli = st.text_input("Teléfono de Contacto")
+                notas_cli = st.text_input("¿Qué le vendemos? / Notas")
+                btn_cli = st.form_submit_button("Guardar Cliente")
+                
+            if btn_cli and nom_cli.strip() != "":
+                df_c = dfs['clientes']
+                nueva_fila = pd.DataFrame([[nom_cli, cont_cli, tel_cli, notas_cli]], columns=COL_CLIENTES)
+                df_c = pd.concat([df_c, nueva_fila], ignore_index=True)
+                df_c.to_csv(ARCHIVOS['clientes'], index=False)
+                st.success("Cliente guardado en catálogo.")
+                st.rerun()
+                
+        with col_c2:
+            st.subheader("📋 Directorio de Clientes")
+            if not dfs['clientes'].empty:
+                st.dataframe(dfs['clientes'], use_container_width=True)
+            else:
+                st.info("No hay clientes registrados.")
+
+    with tab_cli_edit:
+        st.subheader("⚙️ Modificar o Dar de Baja Clientes")
         if not dfs['clientes'].empty:
-            st.dataframe(dfs['clientes'], use_container_width=True)
+            df_c = dfs['clientes']
+            cli_seleccionado = st.selectbox("Selecciona el cliente a editar/eliminar:", df_c['Nombre / Razón Social'].tolist())
+            datos_cli = df_c[df_c['Nombre / Razón Social'] == cli_seleccionado].iloc[0]
+            
+            col_ced1, col_ced2 = st.columns(3)
+            with col_ced1:
+                nuevo_cont_cli = st.text_input("Contacto:", value=str(datos_cli['Contacto']))
+            with col_ced2:
+                nuevo_tel_cli = st.text_input("Teléfono:", value=str(datos_cli['Teléfono']))
+            with col_ced2:
+                nuevas_notas_cli = st.text_input("Notas comerciales:", value=str(datos_cli['Notas']))
+                
+            col_c_acts = st.columns(2)
+            with col_c_acts[0]:
+                if st.button("💾 Guardar Cambios del Cliente"):
+                    df_c.loc[df_c['Nombre / Razón Social'] == cli_seleccionado, 'Contacto'] = nuevo_cont_cli
+                    df_c.loc[df_c['Nombre / Razón Social'] == cli_seleccionado, 'Teléfono'] = nuevo_tel_cli
+                    df_c.loc[df_c['Nombre / Razón Social'] == cli_seleccionado, 'Notas'] = nuevas_notas_cli
+                    df_c.to_csv(ARCHIVOS['clientes'], index=False)
+                    st.success(f"Cliente '{cli_seleccionado}' actualizado.")
+                    st.rerun()
+            with col_c_acts[1]:
+                if st.button("❌ Eliminar Cliente del Catálogo"):
+                    df_c = df_c[df_c['Nombre / Razón Social'] != cli_seleccionado]
+                    df_c.to_csv(ARCHIVOS['clientes'], index=False)
+                    st.warning(f"Cliente '{cli_seleccionado}' removido.")
+                    st.rerun()
         else:
-            st.info("No hay clientes registrados.")
+            st.info("No hay clientes para modificar.")
 
 # ==========================================
-# 6. PROVEEDORES E INSUMOS
+# 6. PROVEEDORES E INSUMOS (Con Edición y Baja)
 # ==========================================
 elif opcion_menu == "🚜 Proveedores e Insumos":
     st.header("🚜 Directorio de Proveedores")
     
-    col_p1, col_p2 = st.columns([1, 2])
-    with col_p1:
-        st.subheader("➕ Registrar Proveedor")
-        with st.form("form_prov", clear_on_submit=True):
-            nom_prov = st.text_input("Nombre de la Empresa / Proveedor")
-            cont_prov = st.text_input("Atendido por")
-            tel_prov = st.text_input("Teléfono")
-            ins_prov = st.selectbox("Insumo Principal que provee:", ["Alimento / Granos", "Diésel / Combustible", "Fierro / Refacciones", "Medicinas / Veterinaria", "Otros"])
-            btn_prov = st.form_submit_button("Guardar Proveedor")
-            
-        if btn_prov and nom_prov.strip() != "":
-            df_p = dfs['proveedores']
-            nueva_fila = pd.DataFrame([[nom_prov, cont_prov, tel_prov, ins_prov]], columns=COL_PROVEEDORES)
-            df_p = pd.concat([df_p, nueva_fila], ignore_index=True)
-            df_p.to_csv(ARCHIVOS['proveedores'], index=False)
-            st.success("Proveedor registrado.")
-            st.rerun()
-            
-    with col_p2:
-        st.subheader("📋 Lista de Proveedores Autorizados")
+    tab_prov_ver, tab_prov_edit = st.tabs(["➕ Registrar / Ver Lista", "⚙️ Editar o Eliminar Manualmente"])
+    
+    with tab_prov_ver:
+        col_p1, col_p2 = st.columns([1, 2])
+        with col_p1:
+            st.subheader("Registrar Proveedor")
+            with st.form("form_prov", clear_on_submit=True):
+                nom_prov = st.text_input("Nombre de la Empresa / Proveedor")
+                cont_prov = st.text_input("Atendido por")
+                tel_prov = st.text_input("Teléfono")
+                ins_prov = st.selectbox("Insumo Principal que provee:", ["Alimento / Granos", "Diésel / Combustible", "Fierro / Refacciones", "Medicinas / Veterinaria", "Otros"])
+                btn_prov = st.form_submit_button("Guardar Proveedor")
+                
+            if btn_prov and nom_prov.strip() != "":
+                df_p = dfs['proveedores']
+                nueva_fila = pd.DataFrame([[nom_prov, cont_prov, tel_prov, ins_prov]], columns=COL_PROVEEDORES)
+                df_p = pd.concat([df_p, nueva_fila], ignore_index=True)
+                df_p.to_csv(ARCHIVOS['proveedores'], index=False)
+                st.success("Proveedor registrado.")
+                st.rerun()
+                
+        with col_p2:
+            st.subheader("📋 Lista de Proveedores Autorizados")
+            if not dfs['proveedores'].empty:
+                st.dataframe(dfs['proveedores'], use_container_width=True)
+            else:
+                st.info("No hay proveedores en la lista.")
+
+    with tab_prov_edit:
+        st.subheader("⚙️ Modificar o Dar de Baja Proveedores")
         if not dfs['proveedores'].empty:
-            st.dataframe(dfs['proveedores'], use_container_width=True)
+            df_p = dfs['proveedores']
+            prov_seleccionado = st.selectbox("Selecciona el proveedor a editar/eliminar:", df_p['Nombre Proveedor'].tolist())
+            datos_prov = df_p[df_p['Nombre Proveedor'] == prov_seleccionado].iloc[0]
+            
+            col_ped1, col_ped2 = st.columns(3)
+            with col_ped1:
+                nuevo_cont_prov = st.text_input("Atendido por:", value=str(datos_prov['Contacto']))
+            with col_ped2:
+                nuevo_tel_prov = st.text_input("Teléfono:", value=str(datos_prov['Teléfono']))
+            with col_ped2:
+                nuevo_ins_prov = st.selectbox("Modificar Insumo:", ["Alimento / Granos", "Diésel / Combustible", "Fierro / Refacciones", "Medicinas / Veterinaria", "Otros"], index=["Alimento / Granos", "Diésel / Combustible", "Fierro / Refacciones", "Medicinas / Veterinaria", "Otros"].index(datos_prov['Insumo Principal']) if datos_prov['Insumo Principal'] in ["Alimento / Granos", "Diésel / Combustible", "Fierro / Refacciones", "Medicinas / Veterinaria", "Otros"] else 0)
+                
+            col_p_acts = st.columns(2)
+            with col_p_acts[0]:
+                if st.button("💾 Guardar Cambios del Proveedor"):
+                    df_p.loc[df_p['Nombre Proveedor'] == prov_seleccionado, 'Contacto'] = nuevo_cont_prov
+                    df_p.loc[df_p['Nombre Proveedor'] == prov_seleccionado, 'Teléfono'] = nuevo_tel_prov
+                    df_p.loc[df_p['Nombre Proveedor'] == prov_seleccionado, 'Insumo Principal'] = nuevo_ins_prov
+                    df_p.to_csv(ARCHIVOS['proveedores'], index=False)
+                    st.success(f"Proveedor '{prov_seleccionado}' actualizado.")
+                    st.rerun()
+            with col_p_acts[1]:
+                if st.button("❌ Eliminar Proveedor del Directorio"):
+                    df_p = df_p[df_p['Nombre Proveedor'] != prov_seleccionado]
+                    df_p.to_csv(ARCHIVOS['proveedores'], index=False)
+                    st.warning(f"Proveedor '{prov_seleccionado}' removido.")
+                    st.rerun()
         else:
-            st.info("No hay proveedores en la lista.")
+            st.info("No hay proveedores para modificar.")
