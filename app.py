@@ -1,3 +1,5 @@
+import os
+os.system("pip install streamlit-gsheets")
 import streamlit as st
 import pandas as pd
 from datetime import datetime
