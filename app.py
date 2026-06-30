@@ -13,10 +13,9 @@ st.set_page_config(page_title="Rancho AE - Administración", page_icon="🤠", l
 # ==========================================
 with st.sidebar:
     st.header("🏢 Imagen Corporativa")
-    # Permite al usuario pegar la URL de su logotipo para máxima personalización
     logo_url = st.text_input(
         "URL del Logotipo de la Empresa:",
-        value="https://images.unsplash.com/photo-1516467508483-a7212febe31a?q=80&w=200&auto=format&fit=crop", # Logo de ganado elegante por defecto
+        value="https://images.unsplash.com/photo-1516467508483-a7212febe31a?q=80&w=200&auto=format&fit=crop", 
         help="Pega aquí el enlace de internet de tu imagen (JPG/PNG)"
     )
     if logo_url:
@@ -25,7 +24,7 @@ with st.sidebar:
     st.markdown("---")
     st.header("⚙️ Copias de Seguridad")
 
-# Título Principal con Logo Integrado en la cabecera
+# Título Principal con Logo Integrado
 col_title, col_logo = st.columns([4, 1])
 with col_title:
     st.title("🤠 Rancho AE: Sistema de Administración")
@@ -134,7 +133,6 @@ if not df_finanzas.empty:
     
     st.markdown("### 📝 Exportar Estado de Cuenta Oficial")
     if st.button("📄 Compilar Plantilla Institucional con Logotipo"):
-        # Construcción de la Plantilla Corporativa con Logo Incrustado de manera limpia
         html_template = f"""
         <div style="font-family: Arial, sans-serif; line-height: 1.25; color: #333333;">
             <table style="width: 100%; border-bottom: 2px solid #5c4033; padding-bottom: 10px;">
@@ -215,14 +213,15 @@ if not df_finanzas.empty:
 
     if st.session_state["mostrar_descarga"]:
         with st.expander("👁️ Previsualizar Formato HTML del Documento"):
-            st.markdown(st.session_state["reporte_html"], unsafe_allowed_html=True)
+            # CORREGIDO AQUÍ: unsafe_allow_html=True
+            st.markdown(st.session_state["reporte_html"], unsafe_allow_html=True)
 else:
     st.info("💡 Registra movimientos en la pestaña de finanzas para generar el balance corporativo.")
 
 st.markdown("---")
 
 # ==========================================
-# 5. PESTAÑAS OPERATIVAS (CON ID AUTOMÁTICO Y CORRECCIONES)
+# 5. PESTAÑAS OPERATIVAS
 # ==========================================
 tabs = st.tabs(["📊 Finanzas", "🤠 Empleados", "🤝 Clientes", "🚜 Proveedores", "🐂 Lotes"])
 
@@ -288,7 +287,7 @@ with tabs[0]:
                     st.session_state["mostrar_descarga"] = False
                     st.rerun()
 
-# Resto de pestañas operativas simplificadas para control rápido
+# Pestañas operativas
 with tabs[1]:
     st.subheader("Administración de Personal")
     with st.form("form_empleados", clear_on_submit=True):
@@ -301,60 +300,4 @@ with tabs[1]:
     st.dataframe(df_empleados, use_container_width=True, hide_index=True)
     if not df_empleados.empty:
         emp_sel = st.selectbox("Selecciona Empleado para Eliminar:", df_empleados['nombre'].unique())
-        if st.button("🗑️ Eliminar Empleado"):
-            if eliminar_registro("empleados", "nombre", emp_sel): st.rerun()
-
-with tabs[2]:
-    st.subheader("Registro de Clientes")
-    with st.form("form_clientes", clear_on_submit=True):
-        c_nombre = st.text_input("Razón Social")
-        c_tel = st.text_input("Teléfono")
-        if st.form_submit_button("💾 Guardar Cliente"):
-            if c_nombre.strip() and guardar_registro("clientes", {"nombre_razon": c_nombre.strip(), "telefono": c_tel}, "nombre_razon"): st.rerun()
-    st.dataframe(df_clientes, use_container_width=True, hide_index=True)
-    if not df_clientes.empty:
-        cli_sel = st.selectbox("Selecciona Cliente para Eliminar:", df_clientes['nombre_razon'].unique())
-        if st.button("🗑️ Eliminar Cliente"):
-            if eliminar_registro("clientes", "nombre_razon", cli_sel): st.rerun()
-
-with tabs[3]:
-    st.subheader("Catálogo de Proveedores")
-    with st.form("form_proveedores", clear_on_submit=True):
-        p_nombre = st.text_input("Nombre del Proveedor")
-        p_insumo = st.text_input("Insumo Principal")
-        if st.form_submit_button("💾 Guardar Proveedor"):
-            if p_nombre.strip() and guardar_registro("proveedores", {"nombre_proveedor": p_nombre.strip(), "insumo_principal": p_insumo}, "nombre_proveedor"): st.rerun()
-    st.dataframe(df_proveedores, use_container_width=True, hide_index=True)
-    if not df_proveedores.empty:
-        prov_sel = st.selectbox("Selecciona Proveedor para Eliminar:", df_proveedores['nombre_proveedor'].unique())
-        if st.button("🗑️ Eliminar Proveedor"):
-            if eliminar_registro("proveedores", "nombre_proveedor", prov_sel): st.rerun()
-
-with tabs[4]:
-    st.subheader("Control de Lotes de Ganado")
-    with st.form("form_lotes", clear_on_submit=True):
-        l_nombre = st.text_input("Código del Lote (Ej: Lote_Sardo_01)")
-        l_desc = st.text_area("Descripción")
-        if st.form_submit_button("💾 Guardar Lote"):
-            if l_nombre.strip() and guardar_registro("lotes", {"nombre_lote": l_nombre.strip(), "descripcion_notas": l_desc, "fecha_creacion": datetime.today().strftime('%Y-%m-%d')}, "nombre_lote"): st.rerun()
-    st.dataframe(df_lotes, use_container_width=True, hide_index=True)
-    if not df_lotes.empty:
-        lote_sel = st.selectbox("Selecciona Lote para Eliminar:", df_lotes['nombre_lote'].unique())
-        if st.button("🗑️ Eliminar Lote"):
-            if eliminar_registro("lotes", "nombre_lote", lote_sel): st.rerun()
-
-# RESPALDO EXCEL EN SIDEBAR
-with st.sidebar:
-    try:
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df_finanzas.to_excel(writer, sheet_name='Finanzas', index=False)
-            df_empleados.to_excel(writer, sheet_name='Empleados', index=False)
-            df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
-            df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
-            df_lotes.to_excel(writer, sheet_name='Lotes', index=False)
-        st.download_button(
-            label="📥 Descargar Respaldo Excel", data=buffer.getvalue(),
-            file_name=f"Respaldo_Rancho_AE_{datetime.now().strftime('%Y-%m-%d')}.xlsx", mime="application/vnd.ms-excel", use_container_width=True
-        )
-    except Exception: pass
+        if st.button("
