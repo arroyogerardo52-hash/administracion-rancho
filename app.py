@@ -31,7 +31,7 @@ else:
 
 if not credentials_ready:
     st.markdown("""
-    ### ⚙️ Configuración correcta en Streamlit Cloud:
+    ### ⚙️ Configuración requerida en los Secrets de Streamlit Cloud:
     ```toml
     [supabase]
     url = "https://tu_proyecto_id.supabase.co"
@@ -50,16 +50,15 @@ def init_connection():
     try:
         return create_client(st.secrets["supabase"]["url"], st.secrets["supabase"]["key"])
     except Exception as e:
-        st.error(f"No se pudo conectar al servidor de Supabase: {e}")
+        st.error(f"No se pudo inicializar el cliente de Supabase: {e}")
         return None
 
 supabase: Client = init_connection()
 
 if supabase is None:
-    st.error("❌ Error crítico de conexión. Verifica que la URL ingresada en los Secrets sea válida y esté activa.")
     st.stop()
 
-# Funciones de carga y guardado optimizadas con control de errores de red
+# Funciones de carga y guardado optimizadas con control de autenticación
 def cargar_tabla(nombre_tabla):
     try:
         response = supabase.table(nombre_tabla).select("*").execute()
@@ -67,9 +66,13 @@ def cargar_tabla(nombre_tabla):
             return pd.DataFrame(response.data)
         return pd.DataFrame()
     except Exception as e:
-        # Si la URL está mal, capturamos el error de red aquí limpiamente
-        if "Name or service not known" in str(e) or "Failed to resolve" in str(e):
-            st.error(f"❌ Error de conexión de red: La URL de Supabase '{st.secrets['supabase']['url']}' no es válida. Por favor, revísala en tus Secrets.")
+        error_msg = str(e)
+        # Captura limpia de la clave API inválida (Error 401)
+        if "401" in error_msg or "Invalid API key" in error_msg:
+            st.error("❌ **Llave API Inválida (Error 401):** La contraseña secreta (`key`) en tus Secrets de Streamlit es incorrecta. Por favor, ve a Supabase -> Project Settings -> API, copia la llave **'anon public'** y reemplázala en Streamlit Cloud.")
+            st.stop()
+        elif "Name or service not known" in error_msg or "Failed to resolve" in error_msg:
+            st.error(f"❌ Error de red: La URL '{st.secrets['supabase']['url']}' no es válida. Revísala en tus Secrets.")
             st.stop()
         else:
             st.error(f"Error al leer la tabla {nombre_tabla}: {e}")
@@ -83,7 +86,7 @@ def guardar_registro(nombre_tabla, datos, llave_primaria):
         st.error(f"Error crítico al guardar en {nombre_tabla}: {e}")
         return False
 
-# Cargar los datos actuales directamente de la nube de forma limpia
+# Cargar los datos actuales directamente de la nube de forma segura
 df_finanzas = cargar_tabla("finanzas")
 df_empleados = cargar_tabla("empleados")
 df_clientes = cargar_tabla("clientes")
