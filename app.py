@@ -12,7 +12,7 @@ st.title("🤠 Rancho AE: Sistema de Administración")
 st.markdown("---")
 
 # ==========================================
-# 2. VALIDACIÓN DE CREDENCIALES (PREVENCIÓN DE KEYERROR)
+# 2. VALIDACIÓN DE CREDENCIALES
 # ==========================================
 credentials_ready = False
 
@@ -20,45 +20,46 @@ if "supabase" in st.secrets:
     try:
         url = st.secrets["supabase"]["url"]
         key = st.secrets["supabase"]["key"]
-        credentials_ready = True
+        if url and key and "supabase.co" in url:
+            credentials_ready = True
+        else:
+            st.error("❌ La URL de Supabase parece tener un formato incorrecto. Debe empezar con 'https://' y terminar con '.supabase.co'")
     except KeyError:
-        st.error("❌ Error de formato: Asegúrate de que las variables dentro de [supabase] sean exactamente 'url' y 'key'.")
+        st.error("❌ Error de formato en Secrets: Asegúrate de usar exactamente las llaves 'url' y 'key'.")
 else:
-    st.warning("⚠️ Conexión pendiente: Las credenciales de Supabase no se han configurado en los Secrets de Streamlit Cloud.")
+    st.warning("⚠️ Conexión pendiente: Las credenciales de Supabase no están configuradas.")
 
-# Si las credenciales no están listas, detenemos la ejecución de forma limpia mostrando la guía
 if not credentials_ready:
     st.markdown("""
-    ### ⚙️ Cómo activar tu base de datos en 3 sencillos pasos:
-    
-    1. Ve al panel de control de **Streamlit Cloud** donde está tu aplicación desplegada.
-    2. Haz clic en los tres puntitos del menú de tu app y selecciona **Settings** (Configuración) -> **Secrets**.
-    3. Copia y pega exactamente el siguiente bloque de texto en el cuadro de texto (reemplazando con tus datos de Supabase):
-    
+    ### ⚙️ Configuración correcta en Streamlit Cloud:
     ```toml
     [supabase]
     url = "https://tu_proyecto_id.supabase.co"
     key = "tu_llave_anon_public_aqui"
     ```
-    
-    4. Guarda los cambios. ¡La aplicación se actualizará sola y estará lista de inmediato!
     """)
     st.stop()
 
 # ==========================================
-# 3. CONEXIÓN SEGURA A SUPABASE (NUBE REAL)
+# 3. CONEXIÓN SEGURA A SUPABASE
 # ==========================================
 from supabase import create_client, Client
 
 @st.cache_resource
 def init_connection():
-    url = st.secrets["supabase"]["url"]
-    key = st.secrets["supabase"]["key"]
-    return create_client(url, key)
+    try:
+        return create_client(st.secrets["supabase"]["url"], st.secrets["supabase"]["key"])
+    except Exception as e:
+        st.error(f"No se pudo conectar al servidor de Supabase: {e}")
+        return None
 
 supabase: Client = init_connection()
 
-# Funciones de carga y guardado optimizadas
+if supabase is None:
+    st.error("❌ Error crítico de conexión. Verifica que la URL ingresada en los Secrets sea válida y esté activa.")
+    st.stop()
+
+# Funciones de carga y guardado optimizadas con control de errores de red
 def cargar_tabla(nombre_tabla):
     try:
         response = supabase.table(nombre_tabla).select("*").execute()
@@ -66,7 +67,12 @@ def cargar_tabla(nombre_tabla):
             return pd.DataFrame(response.data)
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"Error al leer la tabla {nombre_tabla}: {e}")
+        # Si la URL está mal, capturamos el error de red aquí limpiamente
+        if "Name or service not known" in str(e) or "Failed to resolve" in str(e):
+            st.error(f"❌ Error de conexión de red: La URL de Supabase '{st.secrets['supabase']['url']}' no es válida. Por favor, revísala en tus Secrets.")
+            st.stop()
+        else:
+            st.error(f"Error al leer la tabla {nombre_tabla}: {e}")
         return pd.DataFrame()
 
 def guardar_registro(nombre_tabla, datos, llave_primaria):
@@ -77,7 +83,7 @@ def guardar_registro(nombre_tabla, datos, llave_primaria):
         st.error(f"Error crítico al guardar en {nombre_tabla}: {e}")
         return False
 
-# Cargar los datos actuales directamente de la nube
+# Cargar los datos actuales directamente de la nube de forma limpia
 df_finanzas = cargar_tabla("finanzas")
 df_empleados = cargar_tabla("empleados")
 df_clientes = cargar_tabla("clientes")
@@ -147,7 +153,7 @@ with tabs[1]:
             e_nombre = st.text_input("Nombre Completo del Empleado")
             e_tel = st.text_input("Teléfono de Contacto")
         with col2:
-            e_puesto = st.text_input("Puesto / Función en el Rancho")
+            e_puesto = st.text_input("Puesto / Función del Empleado")
             e_ingreso = st.date_input("Fecha de Ingreso", datetime.today()).strftime('%Y-%m-%d')
             
         if st.form_submit_button("💾 Guardar Empleado"):
@@ -230,7 +236,7 @@ with tabs[4]:
     
     with st.form("form_lotes", clear_on_submit=True):
         l_nombre = st.text_input("Nombre o Código del Lote (Ej: Lote_Sardo_01)")
-        l_desc = st.text_area("Descripción del Lote (Cabezas, tipo de engorda, procedencia)")
+        l_desc = st.text_area("Descripción del Lote")
         l_creacion = st.date_input("Fecha de Creación", datetime.today()).strftime('%Y-%m-%d')
         
         if st.form_submit_button("💾 Guardar Lote"):
@@ -252,7 +258,6 @@ with tabs[4]:
 # ==========================================
 with st.sidebar:
     st.header("⚙️ Copias de Seguridad")
-    
     try:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
