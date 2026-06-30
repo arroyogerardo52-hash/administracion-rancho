@@ -287,16 +287,16 @@ if not df_filtrado.empty:
             st.markdown("### 📋 Instrucciones para copiar a Google Documentos:")
             st.info("1. Haz clic dentro del recuadro de previsualización.\n2. Presiona `Ctrl + A` (o `Cmd + A` en Mac) para seleccionar todo y luego `Ctrl + C` para copiar.\n3. Abre Google Documentos y presiona `Ctrl + V` para pegar.")
 else:
-    st.info("💡 Registra movimientos o ajusta las fechas para visualizar datos y gráficas en este periodo.")
+    st.info("💡 Registra movimientos o ajustas las fechas para visualizar datos y gráficas en este periodo.")
 
 st.markdown("---")
 
 # ==========================================
-# 5. PESTAÑAS OPERATIVAS (CONEXIÓN ENTRE TABLAS)
+# 5. PESTAÑAS OPERATIVAS (CORREGIDAS PARA GUARDAR EN TABLAS INDEPENDIENTES)
 # ==========================================
 tabs = st.tabs(["📊 Finanzas", "🤠 Empleados", "🤝 Clientes", "🚜 Proveedores", "🐂 Lotes"])
 
-# PESTAÑA FINANZAS (CON FORMULARIO INTELIGENTE)
+# PESTAÑA FINANZAS
 with tabs[0]:
     st.subheader("Registro Financiero Automatizado")
     with st.form("form_finanzas", clear_on_submit=True):
@@ -306,7 +306,6 @@ with tabs[0]:
             f_tipo = st.selectbox("Tipo de Movimiento", ["Ingreso", "Egreso"])
             f_cat = st.text_input("Categoría (Ej: Alimento, Vacunas, Venta Ganado)")
             
-            # Conexión dinámica e inteligente con Clientes o Proveedores
             if f_tipo == "Ingreso":
                 opciones_entidad = ["Público General"]
                 if not df_clientes.empty and 'nombre_razon' in df_clientes.columns:
@@ -330,64 +329,4 @@ with tabs[0]:
             f_estado = st.selectbox("Estado del Pago", ["Pagado", "Pendiente"])
             f_venc = st.date_input("Fecha Vencimiento de Obligación", datetime.today()).strftime('%Y-%m-%d')
             
-        if st.form_submit_button("💾 Guardar Transacción en Servidor"):
-            auto_id = f"TRA-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 100000}"
-            concepto_final = f"Asociado a: {f_entidad}"
-            
-            nuevo_registro = {
-                "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat,
-                "concepto": concepto_final, "monto": float(f_monto), "metodo_pago": f_pago,
-                "lote_asociado": f_lote, "estado_deuda": f_estado, "fecha_vencimiento": f_venc
-            }
-            if guardar_registro("finanzas", nuevo_registro, "id"):
-                st.success(f"¡Transacción registrada con ID: {auto_id}!")
-                st.session_state["mostrar_descarga"] = False
-                st.rerun()
-
-    st.markdown("### Historial General (Sin Filtros)")
-    if not df_finanzas.empty:
-        df_finanzas = df_finanzas.reindex(columns=["id", "fecha", "tipo", "categoria", "concepto", "monto", "metodo_pago", "lote_asociado", "estado_deuda", "fecha_vencimiento"])
-    st.dataframe(df_finanzas, use_container_width=True, hide_index=True)
-
-    if not df_finanzas.empty:
-        st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
-        id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
-        fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
-        c1, c2, c3 = st.columns([2, 2, 1])
-        with c1:
-            nuevo_estado = st.selectbox("Cambiar Estado Pago a:", ["Pagado", "Pendiente"], index=["Pagado", "Pendiente"].index(fila_sel['estado_deuda']), key="est_fin")
-        with c2:
-            nuevo_monto = st.number_input("Corregir Monto ($):", min_value=0.0, value=float(fila_sel['monto']), key="mon_fin")
-        with c3:
-            st.write("")
-            st.write("")
-            if st.button("🔄 Actualizar", key="btn_up_fin"):
-                fila_sel['estado_deuda'] = nuevo_estado
-                fila_sel['monto'] = nuevo_monto
-                if guardar_registro("finanzas", fila_sel.to_dict(), "id"):
-                    st.success("Registro modificado.")
-                    st.session_state["mostrar_descarga"] = False
-                    st.rerun()
-            if st.button("🗑️ Eliminar Registro", key="btn_del_fin"):
-                if eliminar_registro("finanzas", "id", id_seleccionado):
-                    st.warning("Registro eliminado.")
-                    st.session_state["mostrar_descarga"] = False
-                    st.rerun()
-
-# PESTAÑA EMPLEADOS
-with tabs[1]:
-    st.subheader("Administración de Personal")
-    with st.form("form_empleados", clear_on_submit=True):
-        e_nombre = st.text_input("Nombre del Empleado")
-        e_tel = st.text_input("Teléfono")
-        e_puesto = st.text_input("Puesto")
-        if st.form_submit_button("💾 Guardar Empleado"):
-            if e_nombre.strip() and guardar_registro("empleados", {"nombre": e_nombre.strip(), "telefono": e_tel, "puesto_funcion": e_puesto, "fecha_ingreso": datetime.today().strftime('%Y-%m-%d')}, "nombre"):
-                st.rerun()
-    st.dataframe(df_empleados, use_container_width=True, hide_index=True)
-    if not df_empleados.empty:
-        emp_sel = st.selectbox("Selecciona Empleado para Eliminar:", df_empleados['nombre'].unique())
-        if st.button("🗑️ Eliminar Empleado"):
-            if eliminar_registro("empleados", "nombre", emp_sel): st.rerun()
-
-# PESTAÑA CLIENTES
+        if st.form_submit_button("💾 Guardar Transacción en Serv
