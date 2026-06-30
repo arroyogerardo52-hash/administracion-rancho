@@ -54,7 +54,7 @@ def cargar_tabla(nombre_tabla):
         response = supabase.table(nombre_tabla).select("*").execute()
         return pd.DataFrame(response.data) if response.data else pd.DataFrame()
     except Exception as e:
-        st.error(f"Error al leer {nombre_tabla}: {e}")
+        st.error(f"Error al leer la tabla {nombre_tabla}: {e}")
         return pd.DataFrame()
 
 def guardar_registro(nombre_tabla, datos, llave_primaria):
@@ -62,7 +62,7 @@ def guardar_registro(nombre_tabla, datos, llave_primaria):
         supabase.table(nombre_tabla).upsert(datos, on_conflict=llave_primaria).execute()
         return True
     except Exception as e:
-        st.error(f"Error al guardar en {nombre_tabla}: {e}")
+        st.error(f"Error al guardar en la tabla {nombre_tabla}: {e}")
         return False
 
 def eliminar_registro(nombre_tabla, columna_llave, valor_llave):
@@ -70,10 +70,10 @@ def eliminar_registro(nombre_tabla, columna_llave, valor_llave):
         supabase.table(nombre_tabla).delete().eq(columna_llave, valor_llave).execute()
         return True
     except Exception as e:
-        st.error(f"Error al eliminar en {nombre_tabla}: {e}")
+        st.error(f"Error al eliminar en la tabla {nombre_tabla}: {e}")
         return False
 
-# Carga de datos
+# Carga de datos global
 df_finanzas = cargar_tabla("finanzas")
 df_empleados = cargar_tabla("empleados")
 df_clientes = cargar_tabla("clientes")
@@ -133,15 +133,17 @@ if not df_filtrado.empty:
         "Concepto Financiero": ["Ingresos (Pagado)", "Egresos (Pagado)", "Por Cobrar", "Por Pagar"]
     })
     st.bar_chart(data=datos_barras, x="Concepto Financiero", y="Monto ($)", use_container_width=True)
+else:
+    st.info("No hay datos liquidados en este periodo para graficar por categorías.")
 
 st.markdown("---")
 
 # ==========================================
-# 5. PESTAÑAS OPERATIVAS (TODAS LAS FUNCIONES)
+# 5. PESTAÑAS OPERATIVAS PRINCIPALES
 # ==========================================
 tabs = st.tabs(["📊 Finanzas", "🤠 Empleados", "🤝 Clientes", "🚜 Proveedores", "🐂 Lotes"])
 
-# PESTAÑA 1: FINANZAS
+# --- PESTAÑA 1: FINANZAS ---
 with tabs[0]:
     st.subheader("📝 Registro de Transacciones")
     with st.form("form_finanzas", clear_on_submit=True):
@@ -161,7 +163,7 @@ with tabs[0]:
             f_lote = st.selectbox("Lote Asociado", opciones_lotes)
             f_estado = st.selectbox("Estado del Pago", ["Pagado", "Pendiente"])
             
-        if st.form_submit_button("Guardar Transacción"):
+        if st.form_submit_button("💾 Guardar Transacción en Servidor"):
             auto_id = f"TRA-{datetime.now().strftime('%Y%m%d%H%M%S')}"
             nuevo_registro = {
                 "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat,
@@ -172,86 +174,117 @@ with tabs[0]:
                 st.success("¡Transacción registrada exitosamente!")
                 st.rerun()
 
-    st.write("### Historial de Movimientos")
+    st.write("### Historial General de Movimientos")
     st.dataframe(df_finanzas, use_container_width=True, hide_index=True)
 
     if not df_finanzas.empty:
         st.write("#### 🗑️ Eliminar Registro Financiero")
-        id_eliminar = st.selectbox("Selecciona ID a eliminar:", df_finanzas['id'].unique())
-        if st.button("Confirmar Eliminación Transacción"):
+        id_eliminar = st.selectbox("Selecciona ID de Transacción a eliminar:", df_finanzas['id'].unique())
+        if st.button("Confirmar Eliminación de Transacción"):
             if eliminar_registro("finanzas", "id", id_eliminar):
-                st.success("Registro eliminado.")
+                st.success("Registro eliminado correctamente.")
                 st.rerun()
 
-# PESTAÑA 2: EMPLEADOS
+    # --- SECCIÓN DE EXPORTACIÓN Y REPORTE REINSTALADA ---
+    st.markdown("---")
+    st.header("📝 Exportar Estado de Cuenta Oficial")
+    
+    if st.button("📝 Compilar Plantilla Institucional con Logotipo"):
+        fecha_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+        
+        # Tabla de Finanzas en HTML estructurado
+        tabla_html = ""
+        if not df_filtrado.empty:
+            tabla_html += """
+            <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%; border: 1px solid #dddddd;">
+                <thead>
+                    <tr style="background-color: #f8f9fa; text-align: left;">
+                        <th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Concepto</th><th>Monto</th><th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
+            for _, row in df_filtrado.iterrows():
+                color_tipo = "green" if row.get('tipo') == "Ingreso" else "red"
+                tabla_html += f"""
+                    <tr>
+                        <td>{row.get('fecha','')}</td>
+                        <td style="color: {color_tipo}; font-weight: bold;">{row.get('tipo','')}</td>
+                        <td>{row.get('categoria','')}</td>
+                        <td>{row.get('concepto','')}</td>
+                        <td>${float(row.get('monto',0)):,.2f}</td>
+                        <td>{row.get('estado_deuda','')}</td>
+                    </tr>
+                """
+            tabla_html += "</tbody></table>"
+        else:
+            tabla_html = "<p>No hay transacciones registradas en este periodo.</p>"
+
+        # Reporte HTML Final sin usar componentes experimentales que rompan Streamlit
+        html_documento = f"""
+        <div style="font-family: Arial, sans-serif; color: #333333; padding: 20px; border: 1px solid #eee;">
+            <table style="width: 100%; border-bottom: 2px solid #5c4033; padding-bottom: 10px;">
+                <tr>
+                    <td>
+                        <h1 style="color: #5c4033; margin: 0;">RANCHO AE</h1>
+                        <p style="font-style: italic; margin: 5px 0 0 0; color: #666;">Desarrollo Genético y Engorda Comercial</p>
+                        <p style="margin: 2px 0; font-size: 12px; color: #888;">Reporte Consolidado de Administración</p>
+                    </td>
+                    <td style="text-align: right; vertical-align: middle;">
+                        <img src="https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?q=80&w=200" width="120" style="border-radius: 8px;" alt="Logo"/>
+                    </td>
+                </tr>
+            </table>
+            <br>
+            <p><strong>Fecha de Emisión:</strong> {fecha_str}</p>
+            <p>Este informe detalla el estado financiero integral extraído de forma segura desde los servidores de administración.</p>
+            
+            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px;">1. Resumen de Saldos Monetarios</h2>
+            <ul>
+                <li><strong>Ingresos Liquidados:</strong> ${ingresos:,.2f}</li>
+                <li><strong>Egresos Liquidados:</strong> ${egresos:,.2f}</li>
+                <li><strong>Balance Neto Actual:</strong> ${balance_neto:,.2f}</li>
+                <li><strong>Cuentas por Cobrar Pendientes:</strong> ${por_cobrar:,.2f}</li>
+                <li><strong>Cuentas por Pagar Pendientes:</strong> ${por_pagar:,.2f}</li>
+            </ul>
+            
+            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px;">2. Desglose del Historial</h2>
+            {tabla_html}
+        </div>
+        """
+        st.session_state["reporte_html"] = html_documento
+        st.success("¡Estructura de la plantilla con logotipo lista para ser exportada!")
+
+    # El expansor ahora muestra el reporte de forma segura como código limpio
+    if "reporte_html" in st.session_state:
+        with st.expander("👁️ Previsualizar Formato del Documento"):
+            st.code(st.session_state["reporte_html"], language="html")
+        
+        b64 = base64.b64encode(st.session_state["reporte_html"].encode()).decode()
+        href = f'<a href="data:text/html;base64,{b64}" download="Estado_Cuenta_Rancho_AE.html" style="text-decoration: none;"><button style="background-color: #5c4033; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">📥 Descargar Estado de Cuenta en HTML</button></a>'
+        st.markdown(href, unsafe_allowed_html=True)
+
+# --- PESTAÑA 2: EMPLEADOS ---
 with tabs[1]:
     st.subheader("🤠 Control de Personal")
     with st.form("form_empleados", clear_on_submit=True):
-        e_nombre = st.text_input("Nombre Completo")
-        e_tel = st.text_input("Teléfono")
-        e_puesto = st.text_input("Puesto / Función")
-        if st.form_submit_button("Guardar Empleado"):
+        e_nombre = st.text_input("Nombre Completo del Trabajador")
+        e_tel = st.text_input("Teléfono de Contacto")
+        e_puesto = st.text_input("Puesto / Función en el Rancho")
+        if st.form_submit_button("💾 Guardar Empleado"):
             if e_nombre.strip():
-                datos_emp = {"nombre": e_nombre.strip(), "telefono": e_tel, "puesto_funcion": e_puesto, "fecha_ingreso": datetime.today().strftime('%Y-%m-%d')}
+                datos_emp = {
+                    "nombre": e_nombre.strip(),
+                    "telefono": e_tel,
+                    "puesto_funcion": e_puesto,
+                    "fecha_ingreso": datetime.today().strftime('%Y-%m-%d')
+                }
                 if guardar_registro("empleados", datos_emp, "nombre"):
-                    st.success("Empleado guardado.")
+                    st.success("Empleado registrado de manera segura.")
                     st.rerun()
+            else:
+                st.warning("El nombre es un campo obligatorio.")
+
     st.dataframe(df_empleados, use_container_width=True, hide_index=True)
     if not df_empleados.empty:
-        emp_sel = st.selectbox("Selecciona para eliminar:", df_empleados['nombre'].unique(), key="del_emp")
-        if st.button("Eliminar Empleado"):
-            if eliminar_registro("empleados", "nombre", emp_sel): st.rerun()
-
-# PESTAÑA 3: CLIENTES
-with tabs[2]:
-    st.subheader("🤝 Registro de Clientes")
-    with st.form("form_clientes", clear_on_submit=True):
-        c_nombre = st.text_input("Nombre / Razón Social")
-        c_tel = st.text_input("Teléfono")
-        if st.form_submit_button("Guardar Cliente"):
-            if c_nombre.strip():
-                datos_cli = {"nombre_razon": c_nombre.strip(), "telefono": c_tel}
-                if guardar_registro("clientes", datos_cli, "nombre_razon"):
-                    st.success("Cliente guardado.")
-                    st.rerun()
-    st.dataframe(df_clientes, use_container_width=True, hide_index=True)
-    if not df_clientes.empty:
-        cli_sel = st.selectbox("Selecciona para eliminar:", df_clientes['nombre_razon'].unique(), key="del_cli")
-        if st.button("Eliminar Cliente"):
-            if eliminar_registro("clientes", "nombre_razon", cli_sel): st.rerun()
-
-# PESTAÑA 4: PROVEEDORES
-with tabs[3]:
-    st.subheader("🚜 Catálogo de Proveedores")
-    with st.form("form_proveedores", clear_on_submit=True):
-        p_nombre = st.text_input("Nombre de la Empresa")
-        p_insumo = st.text_input("Insumo Principal")
-        if st.form_submit_button("Guardar Proveedor"):
-            if p_nombre.strip():
-                datos_prov = {"nombre_proveedor": p_nombre.strip(), "insumo_principal": p_insumo}
-                if guardar_registro("proveedores", datos_prov, "nombre_proveedor"):
-                    st.success("Proveedor guardado.")
-                    st.rerun()
-    st.dataframe(df_proveedores, use_container_width=True, hide_index=True)
-    if not df_proveedores.empty:
-        prov_sel = st.selectbox("Selecciona para eliminar:", df_proveedores['nombre_proveedor'].unique(), key="del_prov")
-        if st.button("Eliminar Proveedor"):
-            if eliminar_registro("proveedores", "nombre_proveedor", prov_sel): st.rerun()
-
-# PESTAÑA 5: LOTES
-with tabs[4]:
-    st.subheader("🐂 Control de Lotes de Ganado")
-    with st.form("form_lotes", clear_on_submit=True):
-        l_nombre = st.text_input("Código o Nombre del Lote")
-        l_desc = st.text_area("Notas / Especificaciones")
-        if st.form_submit_button("Guardar Lote"):
-            if l_nombre.strip():
-                datos_lote = {"nombre_lote": l_nombre.strip(), "descripcion_notas": l_desc, "fecha_creacion": datetime.today().strftime('%Y-%m-%d')}
-                if guardar_registro("lotes", datos_lote, "nombre_lote"):
-                    st.success("Lote guardado.")
-                    st.rerun()
-    st.dataframe(df_lotes, use_container_width=True, hide_index=True)
-    if not df_lotes.empty:
-        lote_sel = st.selectbox("Selecciona para eliminar:", df_lotes['nombre_lote'].unique(), key="del_lote")
-        if st.button("Eliminar Lote"):
-            if eliminar_registro("lotes", "nombre_lote", lote_sel): st.rerun()
+        st
