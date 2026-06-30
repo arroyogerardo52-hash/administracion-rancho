@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import json
+import sqlite3
 import io
 
 # ==========================================
@@ -9,32 +9,103 @@ import io
 # ==========================================
 st.set_page_config(page_title="Rancho AE - Administración", page_icon="🤠", layout="wide")
 
-st.title("🤠 Rancho AE: Sistema de Administración Nacio")
+st.title("🤠 Rancho AE: Sistema de Administración")
 st.markdown("---")
 
 # ==========================================
-# 2. FUNCIONES DE ALMACENAMIENTO INTERNO (STREAMLIT CLOUD)
+# 2. CONFIGURACIÓN Y FUNCIONES DE SQLITE
 # ==========================================
-def cargar_tabla_interna(nombre_tabla):
+DB_NAME = "rancho_ae.db"
+
+def inicializar_base_datos():
+    """Crea las tablas de forma permanente si no existen al iniciar la app"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Tabla Finanzas
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS finanzas (
+            id TEXT PRIMARY KEY,
+            fecha TEXT,
+            tipo TEXT,
+            categoria TEXT,
+            concepto TEXT,
+            monto REAL,
+            metodo_pago TEXT,
+            lote_asociado TEXT,
+            estado_deuda TEXT,
+            fecha_vencimiento TEXT
+        )
+    """)
+    
+    # Tabla Empleados
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS empleados (
+            nombre TEXT PRIMARY KEY,
+            telefono TEXT,
+            puesto_funcion TEXT,
+            fecha_ingreso TEXT
+        )
+    """)
+    
+    # Tabla Clientes
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS clientes (
+            nombre_razon TEXT PRIMARY KEY,
+            contacto TEXT,
+            telefono TEXT,
+            notas TEXT
+        )
+    """)
+    
+    # Tabla Proveedores
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS proveedores (
+            nombre_proveedor TEXT PRIMARY KEY,
+            contacto TEXT,
+            telefono TEXT,
+            insumo_principal TEXT
+        )
+    """)
+    
+    # Tabla Lotes
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lotes (
+            nombre_lote TEXT PRIMARY KEY,
+            descripcion_notas TEXT,
+            fecha_creacion TEXT
+        )
+    """)
+    
+    conn.commit()
+    conn.close()
+
+def ejecutar_query(query, params=(), retornar_df=False):
+    """Función segura para leer o escribir datos sin conflictos"""
+    conn = sqlite3.connect(DB_NAME)
+    resultado = None
     try:
-        # Lee la cadena JSON guardada en los secrets de Streamlit Cloud
-        datos_json = st.secrets["datos_rancho"][nombre_tabla]
-        lista_datos = json.loads(datos_json)
-        return pd.DataFrame(lista_datos)
-    except Exception:
-        # Si está vacío o no se encuentra, regresa un DataFrame limpio
-        return pd.DataFrame()
+        if retornar_df:
+            resultado = pd.read_sql_query(query, conn)
+        else:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            conn.commit()
+    except Exception as e:
+        st.error(f"Error en la base de datos: {e}")
+    finally:
+        conn.close()
+    return resultado
 
-def guardar_tabla_interna(nombre_tabla, df):
-    # Convierte el DataFrame a formato JSON y lo guarda de forma persistente en Streamlit Cloud
-    st.secrets["datos_rancho"][nombre_tabla] = json.dumps(df.to_dict(orient="records"))
+# Asegurar que las tablas existan antes de renderizar la página
+inicializar_base_datos()
 
-# Cargar los datos actuales al iniciar la aplicación
-df_finanzas = cargar_tabla_interna("finanzas")
-df_empleados = cargar_tabla_interna("empleados")
-df_clientes = cargar_tabla_interna("clientes")
-df_proveedores = cargar_tabla_interna("proveedores")
-df_lotes = cargar_tabla_interna("lotes")
+# Cargar los datos actuales en DataFrames mediante consultas SQL limpias
+df_finanzas = ejecutar_query("SELECT * FROM finanzas", retornar_df=True)
+df_empleados = ejecutar_query("SELECT * FROM empleados", retornar_df=True)
+df_clientes = ejecutar_query("SELECT * FROM clientes", retornar_df=True)
+df_proveedores = ejecutar_query("SELECT * FROM proveedores", retornar_df=True)
+df_lotes = ejecutar_query("SELECT * FROM lotes", retornar_df=True)
 
 # ==========================================
 # 3. INTERFAZ PRINCIPAL POR PESTAÑAS
@@ -50,7 +121,7 @@ with tabs[0]:
     with st.form("form_finanzas", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
         with col1:
-            f_id = st.text_input("ID Transacción (Único)")
+            f_id = st.text_input("ID Transacción (Único - Clave para evitar pérdidas)")
             f_fecha = st.date_input("Fecha", datetime.today()).strftime('%Y-%m-%d')
             f_tipo = st.selectbox("Tipo", ["Ingreso", "Egreso"])
         with col2:
@@ -59,34 +130,33 @@ with tabs[0]:
             f_monto = st.number_input("Monto ($)", min_value=0.0, step=100.0)
         with col3:
             f_pago = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque", "Crédito"])
-            # Carga dinámica de lotes para asociar
-            opciones_lotes = ["Ninguno"] + list(df_lotes['nombre_lote'].unique()) if not df_lotes.empty else ["Ninguno"]
+            
+            # Carga dinámica y segura de los lotes guardados en la base de datos
+            opciones_lotes = ["Ninguno"]
+            if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
+                opciones_lotes += list(df_lotes['nombre_lote'].dropna().unique())
             f_lote = st.selectbox("Lote Asociado", opciones_lotes)
+            
             f_estado = st.selectbox("Estado Deuda", ["Pagado", "Pendiente"])
             f_venc = st.date_input("Fecha Vencimiento (Si aplica)", datetime.today()).strftime('%Y-%m-%d')
             
         if st.form_submit_button("💾 Guardar Transacción"):
-            if f_id:
-                nuevo_registro = {
-                    "id": f_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat,
-                    "concepto": f_concepto, "monto": f_monto, "metodo_pago": f_pago,
-                    "lote_asociado": f_lote, "estado_deuda": f_estado, "fecha_vencimiento": f_venc
-                }
-                
-                if df_finanzas.empty:
-                    df_nuevo = pd.DataFrame([nuevo_registro])
-                else:
-                    df_nuevo = pd.concat([df_finanzas, pd.DataFrame([nuevo_registro])], ignore_index=True)
-                    df_nuevo = df_nuevo.drop_duplicates(subset=['id'], keep='last')
-                
-                guardar_tabla_interna("finanzas", df_nuevo)
-                st.success("¡Transacción financiera guardada de forma permanente!")
+            if f_id.strip():
+                # INSERT OR REPLACE asegura que si el ID ya existe, actualiza el registro en vez de fallar o duplicar
+                query = """
+                    INSERT OR REPLACE INTO finanzas 
+                    (id, fecha, tipo, categoria, concepto, monto, metodo_pago, lote_asociado, estado_deuda, fecha_vencimiento)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                valores = (f_id.strip(), f_fecha, f_tipo, f_cat, f_concepto, f_monto, f_pago, f_lote, f_estado, f_venc)
+                ejecutar_query(query, valores)
+                st.success("¡Transacción financiera guardada de forma permanente en la base de datos!")
                 st.rerun()
             else:
                 st.error("Por favor, asigna un ID único a la transacción.")
 
     st.markdown("### Historial de Movimientos")
-    st.dataframe(df_finanzas, use_container_width=True)
+    st.dataframe(df_finanzas, use_container_width=True, hide_index=True)
 
 # ------------------------------------------
 # PESTAÑA 2: EMPLEADOS
@@ -104,25 +174,16 @@ with tabs[1]:
             e_ingreso = st.date_input("Fecha de Ingreso", datetime.today()).strftime('%Y-%m-%d')
             
         if st.form_submit_button("💾 Guardar Empleado"):
-            if e_nombre:
-                nuevo_registro = {
-                    "nombre": e_nombre, "telefono": e_tel, "puesto_funcion": e_puesto, "fecha_ingreso": e_ingreso
-                }
-                
-                if df_empleados.empty:
-                    df_nuevo = pd.DataFrame([nuevo_registro])
-                else:
-                    df_nuevo = pd.concat([df_empleados, pd.DataFrame([nuevo_registro])], ignore_index=True)
-                    df_nuevo = df_nuevo.drop_duplicates(subset=['nombre'], keep='last')
-                
-                guardar_tabla_interna("empleados", df_nuevo)
+            if e_nombre.strip():
+                query = "INSERT OR REPLACE INTO empleados (nombre, telefono, puesto_funcion, fecha_ingreso) VALUES (?, ?, ?, ?)"
+                ejecutar_query(query, (e_nombre.strip(), e_tel, e_puesto, e_ingreso))
                 st.success(f"¡Datos de {e_nombre} actualizados con éxito!")
                 st.rerun()
             else:
                 st.error("El nombre es obligatorio.")
 
     st.markdown("### Plantilla Activa")
-    st.dataframe(df_empleados, use_container_width=True)
+    st.dataframe(df_empleados, use_container_width=True, hide_index=True)
 
 # ------------------------------------------
 # PESTAÑA 3: CLIENTES
@@ -140,25 +201,16 @@ with tabs[2]:
             c_notas = st.text_area("Notas / Condiciones Comerciales")
             
         if st.form_submit_button("💾 Guardar Cliente"):
-            if c_nombre:
-                nuevo_registro = {
-                    "nombre_razon": c_nombre, "contacto": c_contacto, "telefono": c_tel, "notas": c_notas
-                }
-                
-                if df_clientes.empty:
-                    df_nuevo = pd.DataFrame([nuevo_registro])
-                else:
-                    df_nuevo = pd.concat([df_clientes, pd.DataFrame([nuevo_registro])], ignore_index=True)
-                    df_nuevo = df_nuevo.drop_duplicates(subset=['nombre_razon'], keep='last')
-                
-                guardar_tabla_interna("clientes", df_nuevo)
+            if c_nombre.strip():
+                query = "INSERT OR REPLACE INTO clientes (nombre_razon, contacto, telefono, notas) VALUES (?, ?, ?, ?)"
+                ejecutar_query(query, (c_nombre.strip(), c_contacto, c_tel, c_notas))
                 st.success("¡Cliente guardado exitosamente!")
                 st.rerun()
             else:
                 st.error("El nombre o razón social es requerido.")
 
     st.markdown("### Directorio de Clientes")
-    st.dataframe(df_clientes, use_container_width=True)
+    st.dataframe(df_clientes, use_container_width=True, hide_index=True)
 
 # ------------------------------------------
 # PESTAÑA 4: PROVEEDORES
@@ -176,25 +228,16 @@ with tabs[3]:
             p_insumo = st.text_input("Insumo Principal (Ej: Alimentos, Medicinas)")
             
         if st.form_submit_button("💾 Guardar Proveedor"):
-            if p_nombre:
-                nuevo_registro = {
-                    "nombre_proveedor": p_nombre, "contacto": p_contacto, "telefono": p_tel, "insumo_principal": p_insumo
-                }
-                
-                if df_proveedores.empty:
-                    df_nuevo = pd.DataFrame([nuevo_registro])
-                else:
-                    df_nuevo = pd.concat([df_proveedores, pd.DataFrame([nuevo_registro])], ignore_index=True)
-                    df_nuevo = df_nuevo.drop_duplicates(subset=['nombre_proveedor'], keep='last')
-                
-                guardar_tabla_interna("proveedores", df_nuevo)
+            if p_nombre.strip():
+                query = "INSERT OR REPLACE INTO proveedores (nombre_proveedor, contacto, telefono, insumo_principal) VALUES (?, ?, ?, ?)"
+                ejecutar_query(query, (p_nombre.strip(), p_contacto, p_tel, p_insumo))
                 st.success("¡Proveedor almacenado correctamente!")
                 st.rerun()
             else:
                 st.error("El nombre del proveedor es obligatorio.")
 
     st.markdown("### Lista de Proveedores Autorizados")
-    st.dataframe(df_proveedores, use_container_width=True)
+    st.dataframe(df_proveedores, use_container_width=True, hide_index=True)
 
 # ------------------------------------------
 # PESTAÑA 5: LOTES
@@ -208,34 +251,25 @@ with tabs[4]:
         l_creacion = st.date_input("Fecha de Creación", datetime.today()).strftime('%Y-%m-%d')
         
         if st.form_submit_button("💾 Guardar Lote"):
-            if l_nombre:
-                nuevo_registro = {
-                    "nombre_lote": l_nombre, "descripcion_notas": l_desc, "fecha_creacion": l_creacion
-                }
-                
-                if df_lotes.empty:
-                    df_nuevo = pd.DataFrame([nuevo_registro])
-                else:
-                    df_nuevo = pd.concat([df_lotes, pd.DataFrame([nuevo_registro])], ignore_index=True)
-                    df_nuevo = df_nuevo.drop_duplicates(subset=['nombre_lote'], keep='last')
-                
-                guardar_tabla_interna("lotes", df_nuevo)
+            if l_nombre.strip():
+                query = "INSERT OR REPLACE INTO lotes (nombre_lote, descripcion_notas, fecha_creacion) VALUES (?, ?, ?)"
+                ejecutar_query(query, (l_nombre.strip(), l_desc, l_creacion))
                 st.success(f"¡Lote '{l_nombre}' registrado permanentemente!")
                 st.rerun()
             else:
                 st.error("El nombre del lote es obligatorio.")
 
     st.markdown("### Lotes Activos en el Rancho")
-    st.dataframe(df_lotes, use_container_width=True)
+    st.dataframe(df_lotes, use_container_width=True, hide_index=True)
 
 # ==========================================
-# 4. BARRA LATERAL: EXPORTACIÓN ADICIONAL
+# 4. BARRA LATERAL: RESPALDO Y EXPORTACIÓN
 # ==========================================
 with st.sidebar:
     st.header("⚙️ Herramientas")
-    st.markdown("Aunque tus datos ya están seguros dentro de Streamlit Cloud, puedes descargar una copia local en Excel cuando lo desees:")
+    st.markdown("Tu información se escribe directamente en la base de datos interna de la app de forma segura.")
+    st.markdown("Puedes descargar un respaldo completo en Excel de todas tus tablas aquí:")
     
-    # Crear un excel con todas las pestañas juntas en memoria
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
         df_finanzas.to_excel(writer, sheet_name='Finanzas', index=False)
