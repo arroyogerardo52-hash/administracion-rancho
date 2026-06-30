@@ -213,7 +213,6 @@ if not df_finanzas.empty:
 
     if st.session_state["mostrar_descarga"]:
         with st.expander("👁️ Previsualizar Formato HTML del Documento"):
-            # CORREGIDO AQUÍ: unsafe_allow_html=True
             st.markdown(st.session_state["reporte_html"], unsafe_allow_html=True)
 else:
     st.info("💡 Registra movimientos en la pestaña de finanzas para generar el balance corporativo.")
@@ -287,7 +286,7 @@ with tabs[0]:
                     st.session_state["mostrar_descarga"] = False
                     st.rerun()
 
-# Pestañas operativas
+# PESTAÑA EMPLEADOS
 with tabs[1]:
     st.subheader("Administración de Personal")
     with st.form("form_empleados", clear_on_submit=True):
@@ -300,4 +299,29 @@ with tabs[1]:
     st.dataframe(df_empleados, use_container_width=True, hide_index=True)
     if not df_empleados.empty:
         emp_sel = st.selectbox("Selecciona Empleado para Eliminar:", df_empleados['nombre'].unique())
-        if st.button("
+        if st.button("🗑️ Eliminar Empleado"):
+            if eliminar_registro("empleados", "nombre", emp_sel):
+                st.rerun()
+
+# PESTAÑA CLIENTES
+with tabs[2]:
+    st.subheader("Registro de Clientes")
+    with st.form("form_clientes", clear_on_submit=True):
+        c_nombre = st.text_input("Razón Social")
+        c_tel = st.text_input("Teléfono")
+        if st.form_submit_button("💾 Guardar Cliente"):
+            if c_nombre.strip() and guardar_registro("clientes", {"nombre_razon": c_nombre.strip(), "telefono": c_tel}, "nombre_razon"):
+                st.rerun()
+    st.dataframe(df_clientes, use_container_width=True, hide_index=True)
+    if not df_clientes.empty:
+        cli_sel = st.selectbox("Selecciona Cliente para Eliminar:", df_clientes['nombre_razon'].unique())
+        if st.button("🗑️ Eliminar Cliente"):
+            if eliminar_registro("clientes", "nombre_razon", cli_sel):
+                st.rerun()
+
+# PESTAÑA PROVEEDORES
+with tabs[3]:
+    st.subheader("Catálogo de Proveedores")
+    with st.form("form_proveedores", clear_on_submit=True):
+        p_nombre = st.text_input("Nombre del Proveedor")
+        p_insumo = st.text_input("Insumo Principal")
