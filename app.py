@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import io
 import base64
 
@@ -129,55 +129,17 @@ if "mostrar_descarga" not in st.session_state:
 # ==========================================
 st.header("📊 Balance y Control General Financiero")
 
-# --- NUEVA SECCIÓN DE FILTROS TEMPORALES ---
-col_f1, col_f2 = st.columns([2, 3])
-with col_f1:
-    periodo = st.selectbox(
-        "📆 Rango del Balance:",
-        ["Todo el Historial", "Semana Actual", "Mes Actual", "Año Actual", "Búsqueda Personalizada"]
-    )
-
-df_filtrado = df_finanzas.copy()
-hoy = datetime.today().date()
-fecha_inicio, fecha_fin = None, None
-
-if periodo == "Semana Actual":
-    fecha_inicio = hoy - timedelta(days=hoy.weekday())
-    fecha_fin = fecha_inicio + timedelta(days=6)
-elif periodo == "Mes Actual":
-    fecha_inicio = hoy.replace(day=1)
-    next_month = hoy.replace(day=28) + timedelta(days=4)
-    fecha_fin = next_month - timedelta(days=next_month.day)
-elif periodo == "Año Actual":
-    fecha_inicio = hoy.replace(month=1, day=1)
-    fecha_fin = hoy.replace(month=12, day=31)
-elif periodo == "Búsqueda Personalizada":
-    with col_f2:
-        c_f1, c_f2 = st.columns(2)
-        with c_f1:
-            fecha_inicio = st.date_input("Desde:", hoy - timedelta(days=30))
-        with c_f2:
-            fecha_fin = st.date_input("Hasta:", hoy)
-
-# Aplicar filtros de fecha si corresponde
-if not df_filtrado.empty and 'fecha' in df_filtrado.columns:
-    df_filtrado['fecha'] = pd.to_datetime(df_filtrado['fecha']).dt.date
-    if fecha_inicio and fecha_fin:
-        if isinstance(fecha_inicio, datetime): fecha_inicio = fecha_inicio.date()
-        if isinstance(fecha_fin, datetime): fecha_fin = fecha_fin.date()
-        df_filtrado = df_filtrado[(df_filtrado['fecha'] >= fecha_inicio) & (df_filtrado['fecha'] <= fecha_fin)]
-
 ingresos, egresos, balance_neto, por_cobrar, por_pagar = 0.0, 0.0, 0.0, 0.0, 0.0
 
-if not df_filtrado.empty:
-    df_filtrado['monto'] = pd.to_numeric(df_filtrado['monto'], errors='coerce').fillna(0.0)
+if not df_finanzas.empty:
+    df_finanzas['monto'] = pd.to_numeric(df_finanzas['monto'], errors='coerce').fillna(0.0)
     
-    ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
-    egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
+    ingresos = df_finanzas[(df_finanzas['tipo'] == 'Ingreso') & (df_finanzas['estado_deuda'] == 'Pagado')]['monto'].sum()
+    egresos = df_finanzas[(df_finanzas['tipo'] == 'Egreso') & (df_finanzas['estado_deuda'] == 'Pagado')]['monto'].sum()
     balance_neto = ingresos - egresos
     
-    por_cobrar = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
-    por_pagar = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
+    por_cobrar = df_finanzas[(df_finanzas['tipo'] == 'Ingreso') & (df_finanzas['estado_deuda'] == 'Pendiente')]['monto'].sum()
+    por_pagar = df_finanzas[(df_finanzas['tipo'] == 'Egreso') & (df_finanzas['estado_deuda'] == 'Pendiente')]['monto'].sum()
     
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("🟢 Ingresos Reales", f"${ingresos:,.2f}")
@@ -185,25 +147,6 @@ if not df_filtrado.empty:
     m3.metric("💰 Balance Neto Actual", f"${balance_neto:,.2f}", delta=f"${balance_neto:,.2f}" if balance_neto >= 0 else f"${balance_neto:,.2f}", delta_color="normal" if balance_neto >= 0 else "inverse")
     m4.metric("📈 Por Cobrar (Clientes)", f"${por_cobrar:,.2f}")
     m5.metric("📉 Por Pagar (Proveedores)", f"${por_pagar:,.2f}")
-
-    # --- NUEVA SECCIÓN DE GRÁFICOS ---
-    with st.expander("📈 Visualizar Gráficos de Rendimiento Financiero", expanded=False):
-        g1, g2 = st.columns(2)
-        with g1:
-            st.write("#### Distribución de Flujo Efectivo")
-            datos_barras = pd.DataFrame({
-                "Monto ($)": [ingresos, egresos, por_cobrar, por_pagar],
-                "Concepto": ["Ingresos (Pagado)", "Egresos (Pagado)", "Por Cobrar", "Por Pagar"]
-            })
-            st.bar_chart(data=datos_barras, x="Concepto", y="Monto ($)", use_container_width=True)
-        
-        with g2:
-            st.write("#### Gastos/Ingresos por Categoría")
-            if 'categoria' in df_filtrado.columns and not df_filtrado.empty:
-                df_cat = df_filtrado.groupby(['categoria', 'tipo'])['monto'].sum().unstack().fillna(0)
-                st.dataframe(df_cat, use_container_width=True)
-            else:
-                st.info("Sin categorías suficientes en este periodo.")
     
     st.markdown("### 📝 Exportar Estado de Cuenta Oficial")
     if st.button("📄 Compilar Plantilla Institucional con Logotipo"):
@@ -214,7 +157,7 @@ if not df_filtrado.empty:
                     <td style="width: 70%; vertical-align: middle;">
                         <h1 style="margin: 0; color: #5c4033; font-size: 22pt;">RANCHO AE</h1>
                         <p style="margin: 4px 0; font-style: italic; color: #666666; font-size: 11pt;">Desarrollo Genético y Engorda Comercial</p>
-                        <p style="margin: 2px 0; font-size: 11pt;"><strong>Reporte Consolidado de Administración ({periodo})</strong></p>
+                        <p style="margin: 2px 0; font-size: 11pt;"><strong>Reporte Consolidado de Administración</strong></p>
                     </td>
                     <td style="width: 30%; text-align: right; vertical-align: middle;">
                         <img src="{logo_html_src}" style="width: 120px; max-height: 120px; object-fit: contain;" alt="Logo">
@@ -238,16 +181,16 @@ if not df_filtrado.empty:
                     <tr><td style="padding: 8px;">🟢 Ingresos Consolidados (Liquidados)</td><td style="padding: 8px;"><strong>${ingresos:,.2f}</strong></td></tr>
                     <tr><td style="padding: 8px;">🔴 Egresos Consolidados (Liquidados)</td><td style="padding: 8px;"><strong>${egresos:,.2f}</strong></td></tr>
                     <tr style="background-color: #f1f3f5;"><td style="padding: 8px;"><strong>💰 Balance Neto Comercial</strong></td><td style="padding: 8px;"><strong style="color: {'#2b8a3e' if balance_neto >= 0 else '#c92a2a'};">${balance_neto:,.2f}</strong></td></tr>
-                    <tr><td style="padding: 8px;">📈 Cuentas Pendientes de Cobro</td><td style="padding: 8px;">{por_cobrar:,.2f}</td></tr>
-                    <tr><td style="padding: 8px;">📉 Cuentas Pendientes de Pago</td><td style="padding: 8px;">{por_pagar:,.2f}</td></tr>
+                    <tr><td style="padding: 8px;">📈 Cuentas Pendientes de Cobro</td><td style="padding: 8px;">${por_cobrar:,.2f}</td></tr>
+                    <tr><td style="padding: 8px;">📉 Cuentas Pendientes de Pago</td><td style="padding: 8px;">${por_pagar:,.2f}</td></tr>
                 </tbody>
             </table>
             
             <br>
-            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px; font-size: 14pt; margin-top: 20px;">2. Libro Diario Reciente Filtrado</h2>
+            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px; font-size: 14pt; margin-top: 20px;">2. Libro Diario Reciente</h2>
         """
         
-        if not df_filtrado.empty:
+        if not df_finanzas.empty:
             html_template += """
             <table border="1" cellpadding="6" style="border-collapse: collapse; width: 100%; border: 1px solid #dddddd; font-size: 9.5pt;">
                 <thead>
@@ -257,7 +200,7 @@ if not df_filtrado.empty:
                 </thead>
                 <tbody>
             """
-            for _, r in df_filtrado.head(30).iterrows():
+            for _, r in df_finanzas.head(15).iterrows():
                 html_template += f"""
                 <tr>
                     <td style="padding: 6px;">{r.get('id','')}</td>
@@ -273,4 +216,178 @@ if not df_filtrado.empty:
         
         html_template += """
             <br><br>
-            <table style="width: 100%; margin-top: 40px; text-align: center; font-size: 11
+            <table style="width: 100%; margin-top: 40px; text-align: center; font-size: 11pt;">
+                <tr>
+                    <td style="width: 50%;">___________________________________<br>Dirección General de Operaciones</td>
+                    <td style="width: 50%;">___________________________________<br>Control Interno y Auditoría</td>
+                </tr>
+            </table>
+        </div>
+        """
+        st.session_state["reporte_html"] = html_template
+        st.session_state["mostrar_descarga"] = True
+        st.success("¡Estructura de la plantilla con logotipo lista para ser exportada!")
+
+    if st.session_state["mostrar_descarga"]:
+        with st.expander("👁️ Previsualizar Formato HTML del Documento", expanded=True):
+            # Usar st.components.v1.html aísla el código HTML y evita errores de renderizado de texto/marcado
+            st.components.v1.html(st.session_state["reporte_html"], height=500, scrolling=True)
+            
+            st.markdown("### 📋 Instrucciones para copiar a Google Documentos:")
+            st.info("Para llevar este reporte a Google Docs manteniendo el logotipo y los cuadros financieros intactos: "
+                    "\n1. Haz clic dentro del recuadro de previsualización superior."
+                    "\n2. Presiona `Ctrl + A` (o `Cmd + A` en Mac) para seleccionar todo y luego `Ctrl + C` para copiar."
+                    "\n3. Ve a tu archivo de Google Documentos vacío y presiona `Ctrl + V` para pegar de forma directa.")
+else:
+    st.info("💡 Registra movimientos en la pestaña de finanzas para generar el balance corporativo.")
+
+st.markdown("---")
+
+# ==========================================
+# 5. PESTAÑAS OPERATIVAS
+# ==========================================
+tabs = st.tabs(["📊 Finanzas", "🤠 Empleados", "🤝 Clientes", "🚜 Proveedores", "🐂 Lotes"])
+
+# PESTAÑA FINANZAS
+with tabs[0]:
+    st.subheader("Registro Financiero Automático")
+    with st.form("form_finanzas", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            f_fecha = st.date_input("Fecha Transacción", datetime.today()).strftime('%Y-%m-%d')
+            f_tipo = st.selectbox("Tipo de Movimiento", ["Ingreso", "Egreso"])
+            f_cat = st.text_input("Categoría (Ej: Alimento, Venta Animales)")
+            f_concepto = st.text_input("Concepto / Descripción")
+        with col2:
+            f_monto = st.number_input("Monto total ($)", min_value=0.0, step=100.0)
+            f_pago = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque", "Crédito"])
+            opciones_lotes = ["Ninguno"]
+            if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
+                opciones_lotes += list(df_lotes['nombre_lote'].dropna().unique())
+            f_lote = st.selectbox("Lote Asociado", opciones_lotes)
+            f_estado = st.selectbox("Estado del Pago", ["Pagado", "Pendiente"])
+            f_venc = st.date_input("Fecha Vencimiento", datetime.today()).strftime('%Y-%m-%d')
+            
+        if st.form_submit_button("💾 Guardar Transacción"):
+            auto_id = f"TRA-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 100000}"
+            nuevo_registro = {
+                "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat,
+                "concepto": f_concepto, "monto": float(f_monto), "metodo_pago": f_pago,
+                "lote_asociado": f_lote, "estado_deuda": f_estado, "fecha_vencimiento": f_venc
+            }
+            if guardar_registro("finanzas", nuevo_registro, "id"):
+                st.success(f"¡Transacción registrada con ID: {auto_id}!")
+                st.session_state["mostrar_descarga"] = False
+                st.rerun()
+
+    st.markdown("### Historial de Movimientos")
+    if not df_finanzas.empty:
+        df_finanzas = df_finanzas.reindex(columns=["id", "fecha", "tipo", "categoria", "concepto", "monto", "metodo_pago", "lote_asociado", "estado_deuda", "fecha_vencimiento"])
+    st.dataframe(df_finanzas, use_container_width=True, hide_index=True)
+
+    if not df_finanzas.empty:
+        st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
+        id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
+        fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
+        c1, c2, c3 = st.columns([2, 2, 1])
+        with c1:
+            nuevo_estado = st.selectbox("Cambiar Estado Pago a:", ["Pagado", "Pendiente"], index=["Pagado", "Pendiente"].index(fila_sel['estado_deuda']), key="est_fin")
+        with c2:
+            nuevo_monto = st.number_input("Corregir Monto ($):", min_value=0.0, value=float(fila_sel['monto']), key="mon_fin")
+        with c3:
+            st.write("")
+            st.write("")
+            if st.button("🔄 Actualizar", key="btn_up_fin"):
+                fila_sel['estado_deuda'] = nuevo_estado
+                fila_sel['monto'] = nuevo_monto
+                if guardar_registro("finanzas", fila_sel.to_dict(), "id"):
+                    st.success("Registro modificado.")
+                    st.session_state["mostrar_descarga"] = False
+                    st.rerun()
+            if st.button("🗑️ Eliminar Registro", key="btn_del_fin"):
+                if eliminar_registro("finanzas", "id", id_seleccionado):
+                    st.warning("Registro eliminado.")
+                    st.session_state["mostrar_descarga"] = False
+                    st.rerun()
+
+# PESTAÑA EMPLEADOS
+with tabs[1]:
+    st.subheader("Administración de Personal")
+    with st.form("form_empleados", clear_on_submit=True):
+        e_nombre = st.text_input("Nombre del Empleado")
+        e_tel = st.text_input("Teléfono")
+        e_puesto = st.text_input("Puesto")
+        if st.form_submit_button("💾 Guardar Empleado"):
+            if e_nombre.strip() and guardar_registro("empleados", {"nombre": e_nombre.strip(), "telefono": e_tel, "puesto_funcion": e_puesto, "fecha_ingreso": datetime.today().strftime('%Y-%m-%d')}, "nombre"):
+                st.rerun()
+    st.dataframe(df_empleados, use_container_width=True, hide_index=True)
+    if not df_empleados.empty:
+        emp_sel = st.selectbox("Selecciona Empleado para Eliminar:", df_empleados['nombre'].unique())
+        if st.button("🗑️ Eliminar Empleado"):
+            if eliminar_registro("empleados", "nombre", emp_sel):
+                st.rerun()
+
+# PESTAÑA CLIENTES
+with tabs[2]:
+    st.subheader("Registro de Clientes")
+    with st.form("form_clientes", clear_on_submit=True):
+        c_nombre = st.text_input("Razón Social")
+        c_tel = st.text_input("Teléfono")
+        if st.form_submit_button("💾 Guardar Cliente"):
+            if c_nombre.strip() and guardar_registro("clientes", {"nombre_razon": c_nombre.strip(), "telefono": c_tel}, "nombre_razon"):
+                st.rerun()
+    st.dataframe(df_clientes, use_container_width=True, hide_index=True)
+    if not df_clientes.empty:
+        cli_sel = st.selectbox("Selecciona Cliente para Eliminar:", df_clientes['nombre_razon'].unique())
+        if st.button("🗑️ Eliminar Cliente"):
+            if eliminar_registro("clientes", "nombre_razon", cli_sel):
+                st.rerun()
+
+# PESTAÑA PROVEEDORES
+with tabs[3]:
+    st.subheader("Catálogo de Proveedores")
+    with st.form("form_proveedores", clear_on_submit=True):
+        p_nombre = st.text_input("Nombre del Proveedor")
+        p_insumo = st.text_input("Insumo Principal")
+        if st.form_submit_button("💾 Guardar Proveedor"):
+            if p_nombre.strip() and guardar_registro("proveedores", {"nombre_proveedor": p_nombre.strip(), "insumo_principal": p_insumo}, "nombre_proveedor"):
+                st.rerun()
+    st.dataframe(df_proveedores, use_container_width=True, hide_index=True)
+    if not df_proveedores.empty:
+        prov_sel = st.selectbox("Selecciona Proveedor para Eliminar:", df_proveedores['nombre_proveedor'].unique())
+        if st.button("🗑️ Eliminar Proveedor"):
+            if eliminar_registro("proveedores", "nombre_proveedor", prov_sel):
+                st.rerun()
+
+# PESTAÑA LOTES
+with tabs[4]:
+    st.subheader("Control de Lotes de Ganado")
+    with st.form("form_lotes", clear_on_submit=True):
+        l_nombre = st.text_input("Código del Lote (Ej: Lote_Sardo_01)")
+        l_desc = st.text_area("Descripción")
+        if st.form_submit_button("💾 Guardar Lote"):
+            if l_nombre.strip() and guardar_registro("lotes", {"nombre_lote": l_nombre.strip(), "descripcion_notas": l_desc, "fecha_creacion": datetime.today().strftime('%Y-%m-%d')}, "nombre_lote"):
+                st.rerun()
+    st.dataframe(df_lotes, use_container_width=True, hide_index=True)
+    if not df_lotes.empty:
+        lote_sel = st.selectbox("Selecciona Lote para Eliminar:", df_lotes['nombre_lote'].unique())
+        if st.button("🗑️ Eliminar Lote"):
+            if eliminar_registro("lotes", "nombre_lote", lote_sel):
+                st.rerun()
+
+# RESPALDO EXCEL EN SIDEBAR
+with st.sidebar:
+    try:
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            df_finanzas.to_excel(writer, sheet_name='Finanzas', index=False)
+            df_empleados.to_excel(writer, sheet_name='Empleados', index=False)
+            df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
+            df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
+            df_lotes.to_excel(writer, sheet_name='Lotes', index=False)
+        st.download_button(
+            label="📥 Descargar Respaldo Excel", data=buffer.getvalue(),
+            file_name=f"Respaldo_Rancho_AE_{datetime.now().strftime('%Y-%m-%d')}.xlsx", mime="application/vnd.ms-excel", use_container_width=True
+        )
+    except Exception:
+        pass
