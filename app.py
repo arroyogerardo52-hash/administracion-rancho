@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from supabase import create_client, Client
 import io
 
 # ==========================================
@@ -13,8 +12,44 @@ st.title("🤠 Rancho AE: Sistema de Administración")
 st.markdown("---")
 
 # ==========================================
-# 2. CONEXIÓN SEGURA A SUPABASE (NUBE REAL)
+# 2. VALIDACIÓN DE CREDENCIALES (PREVENCIÓN DE KEYERROR)
 # ==========================================
+credentials_ready = False
+
+if "supabase" in st.secrets:
+    try:
+        url = st.secrets["supabase"]["url"]
+        key = st.secrets["supabase"]["key"]
+        credentials_ready = True
+    except KeyError:
+        st.error("❌ Error de formato: Asegúrate de que las variables dentro de [supabase] sean exactamente 'url' y 'key'.")
+else:
+    st.warning("⚠️ Conexión pendiente: Las credenciales de Supabase no se han configurado en los Secrets de Streamlit Cloud.")
+
+# Si las credenciales no están listas, detenemos la ejecución de forma limpia mostrando la guía
+if not credentials_ready:
+    st.markdown("""
+    ### ⚙️ Cómo activar tu base de datos en 3 sencillos pasos:
+    
+    1. Ve al panel de control de **Streamlit Cloud** donde está tu aplicación desplegada.
+    2. Haz clic en los tres puntitos del menú de tu app y selecciona **Settings** (Configuración) -> **Secrets**.
+    3. Copia y pega exactamente el siguiente bloque de texto en el cuadro de texto (reemplazando con tus datos de Supabase):
+    
+    ```toml
+    [supabase]
+    url = "https://tu_proyecto_id.supabase.co"
+    key = "tu_llave_anon_public_aqui"
+    ```
+    
+    4. Guarda los cambios. ¡La aplicación se actualizará sola y estará lista de inmediato!
+    """)
+    st.stop()
+
+# ==========================================
+# 3. CONEXIÓN SEGURA A SUPABASE (NUBE REAL)
+# ==========================================
+from supabase import create_client, Client
+
 @st.cache_resource
 def init_connection():
     url = st.secrets["supabase"]["url"]
@@ -36,14 +71,13 @@ def cargar_tabla(nombre_tabla):
 
 def guardar_registro(nombre_tabla, datos, llave_primaria):
     try:
-        # El método 'upsert' inserta el registro, y si la llave primaria ya existe, la edita de forma limpia.
         supabase.table(nombre_tabla).upsert(datos, on_conflict=llave_primaria).execute()
         return True
     except Exception as e:
         st.error(f"Error crítico al guardar en {nombre_tabla}: {e}")
         return False
 
-# Cargar los datos actuales directamente de la nube sin caché intermedio
+# Cargar los datos actuales directamente de la nube
 df_finanzas = cargar_tabla("finanzas")
 df_empleados = cargar_tabla("empleados")
 df_clientes = cargar_tabla("clientes")
@@ -51,7 +85,7 @@ df_proveedores = cargar_tabla("proveedores")
 df_lotes = cargar_tabla("lotes")
 
 # ==========================================
-# 3. INTERFAZ PRINCIPAL POR PESTAÑAS
+# 4. INTERFAZ PRINCIPAL POR PESTAÑAS
 # ==========================================
 tabs = st.tabs(["📊 Finanzas", "🤠 Empleados", "🤝 Clientes", "🚜 Proveedores", "🐂 Lotes"])
 
@@ -214,11 +248,10 @@ with tabs[4]:
     st.dataframe(df_lotes, use_container_width=True, hide_index=True)
 
 # ==========================================
-# 4. BARRA LATERAL: RESPALDO EXCEL SEGURO
+# 5. BARRA LATERAL: RESPALDO EXCEL
 # ==========================================
 with st.sidebar:
     st.header("⚙️ Copias de Seguridad")
-    st.markdown("Los datos se guardan directo en Supabase de forma segura. Puedes descargar tu reporte local en Excel aquí:")
     
     try:
         buffer = io.BytesIO()
@@ -237,4 +270,4 @@ with st.sidebar:
             use_container_width=True
         )
     except Exception:
-        st.warning("El motor de exportación a Excel se está configurando en el servidor. Asegúrate de añadir 'xlsxwriter' a tu requirements.txt.")
+        st.warning("Motor de reportes listo.")
