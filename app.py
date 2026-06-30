@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import io
+import base64
 
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA
@@ -13,13 +14,29 @@ st.set_page_config(page_title="Rancho AE - Administración", page_icon="🤠", l
 # ==========================================
 with st.sidebar:
     st.header("🏢 Imagen Corporativa")
-    logo_url = st.text_input(
-        "URL del Logotipo de la Empresa:",
-        value="https://images.unsplash.com/photo-1516467508483-a7212febe31a?q=80&w=200&auto=format&fit=crop", 
-        help="Pega aquí el enlace de internet de tu imagen (JPG/PNG)"
+    
+    # Opción para cargar el logotipo desde el dispositivo
+    logo_file = st.file_uploader(
+        "Sube el Logotipo de tu Empresa (PNG/JPG):",
+        type=["png", "jpg", "jpeg"],
+        help="Selecciona una imagen desde tu computadora o celular"
     )
-    if logo_url:
-        st.image(logo_url, width=150)
+    
+    # Procesar la imagen cargada y convertirla a Base64 para incrustarla en el HTML
+    logo_html_src = ""
+    if logo_file is not None:
+        try:
+            bytes_data = logo_file.getvalue()
+            base64_encoded = base64.b64encode(bytes_data).decode("utf-8")
+            mime_type = logo_file.type
+            logo_html_src = f"data:{mime_type};base64,{base64_encoded}"
+            st.image(bytes_data, width=150, caption="Logotipo cargado")
+        except Exception as e:
+            st.error(f"Error al procesar la imagen: {e}")
+    else:
+        # Imagen de respaldo por si no se sube un archivo
+        logo_html_src = "https://images.unsplash.com/photo-1516467508483-a7212febe31a?q=80&w=200&auto=format&fit=crop"
+        st.info("💡 Puedes subir tu propio logo arriba. Usando logotipo predeterminado temporalmente.")
     
     st.markdown("---")
     st.header("⚙️ Copias de Seguridad")
@@ -29,8 +46,8 @@ col_title, col_logo = st.columns([4, 1])
 with col_title:
     st.title("🤠 Rancho AE: Sistema de Administración")
 with col_logo:
-    if logo_url:
-        st.image(logo_url, width=100)
+    if logo_file is not None:
+        st.image(logo_file, width=100)
 
 st.markdown("---")
 
@@ -134,51 +151,51 @@ if not df_finanzas.empty:
     st.markdown("### 📝 Exportar Estado de Cuenta Oficial")
     if st.button("📄 Compilar Plantilla Institucional con Logotipo"):
         html_template = f"""
-        <div style="font-family: Arial, sans-serif; line-height: 1.25; color: #333333;">
+        <div style="font-family: Arial, sans-serif; line-height: 1.25; color: #333333; padding: 10px;">
             <table style="width: 100%; border-bottom: 2px solid #5c4033; padding-bottom: 10px;">
                 <tr>
-                    <td style="width: 70%;">
-                        <h1 style="margin: 0; color: #5c4033;">RANCHO AE</h1>
-                        <p style="margin: 4px 0; font-style: italic; color: #666666;">Desarrollo Genético y Engorda Comercial</p>
+                    <td style="width: 70%; vertical-align: middle;">
+                        <h1 style="margin: 0; color: #5c4033; font-size: 22pt;">RANCHO AE</h1>
+                        <p style="margin: 4px 0; font-style: italic; color: #666666; font-size: 11pt;">Desarrollo Genético y Engorda Comercial</p>
                         <p style="margin: 2px 0; font-size: 11pt;"><strong>Reporte Consolidado de Administración</strong></p>
                     </td>
-                    <td style="width: 30%; text-align: right;">
-                        <img src="{logo_url}" style="width: 120px; max-height: 120px; object-fit: contain;" alt="Logo Empresa">
+                    <td style="width: 30%; text-align: right; vertical-align: middle;">
+                        <img src="{logo_html_src}" style="width: 120px; max-height: 120px; object-fit: contain;" alt="Logo">
                     </td>
                 </tr>
             </table>
             
             <br>
-            <p><strong>Fecha de Emisión:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
-            <p>Este informe detalla el estado financiero integral extraído de forma segura desde los servidores de administración.</p>
+            <p style="font-size: 10.5pt;"><strong>Fecha de Emisión:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
+            <p style="font-size: 10.5pt;">Este informe detalla el estado financiero integral extraído de forma segura desde los servidores de administración.</p>
             
-            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px;">1. Resumen de Saldos Monetarios</h2>
-            <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%; border: 1px solid #dddddd;">
+            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px; font-size: 14pt; margin-top: 20px;">1. Resumen de Saldos Monetarios</h2>
+            <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%; border: 1px solid #dddddd; font-size: 11pt;">
                 <thead>
                     <tr style="background-color: #f8f9fa; text-align: left;">
-                        <th>Concepto Operativo</th>
-                        <th>Monto en Cuenta</th>
+                        <th style="padding: 8px;">Concepto Operativo</th>
+                        <th style="padding: 8px;">Monto en Cuenta</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td>🟢 Ingresos Consolidados (Liquidados)</td><td><strong>${ingresos:,.2f}</strong></td></tr>
-                    <tr><td>🔴 Egresos Consolidados (Liquidados)</td><td><strong>${egresos:,.2f}</strong></td></tr>
-                    <tr style="background-color: #f1f3f5;"><td><strong>💰 Balance Neto Comercial</strong></td><td><strong style="color: {'#2b8a3e' if balance_neto >= 0 else '#c92a2a'};">${balance_neto:,.2f}</strong></td></tr>
-                    <tr><td>📈 Cuentas Pendientes de Cobro</td><td>${por_cobrar:,.2f}</td></tr>
-                    <tr><td>📉 Cuentas Pendientes de Pago</td><td>${por_pagar:,.2f}</td></tr>
+                    <tr><td style="padding: 8px;">🟢 Ingresos Consolidados (Liquidados)</td><td style="padding: 8px;"><strong>${ingresos:,.2f}</strong></td></tr>
+                    <tr><td style="padding: 8px;">🔴 Egresos Consolidados (Liquidados)</td><td style="padding: 8px;"><strong>${egresos:,.2f}</strong></td></tr>
+                    <tr style="background-color: #f1f3f5;"><td style="padding: 8px;"><strong>💰 Balance Neto Comercial</strong></td><td style="padding: 8px;"><strong style="color: {'#2b8a3e' if balance_neto >= 0 else '#c92a2a'};">${balance_neto:,.2f}</strong></td></tr>
+                    <tr><td style="padding: 8px;">📈 Cuentas Pendientes de Cobro</td><td style="padding: 8px;">${por_cobrar:,.2f}</td></tr>
+                    <tr><td style="padding: 8px;">📉 Cuentas Pendientes de Pago</td><td style="padding: 8px;">${por_pagar:,.2f}</td></tr>
                 </tbody>
             </table>
             
             <br>
-            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px;">2. Libro Diario Reciente</h2>
+            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px; font-size: 14pt; margin-top: 20px;">2. Libro Diario Reciente</h2>
         """
         
         if not df_finanzas.empty:
             html_template += """
-            <table border="1" cellpadding="6" style="border-collapse: collapse; width: 100%; border: 1px solid #dddddd; font-size: 10pt;">
+            <table border="1" cellpadding="6" style="border-collapse: collapse; width: 100%; border: 1px solid #dddddd; font-size: 9.5pt;">
                 <thead>
-                    <tr style="background-color: #f8f9fa;">
-                        <th>ID Código</th><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Concepto</th><th>Monto</th><th>Estado</th>
+                    <tr style="background-color: #f8f9fa; text-align: left;">
+                        <th style="padding: 6px;">ID Código</th><th style="padding: 6px;">Fecha</th><th style="padding: 6px;">Tipo</th><th style="padding: 6px;">Categoría</th><th style="padding: 6px;">Concepto</th><th style="padding: 6px;">Monto</th><th style="padding: 6px;">Estado</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -186,13 +203,13 @@ if not df_finanzas.empty:
             for _, r in df_finanzas.head(15).iterrows():
                 html_template += f"""
                 <tr>
-                    <td>{r.get('id','')}</td>
-                    <td>{r.get('fecha','')}</td>
-                    <td>{r.get('tipo','')}</td>
-                    <td>{r.get('categoria','')}</td>
-                    <td>{r.get('concepto','')}</td>
-                    <td>${float(r.get('monto',0)):,.2f}</td>
-                    <td style="color: {'#2b8a3e' if r.get('estado_deuda')=='Pagado' else '#e67e22'}; font-weight: bold;">{r.get('estado_deuda','')}</td>
+                    <td style="padding: 6px;">{r.get('id','')}</td>
+                    <td style="padding: 6px;">{r.get('fecha','')}</td>
+                    <td style="padding: 6px;">{r.get('tipo','')}</td>
+                    <td style="padding: 6px;">{r.get('categoria','')}</td>
+                    <td style="padding: 6px;">{r.get('concepto','')}</td>
+                    <td style="padding: 6px;">${float(r.get('monto',0)):,.2f}</td>
+                    <td style="padding: 6px; color: {'#2b8a3e' if r.get('estado_deuda')=='Pagado' else '#e67e22'}; font-weight: bold;">{r.get('estado_deuda','')}</td>
                 </tr>
                 """
             html_template += "</tbody></table>"
@@ -212,8 +229,15 @@ if not df_finanzas.empty:
         st.success("¡Estructura de la plantilla con logotipo lista para ser exportada!")
 
     if st.session_state["mostrar_descarga"]:
-        with st.expander("👁️ Previsualizar Formato HTML del Documento"):
-            st.markdown(st.session_state["reporte_html"], unsafe_allow_html=True)
+        with st.expander("👁️ Previsualizar Formato HTML del Documento", expanded=True):
+            # Usar st.components.v1.html aísla el código HTML y evita errores de renderizado de texto/marcado
+            st.components.v1.html(st.session_state["reporte_html"], height=500, scrolling=True)
+            
+            st.markdown("### 📋 Instrucciones para copiar a Google Documentos:")
+            st.info("Para llevar este reporte a Google Docs manteniendo el logotipo y los cuadros financieros intactos: "
+                    "\n1. Haz clic dentro del recuadro de previsualización superior."
+                    "\n2. Presiona `Ctrl + A` (o `Cmd + A` en Mac) para seleccionar todo y luego `Ctrl + C` para copiar."
+                    "\n3. Ve a tu archivo de Google Documentos vacío y presiona `Ctrl + V` para pegar de forma directa.")
 else:
     st.info("💡 Registra movimientos en la pestaña de finanzas para generar el balance corporativo.")
 
@@ -325,3 +349,45 @@ with tabs[3]:
     with st.form("form_proveedores", clear_on_submit=True):
         p_nombre = st.text_input("Nombre del Proveedor")
         p_insumo = st.text_input("Insumo Principal")
+        if st.form_submit_button("💾 Guardar Proveedor"):
+            if p_nombre.strip() and guardar_registro("proveedores", {"nombre_proveedor": p_nombre.strip(), "insumo_principal": p_insumo}, "nombre_proveedor"):
+                st.rerun()
+    st.dataframe(df_proveedores, use_container_width=True, hide_index=True)
+    if not df_proveedores.empty:
+        prov_sel = st.selectbox("Selecciona Proveedor para Eliminar:", df_proveedores['nombre_proveedor'].unique())
+        if st.button("🗑️ Eliminar Proveedor"):
+            if eliminar_registro("proveedores", "nombre_proveedor", prov_sel):
+                st.rerun()
+
+# PESTAÑA LOTES
+with tabs[4]:
+    st.subheader("Control de Lotes de Ganado")
+    with st.form("form_lotes", clear_on_submit=True):
+        l_nombre = st.text_input("Código del Lote (Ej: Lote_Sardo_01)")
+        l_desc = st.text_area("Descripción")
+        if st.form_submit_button("💾 Guardar Lote"):
+            if l_nombre.strip() and guardar_registro("lotes", {"nombre_lote": l_nombre.strip(), "descripcion_notas": l_desc, "fecha_creacion": datetime.today().strftime('%Y-%m-%d')}, "nombre_lote"):
+                st.rerun()
+    st.dataframe(df_lotes, use_container_width=True, hide_index=True)
+    if not df_lotes.empty:
+        lote_sel = st.selectbox("Selecciona Lote para Eliminar:", df_lotes['nombre_lote'].unique())
+        if st.button("🗑️ Eliminar Lote"):
+            if eliminar_registro("lotes", "nombre_lote", lote_sel):
+                st.rerun()
+
+# RESPALDO EXCEL EN SIDEBAR
+with st.sidebar:
+    try:
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            df_finanzas.to_excel(writer, sheet_name='Finanzas', index=False)
+            df_empleados.to_excel(writer, sheet_name='Empleados', index=False)
+            df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
+            df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
+            df_lotes.to_excel(writer, sheet_name='Lotes', index=False)
+        st.download_button(
+            label="📥 Descargar Respaldo Excel", data=buffer.getvalue(),
+            file_name=f"Respaldo_Rancho_AE_{datetime.now().strftime('%Y-%m-%d')}.xlsx", mime="application/vnd.ms-excel", use_container_width=True
+        )
+    except Exception:
+        pass
