@@ -230,7 +230,6 @@ if not df_finanzas.empty:
 
     if st.session_state["mostrar_descarga"]:
         with st.expander("👁️ Previsualizar Formato HTML del Documento", expanded=True):
-            # Usar st.components.v1.html aísla el código HTML y evita errores de renderizado de texto/marcado
             st.components.v1.html(st.session_state["reporte_html"], height=500, scrolling=True)
             
             st.markdown("### 📋 Instrucciones para copiar a Google Documentos:")
@@ -289,6 +288,7 @@ with tabs[0]:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
         fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
+        
         c1, c2, c3 = st.columns([2, 2, 1])
         with c1:
             nuevo_estado = st.selectbox("Cambiar Estado Pago a:", ["Pagado", "Pendiente"], index=["Pagado", "Pendiente"].index(fila_sel['estado_deuda']), key="est_fin")
@@ -298,10 +298,21 @@ with tabs[0]:
             st.write("")
             st.write("")
             if st.button("🔄 Actualizar", key="btn_up_fin"):
-                fila_sel['estado_deuda'] = nuevo_estado
-                fila_sel['monto'] = nuevo_monto
-                if guardar_registro("finanzas", fila_sel.to_dict(), "id"):
-                    st.success("Registro modificado.")
+                # SOLUCIÓN: Creamos un diccionario explícito extrayendo todos los campos requeridos
+                registro_actualizado = {
+                    "id": str(id_seleccionado),
+                    "fecha": str(fila_sel.get('fecha', '')),
+                    "tipo": str(fila_sel.get('tipo', '')),
+                    "categoria": str(fila_sel.get('categoria', '')),
+                    "concepto": str(fila_sel.get('concepto', '')),
+                    "monto": float(nuevo_monto),
+                    "metodo_pago": str(fila_sel.get('metodo_pago', '')),
+                    "lote_asociado": str(fila_sel.get('lote_asociado', '')),
+                    "estado_deuda": str(nuevo_estado),
+                    "fecha_vencimiento": str(fila_sel.get('fecha_vencimiento', ''))
+                }
+                if guardar_registro("finanzas", registro_actualizado, "id"):
+                    st.success("Registro modificado con éxito.")
                     st.session_state["mostrar_descarga"] = False
                     st.rerun()
             if st.button("🗑️ Eliminar Registro", key="btn_del_fin"):
@@ -377,17 +388,19 @@ with tabs[4]:
 
 # RESPALDO EXCEL EN SIDEBAR
 with st.sidebar:
-    try:
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df_finanzas.to_excel(writer, sheet_name='Finanzas', index=False)
-            df_empleados.to_excel(writer, sheet_name='Empleados', index=False)
-            df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
-            df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
-            df_lotes.to_excel(writer, sheet_name='Lotes', index=False)
-        st.download_button(
-            label="📥 Descargar Respaldo Excel", data=buffer.getvalue(),
-            file_name=f"Respaldo_Rancho_AE_{datetime.now().strftime('%Y-%m-%d')}.xlsx", mime="application/vnd.ms-excel", use_container_width=True
-        )
-    except Exception:
-        pass
+    # Agregamos validación para que no falle el ExcelWriter si no hay registros iniciales
+    if not df_finanzas.empty or not df_empleados.empty or not df_clientes.empty or not df_proveedores.empty or not df_lotes.empty:
+        try:
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                df_finanzas.to_excel(writer, sheet_name='Finanzas', index=False)
+                df_empleados.to_excel(writer, sheet_name='Empleados', index=False)
+                df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
+                df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
+                df_lotes.to_excel(writer, sheet_name='Lotes', index=False)
+            st.download_button(
+                label="📥 Descargar Respaldo Excel", data=buffer.getvalue(),
+                file_name=f"Respaldo_Rancho_AE_{datetime.now().strftime('%Y-%m-%d')}.xlsx", mime="application/vnd.ms-excel", use_container_width=True
+            )
+        except Exception:
+            pass
