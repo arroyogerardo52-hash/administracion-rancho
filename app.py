@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 import base64
 
@@ -129,25 +129,113 @@ if "mostrar_descarga" not in st.session_state:
 # ==========================================
 st.header("📊 Balance y Control General Financiero")
 
-ingresos, egresos, balance_neto, por_cobrar, por_pagar = 0.0, 0.0, 0.0, 0.0, 0.0
-
 if not df_finanzas.empty:
+    # Asegurar el formato correcto de datos numéricos y fechas
     df_finanzas['monto'] = pd.to_numeric(df_finanzas['monto'], errors='coerce').fillna(0.0)
+    df_finanzas['fecha'] = pd.to_datetime(df_finanzas['fecha'], errors='coerce')
     
-    ingresos = df_finanzas[(df_finanzas['tipo'] == 'Ingreso') & (df_finanzas['estado_deuda'] == 'Pagado')]['monto'].sum()
-    egresos = df_finanzas[(df_finanzas['tipo'] == 'Egreso') & (df_finanzas['estado_deuda'] == 'Pagado')]['monto'].sum()
+    # ---------------------------------------------------------
+    # NUEVA FUNCIÓN 2: CONFIGURACIÓN Y FILTRO DE TIEMPO
+    # ---------------------------------------------------------
+    st.subheader("📆 Filtro de Período Temporal")
+    col_filtro, col_fechas = st.columns([2, 3])
+    
+    hoy = datetime.today()
+    fecha_inicio = hoy
+    fecha_fin = hoy
+
+    with col_filtro:
+        periodo = st.selectbox(
+            "Selecciona el período visualizado:",
+            ["Todo el Historial", "Esta Semana", "Este Mes", "Este Año", "Rango Personalizado"]
+        )
+
+    with col_fechas:
+        if periodo == "Esta Semana":
+            fecha_inicio = hoy - timedelta(days=hoy.weekday())
+            fecha_fin = fecha_inicio + timedelta(days=6)
+            st.info(f"Mostrando desde el lunes: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
+        elif periodo == "Este Mes":
+            fecha_inicio = hoy.replace(day=1)
+            next_month = hoy.replace(day=28) + timedelta(days=4)
+            fecha_fin = next_month - timedelta(days=next_month.day)
+            st.info(f"Mostrando el mes en curso: **{fecha_inicio.strftime('%B %Y')}**")
+        elif periodo == "Este Año":
+            fecha_inicio = hoy.replace(month=1, day=1)
+            fecha_fin = hoy.replace(month=12, day=31)
+            st.info(f"Mostrando el año en curso: **{hoy.year}**")
+        elif periodo == "Rango Personalizado":
+            rango_fechas = st.date_input("Selecciona el rango (Inicio - Fin):", [hoy - timedelta(days=30), hoy])
+            if isinstance(rango_fechas, list) and len(rango_fechas) == 2:
+                fecha_inicio, fecha_fin = pd.to_datetime(rango_fechas[0]), pd.to_datetime(rango_fechas[1])
+            elif isinstance(rango_fechas, list) and len(rango_fechas) == 1:
+                fecha_inicio = pd.to_datetime(rango_fechas[0])
+                fecha_fin = fecha_inicio
+        else:
+            st.info("Mostrando la totalidad de los datos registrados.")
+
+    # Aplicar el filtro de fechas seleccionado al DataFrame
+    if periodo != "Todo el Historial":
+        df_filtrado = df_finanzas[(df_finanzas['fecha'] >= pd.to_datetime(fecha_inicio).replace(hour=0, minute=0, second=0)) & 
+                                  (df_finanzas['fecha'] <= pd.to_datetime(fecha_fin).replace(hour=23, minute=59, second=59))]
+    else:
+        df_filtrado = df_finanzas.copy()
+
+    # Volver a calcular métricas usando únicamente los datos filtrados
+    ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
+    egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
     balance_neto = ingresos - egresos
     
-    por_cobrar = df_finanzas[(df_finanzas['tipo'] == 'Ingreso') & (df_finanzas['estado_deuda'] == 'Pendiente')]['monto'].sum()
-    por_pagar = df_finanzas[(df_finanzas['tipo'] == 'Egreso') & (df_finanzas['estado_deuda'] == 'Pendiente')]['monto'].sum()
+    por_cobrar = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
+    por_pagar = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
     
+    # Renderizar tarjetas de métricas en pantalla
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("🟢 Ingresos Reales", f"${ingresos:,.2f}")
     m2.metric("🔴 Egresos Reales", f"${egresos:,.2f}")
-    m3.metric("💰 Balance Neto Actual", f"${balance_neto:,.2f}", delta=f"${balance_neto:,.2f}" if balance_neto >= 0 else f"${balance_neto:,.2f}", delta_color="normal" if balance_neto >= 0 else "inverse")
-    m4.metric("📈 Por Cobrar (Clientes)", f"${por_cobrar:,.2f}")
-    m5.metric("📉 Por Pagar (Proveedores)", f"${por_pagar:,.2f}")
+    m3.metric("💰 Balance Neto", f"${balance_neto:,.2f}", delta=f"${balance_neto:,.2f}" if balance_neto >= 0 else f"${balance_neto:,.2f}", delta_color="normal" if balance_neto >= 0 else "inverse")
+    m4.metric("📈 Por Cobrar", f"${por_cobrar:,.2f}")
+    m5.metric("📉 Por Pagar", f"${por_pagar:,.2f}")
     
+    # ---------------------------------------------------------
+    # NUEVA FUNCIÓN 1: APARTADO DE GRÁFICAS ESTADÍSTICAS
+    # ---------------------------------------------------------
+    st.markdown("---")
+    with st.expander("📈 Ver Gráficas Estadísticas del Balance", expanded=True):
+        if not df_filtrado.empty:
+            g_col1, g_col2 = st.columns(2)
+            
+            with g_col1:
+                st.markdown("##### **Flujo de Caja Absoluto (Ingresos vs Egresos)**")
+                # Agrupar datos liquidados (Pagados) por Tipo para comparar totales corporativos
+                df_flujo = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].groupby('tipo')['monto'].sum().reset_index()
+                if not df_flujo.empty:
+                    st.bar_chart(data=df_flujo, x='tipo', y='monto', use_container_width=True)
+                else:
+                    st.caption("No hay transacciones liquidadas ('Pagado') en este período para graficar el flujo.")
+                    
+            with g_col2:
+                st.markdown("##### **Distribución de Gastos por Categoría (Egresos)**")
+                # Filtrar solo egresos para identificar en qué se está yendo el dinero (Alimento, vacunas, etc.)
+                df_gastos = df_filtrado[df_filtrado['tipo'] == 'Egreso'].groupby('categoria')['monto'].sum().reset_index()
+                if not df_gastos.empty:
+                    st.bar_chart(data=df_gastos, x='categoria', y='monto', use_container_width=True)
+                else:
+                    st.caption("No hay egresos registrados en este período para graficar.")
+            
+            # Gráfica de línea temporal de transacciones
+            st.markdown("##### **Tendencia Temporal de Movimientos**")
+            df_linea = df_filtrado.copy()
+            df_linea['Fecha Corta'] = df_linea['fecha'].dt.strftime('%Y-%m-%d')
+            df_pivot = df_linea.pivot_table(index='Fecha Corta', columns='tipo', values='monto', aggfunc='sum').fillna(0.0)
+            st.line_chart(df_pivot, use_container_width=True)
+        else:
+            st.info("No hay datos suficientes dentro del período de tiempo seleccionado para generar analíticas.")
+
+    # ---------------------------------------------------------
+    # EXPORTACIÓN DE REPORTES (Adaptado a los datos filtrados)
+    # ---------------------------------------------------------
+    st.markdown("---")
     st.markdown("### 📝 Exportar Estado de Cuenta Oficial")
     if st.button("📄 Compilar Plantilla Institucional con Logotipo"):
         html_template = f"""
@@ -157,7 +245,7 @@ if not df_finanzas.empty:
                     <td style="width: 70%; vertical-align: middle;">
                         <h1 style="margin: 0; color: #5c4033; font-size: 22pt;">RANCHO AE</h1>
                         <p style="margin: 4px 0; font-style: italic; color: #666666; font-size: 11pt;">Desarrollo Genético y Engorda Comercial</p>
-                        <p style="margin: 2px 0; font-size: 11pt;"><strong>Reporte Consolidado de Administración</strong></p>
+                        <p style="margin: 2px 0; font-size: 11pt;"><strong>Reporte Consolidado de Administración ({periodo})</strong></p>
                     </td>
                     <td style="width: 30%; text-align: right; vertical-align: middle;">
                         <img src="{logo_html_src}" style="width: 120px; max-height: 120px; object-fit: contain;" alt="Logo">
@@ -190,7 +278,7 @@ if not df_finanzas.empty:
             <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px; font-size: 14pt; margin-top: 20px;">2. Libro Diario Reciente</h2>
         """
         
-        if not df_finanzas.empty:
+        if not df_filtrado.empty:
             html_template += """
             <table border="1" cellpadding="6" style="border-collapse: collapse; width: 100%; border: 1px solid #dddddd; font-size: 9.5pt;">
                 <thead>
@@ -200,11 +288,14 @@ if not df_finanzas.empty:
                 </thead>
                 <tbody>
             """
-            for _, r in df_finanzas.head(15).iterrows():
+            # Hacer copia local con formato string para el reporte HTML
+            df_reporte_html = df_filtrado.copy()
+            df_reporte_html['fecha_txt'] = df_reporte_html['fecha'].dt.strftime('%Y-%m-%d')
+            for _, r in df_reporte_html.head(15).iterrows():
                 html_template += f"""
                 <tr>
                     <td style="padding: 6px;">{r.get('id','')}</td>
-                    <td style="padding: 6px;">{r.get('fecha','')}</td>
+                    <td style="padding: 6px;">{r.get('fecha_txt','')}</td>
                     <td style="padding: 6px;">{r.get('tipo','')}</td>
                     <td style="padding: 6px;">{r.get('categoria','')}</td>
                     <td style="padding: 6px;">{r.get('concepto','')}</td>
@@ -281,8 +372,11 @@ with tabs[0]:
 
     st.markdown("### Historial de Movimientos")
     if not df_finanzas.empty:
-        df_finanzas = df_finanzas.reindex(columns=["id", "fecha", "tipo", "categoria", "concepto", "monto", "metodo_pago", "lote_asociado", "estado_deuda", "fecha_vencimiento"])
-    st.dataframe(df_finanzas, use_container_width=True, hide_index=True)
+        # Para el dataframe del historial se crea una copia con la fecha limpia para la vista
+        df_vista_finanzas = df_finanzas.copy()
+        df_vista_finanzas['fecha'] = df_vista_finanzas['fecha'].dt.strftime('%Y-%m-%d')
+        df_vista_finanzas = df_vista_finanzas.reindex(columns=["id", "fecha", "tipo", "categoria", "concepto", "monto", "metodo_pago", "lote_asociado", "estado_deuda", "fecha_vencimiento"])
+        st.dataframe(df_vista_finanzas, use_container_width=True, hide_index=True)
 
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
@@ -298,10 +392,9 @@ with tabs[0]:
             st.write("")
             st.write("")
             if st.button("🔄 Actualizar", key="btn_up_fin"):
-                # SOLUCIÓN: Creamos un diccionario explícito extrayendo todos los campos requeridos
                 registro_actualizado = {
                     "id": str(id_seleccionado),
-                    "fecha": str(fila_sel.get('fecha', '')),
+                    "fecha": str(fila_sel['fecha'].strftime('%Y-%m-%d')),
                     "tipo": str(fila_sel.get('tipo', '')),
                     "categoria": str(fila_sel.get('categoria', '')),
                     "concepto": str(fila_sel.get('concepto', '')),
@@ -388,12 +481,16 @@ with tabs[4]:
 
 # RESPALDO EXCEL EN SIDEBAR
 with st.sidebar:
-    # Agregamos validación para que no falle el ExcelWriter si no hay registros iniciales
     if not df_finanzas.empty or not df_empleados.empty or not df_clientes.empty or not df_proveedores.empty or not df_lotes.empty:
         try:
             buffer = io.BytesIO()
+            # Copia temporal para el Excel de respaldo con fechas limpias en string
+            df_excel_fin = df_finanzas.copy()
+            if 'fecha' in df_excel_fin.columns:
+                df_excel_fin['fecha'] = df_excel_fin['fecha'].dt.strftime('%Y-%m-%d')
+                
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df_finanzas.to_excel(writer, sheet_name='Finanzas', index=False)
+                df_excel_fin.to_excel(writer, sheet_name='Finanzas', index=False)
                 df_empleados.to_excel(writer, sheet_name='Empleados', index=False)
                 df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
                 df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
