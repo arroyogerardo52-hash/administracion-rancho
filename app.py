@@ -135,7 +135,7 @@ if not df_finanzas.empty:
     df_finanzas['fecha'] = pd.to_datetime(df_finanzas['fecha'], errors='coerce')
     
     # ---------------------------------------------------------
-    # NUEVA FUNCIÓN 2: CONFIGURACIÓN Y FILTRO DE TIEMPO
+    # CONFIGURACIÓN Y FILTRO DE TIEMPO
     # ---------------------------------------------------------
     st.subheader("📆 Filtro de Período Temporal")
     col_filtro, col_fechas = st.columns([2, 3])
@@ -198,7 +198,7 @@ if not df_finanzas.empty:
     m5.metric("📉 Por Pagar", f"${por_pagar:,.2f}")
     
     # ---------------------------------------------------------
-    # NUEVA FUNCIÓN 1: APARTADO DE GRÁFICAS ESTADÍSTICAS
+    # APARTADO DE GRÁFICAS ESTADÍSTICAS
     # ---------------------------------------------------------
     st.markdown("---")
     with st.expander("📈 Ver Gráficas Estadísticas del Balance", expanded=True):
@@ -207,7 +207,6 @@ if not df_finanzas.empty:
             
             with g_col1:
                 st.markdown("##### **Flujo de Caja Absoluto (Ingresos vs Egresos)**")
-                # Agrupar datos liquidados (Pagados) por Tipo para comparar totales corporativos
                 df_flujo = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].groupby('tipo')['monto'].sum().reset_index()
                 if not df_flujo.empty:
                     st.bar_chart(data=df_flujo, x='tipo', y='monto', use_container_width=True)
@@ -216,7 +215,6 @@ if not df_finanzas.empty:
                     
             with g_col2:
                 st.markdown("##### **Distribución de Gastos por Categoría (Egresos)**")
-                # Filtrar solo egresos para identificar en qué se está yendo el dinero (Alimento, vacunas, etc.)
                 df_gastos = df_filtrado[df_filtrado['tipo'] == 'Egreso'].groupby('categoria')['monto'].sum().reset_index()
                 if not df_gastos.empty:
                     st.bar_chart(data=df_gastos, x='categoria', y='monto', use_container_width=True)
@@ -288,7 +286,6 @@ if not df_finanzas.empty:
                 </thead>
                 <tbody>
             """
-            # Hacer copia local con formato string para el reporte HTML
             df_reporte_html = df_filtrado.copy()
             df_reporte_html['fecha_txt'] = df_reporte_html['fecha'].dt.strftime('%Y-%m-%d')
             for _, r in df_reporte_html.head(15).iterrows():
@@ -372,7 +369,6 @@ with tabs[0]:
 
     st.markdown("### Historial de Movimientos")
     if not df_finanzas.empty:
-        # Para el dataframe del historial se crea una copia con la fecha limpia para la vista
         df_vista_finanzas = df_finanzas.copy()
         df_vista_finanzas['fecha'] = df_vista_finanzas['fecha'].dt.strftime('%Y-%m-%d')
         df_vista_finanzas = df_vista_finanzas.reindex(columns=["id", "fecha", "tipo", "categoria", "concepto", "monto", "metodo_pago", "lote_asociado", "estado_deuda", "fecha_vencimiento"])
@@ -451,12 +447,30 @@ with tabs[2]:
 with tabs[3]:
     st.subheader("Catálogo de Proveedores")
     with st.form("form_proveedores", clear_on_submit=True):
-        p_nombre = st.text_input("Nombre del Proveedor")
-        p_insumo = st.text_input("Insumo Principal")
+        p_nombre = st.text_input("Nombre del Proveedor / Razón Social")
+        p_insumo = st.text_input("Insumo Principal (Ej: Alimento, Medicinas, Diésel)")
+        p_contacto = st.text_input("Información de Contacto (Teléfono / Correo)") # <-- NUEVO CAMPO
+        
         if st.form_submit_button("💾 Guardar Proveedor"):
-            if p_nombre.strip() and guardar_registro("proveedores", {"nombre_proveedor": p_nombre.strip(), "insumo_principal": p_insumo}, "nombre_proveedor"):
-                st.rerun()
-    st.dataframe(df_proveedores, use_container_width=True, hide_index=True)
+            if p_nombre.strip():
+                datos_proveedor = {
+                    "nombre_proveedor": p_nombre.strip(), 
+                    "insumo_principal": p_insumo,
+                    "contacto": p_contacto # <-- INCLUSIÓN EN EL DICCIONARIO PARA SUPABASE
+                }
+                if guardar_registro("proveedores", datos_proveedor, "nombre_proveedor"):
+                    st.success("Proveedor guardado correctamente.")
+                    st.rerun()
+                    
+    # Reorganizar el orden de las columnas en la vista si la tabla tiene datos
+    if not df_proveedores.empty:
+        columnas_prov = ["nombre_proveedor", "insumo_principal"]
+        if "contacto" in df_proveedores.columns:
+            columnas_prov.append("contacto")
+        st.dataframe(df_proveedores.reindex(columns=columnas_prov), use_container_width=True, hide_index=True)
+    else:
+        st.dataframe(df_proveedores, use_container_width=True, hide_index=True)
+        
     if not df_proveedores.empty:
         prov_sel = st.selectbox("Selecciona Proveedor para Eliminar:", df_proveedores['nombre_proveedor'].unique())
         if st.button("🗑️ Eliminar Proveedor"):
@@ -484,7 +498,6 @@ with st.sidebar:
     if not df_finanzas.empty or not df_empleados.empty or not df_clientes.empty or not df_proveedores.empty or not df_lotes.empty:
         try:
             buffer = io.BytesIO()
-            # Copia temporal para el Excel de respaldo con fechas limpias en string
             df_excel_fin = df_finanzas.copy()
             if 'fecha' in df_excel_fin.columns:
                 df_excel_fin['fecha'] = df_excel_fin['fecha'].dt.strftime('%Y-%m-%d')
@@ -493,7 +506,7 @@ with st.sidebar:
                 df_excel_fin.to_excel(writer, sheet_name='Finanzas', index=False)
                 df_empleados.to_excel(writer, sheet_name='Empleados', index=False)
                 df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
-                df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
+                df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False) # XlsxWriter tomará el DataFrame actualizado con la columna de contacto automáticamente
                 df_lotes.to_excel(writer, sheet_name='Lotes', index=False)
             st.download_button(
                 label="📥 Descargar Respaldo Excel", data=buffer.getvalue(),
