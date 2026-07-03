@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import io
 import base64
+import time
 
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA
@@ -267,8 +268,8 @@ if not df_finanzas.empty:
                     <tr><td style="padding: 8px;">🟢 Ingresos Consolidados (Liquidados)</td><td style="padding: 8px;"><strong>${ingresos:,.2f}</strong></td></tr>
                     <tr><td style="padding: 8px;">🔴 Egresos Consolidados (Liquidados)</td><td style="padding: 8px;"><strong>${egresos:,.2f}</strong></td></tr>
                     <tr style="background-color: #f1f3f5;"><td style="padding: 8px;"><strong>💰 Balance Neto Comercial</strong></td><td style="padding: 8px;"><strong style="color: {'#2b8a3e' if balance_neto >= 0 else '#c92a2a'};">${balance_neto:,.2f}</strong></td></tr>
-                    <tr><td style="padding: 8px;">📈 Cuentas Pendientes de Cobro</td><td style="padding: 8px;">${por_cobrar:,.2f}</td></tr>
-                    <tr><td style="padding: 8px;">📉 Cuentas Pendientes de Pago</td><td style="padding: 8px;">${por_pagar:,.2f}</td></tr>
+                    <tr><td style="padding: 8px;">📈 Cuentas Pendientes de Cobro</td><td style="padding: 8px;">{por_cobrar:,.2f}</td></tr>
+                    <tr><td style="padding: 8px;">📉 Cuentas Pendientes de Pago</td><td style="padding: 8px;">{por_pagar:,.2f}</td></tr>
                 </tbody>
             </table>
             
@@ -374,23 +375,51 @@ with tabs[0]:
         df_vista_finanzas = df_vista_finanzas.reindex(columns=["id", "fecha", "tipo", "categoria", "concepto", "monto", "metodo_pago", "lote_asociado", "estado_deuda", "fecha_vencimiento"])
         st.dataframe(df_vista_finanzas, use_container_width=True, hide_index=True)
 
+    # =========================================================
+    # SECCIÓN APARTADO: MODIFICAR O ELIMINAR TRANSACCIÓN (CORREGIDA)
+    # =========================================================
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
+        
+        # Selector de la transacción a alterar
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
+        
+        # Obtener la fila correspondiente
         fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
         
+        # Formatear la fecha original correctamente para evitar problemas de tipos en el backend
+        fecha_orig_str = fila_sel['fecha'].strftime('%Y-%m-%d') if isinstance(fila_sel['fecha'], datetime) else str(fila_sel['fecha'])
+        
+        # Formulario de edición con claves dinámicas basadas en el ID seleccionado para forzar refresco interactivo
         c1, c2, c3 = st.columns([2, 2, 1])
+        
+        lista_estados = ["Pagado", "Pendiente"]
+        idx_estado = lista_estados.index(fila_sel['estado_deuda']) if fila_sel['estado_deuda'] in lista_estados else 0
+        
         with c1:
-            nuevo_estado = st.selectbox("Cambiar Estado Pago a:", ["Pagado", "Pendiente"], index=["Pagado", "Pendiente"].index(fila_sel['estado_deuda']), key="est_fin")
+            nuevo_estado = st.selectbox(
+                "Cambiar Estado Pago a:", 
+                lista_estados, 
+                index=idx_estado, 
+                key=f"est_fin_{id_seleccionado}"
+            )
         with c2:
-            nuevo_monto = st.number_input("Corregir Monto ($):", min_value=0.0, value=float(fila_sel['monto']), key="mon_fin")
+            nuevo_monto = st.number_input(
+                "Corregir Monto ($):", 
+                min_value=0.0, 
+                value=float(fila_sel['monto']), 
+                step=100.0,
+                key=f"mon_fin_{id_seleccionado}"
+            )
         with c3:
             st.write("")
             st.write("")
-            if st.button("🔄 Actualizar", key="btn_up_fin"):
+            
+            # Botón de actualización
+            if st.button("🔄 Actualizar", key=f"btn_up_fin_{id_seleccionado}", use_container_width=True):
                 registro_actualizado = {
                     "id": str(id_seleccionado),
-                    "fecha": str(fila_sel['fecha'].strftime('%Y-%m-%d')),
+                    "fecha": fecha_orig_str,
                     "tipo": str(fila_sel.get('tipo', '')),
                     "categoria": str(fila_sel.get('categoria', '')),
                     "concepto": str(fila_sel.get('concepto', '')),
@@ -400,14 +429,19 @@ with tabs[0]:
                     "estado_deuda": str(nuevo_estado),
                     "fecha_vencimiento": str(fila_sel.get('fecha_vencimiento', ''))
                 }
+                
                 if guardar_registro("finanzas", registro_actualizado, "id"):
-                    st.success("Registro modificado con éxito.")
+                    st.success("¡Registro modificado con éxito!")
                     st.session_state["mostrar_descarga"] = False
+                    time.sleep(0.5)
                     st.rerun()
-            if st.button("🗑️ Eliminar Registro", key="btn_del_fin"):
+            
+            # Botón de eliminación
+            if st.button("🗑️ Eliminar", key=f"btn_del_fin_{id_seleccionado}", use_container_width=True, type="primary"):
                 if eliminar_registro("finanzas", "id", id_seleccionado):
-                    st.warning("Registro eliminado.")
+                    st.warning("Registro eliminado de la base de datos.")
                     st.session_state["mostrar_descarga"] = False
+                    time.sleep(0.5)
                     st.rerun()
 
 # PESTAÑA EMPLEADOS
@@ -449,14 +483,14 @@ with tabs[3]:
     with st.form("form_proveedores", clear_on_submit=True):
         p_nombre = st.text_input("Nombre del Proveedor / Razón Social")
         p_insumo = st.text_input("Insumo Principal (Ej: Alimento, Medicinas, Diésel)")
-        p_contacto = st.text_input("Información de Contacto (Teléfono / Correo)") # <-- NUEVO CAMPO
+        p_contacto = st.text_input("Información de Contacto (Teléfono / Correo)")
         
         if st.form_submit_button("💾 Guardar Proveedor"):
             if p_nombre.strip():
                 datos_proveedor = {
                     "nombre_proveedor": p_nombre.strip(), 
                     "insumo_principal": p_insumo,
-                    "contacto": p_contacto # <-- INCLUSIÓN EN EL DICCIONARIO PARA SUPABASE
+                    "contacto": p_contacto
                 }
                 if guardar_registro("proveedores", datos_proveedor, "nombre_proveedor"):
                     st.success("Proveedor guardado correctamente.")
@@ -506,7 +540,7 @@ with st.sidebar:
                 df_excel_fin.to_excel(writer, sheet_name='Finanzas', index=False)
                 df_empleados.to_excel(writer, sheet_name='Empleados', index=False)
                 df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
-                df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False) # XlsxWriter tomará el DataFrame actualizado con la columna de contacto automáticamente
+                df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
                 df_lotes.to_excel(writer, sheet_name='Lotes', index=False)
             st.download_button(
                 label="📥 Descargar Respaldo Excel", data=buffer.getvalue(),
