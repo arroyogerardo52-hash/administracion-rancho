@@ -44,7 +44,7 @@ with st.sidebar:
 # Título Principal con Logo Integrado
 col_title, col_logo = st.columns([4, 1])
 with col_title:
-    st.title("🤠 Rancho AE: Sistema de Administración")
+    st.title("Rancho AE: Sistema de Administración")
 with col_logo:
     if logo_file is not None:
         st.image(logo_file, width=100)
