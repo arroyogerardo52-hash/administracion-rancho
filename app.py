@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import io
 import base64
 import time
+import plotly.express as px  # <- Necesario para el gráfico de dona ejecutivo
 
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA
@@ -239,7 +240,6 @@ if not df_finanzas.empty:
             
         if not df_bal_vista.empty:
             df_bal_vista['fecha'] = df_bal_vista['fecha'].dt.strftime('%Y-%m-%d')
-            # Aplicar estilización de filas (verde/rojo) y formato de moneda en el balance
             df_bal_estilizado = (df_bal_vista.style
                                  .apply(colorear_filas_finanzas, axis=1)
                                  .format({'monto': '${:,.2f}'}))
@@ -337,6 +337,35 @@ if not df_finanzas.empty:
                 df_cat = df_filtrado.groupby([col_cat, 'tipo'])['monto'].sum().unstack().fillna(0.0)
                 st.bar_chart(df_cat, use_container_width=True)
                 
+            # ==========================================
+            # NUEVA SECCIÓN: GRÁFICA DE DONA (DISTRIBUCIÓN DE CAPITAL)
+            # ==========================================
+            st.write("---")
+            col_dona_centrada, _ = st.columns([2, 1])  # Se usa proporción para que luzca limpia y amplia
+            with col_dona_centrada:
+                st.write("### 🍩 Distribución de Capital")
+                if not df_pie.empty:
+                    fig_donut = px.pie(
+                        df_pie, 
+                        values='monto', 
+                        names='tipo', 
+                        hole=0.6,  # Grosor del centro de la dona para simular la imagen enviada
+                        color='tipo',
+                        color_discrete_map={'Ingreso': '#2ecc71', 'Egreso': '#e74c3c'}  # Colores corporativos verde/rojo
+                    )
+                    # Configuración de etiquetas de porcentaje internas y estilo limpio
+                    fig_donut.update_traces(textinfo='percent', textposition='inside', font_size=14)
+                    fig_donut.update_layout(
+                        showlegend=True,
+                        margin=dict(t=30, b=25, l=20, r=20),
+                        height=350,
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)'
+                    )
+                    st.plotly_chart(fig_donut, use_container_width=True)
+                else:
+                    st.info("Faltan movimientos de capital liquidados para calcular la distribución.")
+                
             st.write("---")
             st.write("### 📈 Tendencia Financiera Histórica del Período")
             df_linea = df_filtrado.copy()
@@ -403,7 +432,6 @@ with tabs[0]:
             df_vista_finanzas = df_vista_finanzas[mascara]
             
         if not df_vista_finanzas.empty:
-            # APLICACIÓN DE COLOR POR FILA COMPLETA Y FORMATEO DE PESOS MEXICANOS
             df_fin_estilizado = (df_vista_finanzas.style
                                  .apply(colorear_filas_finanzas, axis=1)
                                  .format({'monto': '${:,.2f}'}))
