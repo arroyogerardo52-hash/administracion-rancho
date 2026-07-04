@@ -131,19 +131,24 @@ if "mostrar_descarga" not in st.session_state:
 st.header("📊 Balance y Control General Financiero")
 
 if not df_finanzas.empty:
-    # Asegurar el formato correcto de datos numéricos y fechas
+    # ---------------------------------------------------------
+    # PRE-PROCESAMIENTO SEGURO DE DATOS
+    # ---------------------------------------------------------
     df_finanzas['monto'] = pd.to_numeric(df_finanzas['monto'], errors='coerce').fillna(0.0)
+    
+    # Forzamos conversión a datetime y limpiamos nulos
     df_finanzas['fecha'] = pd.to_datetime(df_finanzas['fecha'], errors='coerce')
+    df_finanzas = df_finanzas.dropna(subset=['fecha'])
     
     # ---------------------------------------------------------
-    # CONFIGURACIÓN Y FILTRO DE TIEMPO (CORREGIDO)
+    # CONFIGURACIÓN Y FILTRO DE TIEMPO
     # ---------------------------------------------------------
     st.subheader("📆 Filtro de Período Temporal")
     col_filtro, col_fechas = st.columns([2, 3])
     
     hoy = datetime.today()
     
-    # Valores por defecto estables (cubriendo todo el día de hoy)
+    # Valores base por defecto (abarcando todo el día actual)
     fecha_inicio = hoy.replace(hour=0, minute=0, second=0, microsecond=0)
     fecha_fin = hoy.replace(hour=23, minute=59, second=59, microsecond=999999)
 
@@ -179,10 +184,10 @@ if not df_finanzas.empty:
             rango_fechas = st.date_input(
                 "Selecciona el rango (Inicio - Fin):", 
                 [fecha_defecto_inicio, fecha_defecto_fin],
-                help="Asegúrate de seleccionar tanto la fecha de inicio como la de fin."
+                help="Selecciona tanto la fecha de inicio como la de fin en el calendario."
             )
             
-            # Forzar la desestructuración limpia y agregar horas exactas para abarcar los extremos
+            # Controlamos si el usuario seleccionó un rango completo o solo una fecha
             if isinstance(rango_fechas, (list, tuple)):
                 if len(rango_fechas) == 2:
                     fecha_inicio = datetime.combine(rango_fechas[0], datetime.min.time())
@@ -198,21 +203,32 @@ if not df_finanzas.empty:
         else:
             st.info("Mostrando la totalidad de los datos registrados.")
 
-    # --- NORMALIZACIÓN Y FILTRADO SEGURO ---
+    # ---------------------------------------------------------
+    # NORMALIZACIÓN Y FILTRADO SEGURO DE FECHAS
+    # ---------------------------------------------------------
     df_filtrado = df_finanzas.copy()
     
-    # 1. Quitamos la zona horaria de raíz de la columna para evitar errores de comparación
-    if df_filtrado['fecha'].dt.tz is not None:
-        df_filtrado['fecha'] = df_filtrado['fecha'].dt.tz_localize(None)
+    # Removemos la zona horaria de raíz de forma segura para evitar conflictos de tipo
+    try:
+        if df_filtrado['fecha'].dt.tz is not None:
+            df_filtrado['fecha'] = df_filtrado['fecha'].dt.tz_localize(None)
+    except AttributeError:
+        # Si ya es datetime sin zona horaria, evitamos que rompa la ejecución
+        pass
 
-    # 2. Aplicamos el filtro usando los datetimes nativos ya calculados arriba
+    # Aplicamos la máscara de filtrado temporal si corresponde
     if periodo != "Todo el Historial":
+        f_inicio_pd = pd.to_datetime(fecha_inicio)
+        f_fin_pd = pd.to_datetime(fecha_fin)
+        
         df_filtrado = df_filtrado[
-            (df_filtrado['fecha'] >= pd.to_datetime(fecha_inicio)) & 
-            (df_filtrado['fecha'] <= pd.to_datetime(fecha_fin))
+            (df_filtrado['fecha'] >= f_inicio_pd) & 
+            (df_filtrado['fecha'] <= f_fin_pd)
         ]
 
-    # Volver a calcular métricas usando únicamente los datos filtrados
+    # ---------------------------------------------------------
+    # CÁLCULO DE MÉTRICAS FINANCIERAS (DATOS FILTRADOS)
+    # ---------------------------------------------------------
     ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
     egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
     balance_neto = ingresos - egresos
@@ -220,210 +236,24 @@ if not df_finanzas.empty:
     por_cobrar = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
     por_pagar = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
     
-    # Renderizar tarjetas de métricas en pantalla
+    # ---------------------------------------------------------
+    # DESPLIEGUE EN INTERFAZ
+    # ---------------------------------------------------------
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("🟢 Ingresos Reales", f"${ingresos:,.2f}")
     m2.metric("🔴 Egresos Reales", f"${egresos:,.2f}")
-    m3.metric("💰 Balance Neto", f"${balance_neto:,.2f}", delta=f"${balance_neto:,.2f}" if balance_neto >= 0 else f"${balance_neto:,.2f}", delta_color="normal" if balance_neto >= 0 else "inverse")
+    
+    # Delta dinámico para el balance neto (Verde si es positivo, Rojo si es negativo)
+    m3.metric(
+        "💰 Balance Neto", 
+        f"${balance_neto:,.2f}", 
+        delta=f"${balance_neto:,.2f}" if balance_neto >= 0 else f"${balance_neto:,.2f}", 
+        delta_color="normal" if balance_neto >= 0 else "inverse"
+    )
     m4.metric("📈 Por Cobrar", f"${por_cobrar:,.2f}")
     m5.metric("📉 Por Pagar", f"${por_pagar:,.2f}")
-    # ---------------------------------------------------------
-    # CONFIGURACIÓN Y FILTRO DE TIEMPO
-    # ---------------------------------------------------------
-    st.subheader("📆 Filtro de Período Temporal")
-    col_filtro, col_fechas = st.columns([2, 3])
-    
-    hoy = datetime.today()
-    fecha_inicio = hoy
-    fecha_fin = hoy
-
-    with col_filtro:
-        periodo = st.selectbox(
-            "Selecciona el período visualizado:",
-            ["Todo el Historial", "Esta Semana", "Este Mes", "Este Año", "Rango Personalizado"]
-        )
-
-    with col_fechas:
-        if periodo == "Esta Semana":
-            fecha_inicio = hoy - timedelta(days=hoy.weekday())
-            fecha_fin = fecha_inicio + timedelta(days=6)
-            st.info(f"Mostrando desde el lunes: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
-        elif periodo == "Este Mes":
-            fecha_inicio = hoy.replace(day=1)
-            next_month = hoy.replace(day=28) + timedelta(days=4)
-            fecha_fin = next_month - timedelta(days=next_month.day)
-            st.info(f"Mostrando el mes en curso: **{fecha_inicio.strftime('%B %Y')}**")
-        elif periodo == "Este Año":
-            fecha_inicio = hoy.replace(month=1, day=1)
-            fecha_fin = hoy.replace(month=12, day=31)
-            st.info(f"Mostrando el año en curso: **{hoy.year}**")
-        elif periodo == "Rango Personalizado":
-            rango_fechas = st.date_input("Selecciona el rango (Inicio - Fin):", [hoy - timedelta(days=30), hoy])
-            if isinstance(rango_fechas, list) and len(rango_fechas) == 2:
-                fecha_inicio, fecha_fin = pd.to_datetime(rango_fechas[0]), pd.to_datetime(rango_fechas[1])
-            elif isinstance(rango_fechas, list) and len(rango_fechas) == 1:
-                fecha_inicio = pd.to_datetime(rango_fechas[0])
-                fecha_fin = fecha_inicio
-        else:
-            st.info("Mostrando la totalidad de los datos registrados.")
-
-    # Aplicar el filtro de fechas seleccionado al DataFrame
-    if periodo != "Todo el Historial":
-        df_filtrado = df_finanzas[(df_finanzas['fecha'] >= pd.to_datetime(fecha_inicio).replace(hour=0, minute=0, second=0)) & 
-                                  (df_finanzas['fecha'] <= pd.to_datetime(fecha_fin).replace(hour=23, minute=59, second=59))]
-    else:
-        df_filtrado = df_finanzas.copy()
-
-    # Volver a calcular métricas usando únicamente los datos filtrados
-    ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
-    egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
-    balance_neto = ingresos - egresos
-    
-    por_cobrar = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
-    por_pagar = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
-    
-    # Renderizar tarjetas de métricas en pantalla
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("🟢 Ingresos Reales", f"${ingresos:,.2f}")
-    m2.metric("🔴 Egresos Reales", f"${egresos:,.2f}")
-    m3.metric("💰 Balance Neto", f"${balance_neto:,.2f}", delta=f"${balance_neto:,.2f}" if balance_neto >= 0 else f"${balance_neto:,.2f}", delta_color="normal" if balance_neto >= 0 else "inverse")
-    m4.metric("📈 Por Cobrar", f"${por_cobrar:,.2f}")
-    m5.metric("📉 Por Pagar", f"${por_pagar:,.2f}")
-    
-    # ---------------------------------------------------------
-    # APARTADO DE GRÁFICAS ESTADÍSTICAS
-    # ---------------------------------------------------------
-    st.markdown("---")
-    with st.expander("📈 Ver Gráficas Estadísticas del Balance", expanded=True):
-        if not df_filtrado.empty:
-            g_col1, g_col2 = st.columns(2)
-            
-            with g_col1:
-                st.markdown("##### **Flujo de Caja Absoluto (Ingresos vs Egresos)**")
-                df_flujo = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].groupby('tipo')['monto'].sum().reset_index()
-                if not df_flujo.empty:
-                    st.bar_chart(data=df_flujo, x='tipo', y='monto', use_container_width=True)
-                else:
-                    st.caption("No hay transacciones liquidadas ('Pagado') en este período para graficar el flujo.")
-                    
-            with g_col2:
-                st.markdown("##### **Distribución de Gastos por Categoría (Egresos)**")
-                df_gastos = df_filtrado[df_filtrado['tipo'] == 'Egreso'].groupby('categoria')['monto'].sum().reset_index()
-                if not df_gastos.empty:
-                    st.bar_chart(data=df_gastos, x='categoria', y='monto', use_container_width=True)
-                else:
-                    st.caption("No hay egresos registrados en este período para graficar.")
-            
-            # Gráfica de línea temporal de transacciones
-            st.markdown("##### **Tendencia Temporal de Movimientos**")
-            df_linea = df_filtrado.copy()
-            df_linea['Fecha Corta'] = df_linea['fecha'].dt.strftime('%Y-%m-%d')
-            df_pivot = df_linea.pivot_table(index='Fecha Corta', columns='tipo', values='monto', aggfunc='sum').fillna(0.0)
-            st.line_chart(df_pivot, use_container_width=True)
-        else:
-            st.info("No hay datos suficientes dentro del período de tiempo seleccionado para generar analíticas.")
-
-    # ---------------------------------------------------------
-    # EXPORTACIÓN DE REPORTES (Adaptado a los datos filtrados)
-    # ---------------------------------------------------------
-    st.markdown("---")
-    st.markdown("### 📝 Exportar Estado de Cuenta Oficial")
-    if st.button("📄 Compilar Plantilla Institucional con Logotipo"):
-        html_template = f"""
-        <div style="font-family: Arial, sans-serif; line-height: 1.25; color: #333333; padding: 10px;">
-            <table style="width: 100%; border-bottom: 2px solid #5c4033; padding-bottom: 10px;">
-                <tr>
-                    <td style="width: 70%; vertical-align: middle;">
-                        <h1 style="margin: 0; color: #5c4033; font-size: 22pt;">RANCHO AE</h1>
-                        <p style="margin: 4px 0; font-style: italic; color: #666666; font-size: 11pt;">Desarrollo Genético y Engorda Comercial</p>
-                        <p style="margin: 2px 0; font-size: 11pt;"><strong>Reporte Consolidado de Administración ({periodo})</strong></p>
-                    </td>
-                    <td style="width: 30%; text-align: right; vertical-align: middle;">
-                        <img src="{logo_html_src}" style="width: 120px; max-height: 120px; object-fit: contain;" alt="Logo">
-                    </td>
-                </tr>
-            </table>
-            
-            <br>
-            <p style="font-size: 10.5pt;"><strong>Fecha de Emisión:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
-            <p style="font-size: 10.5pt;">Este informe detalla el estado financiero integral extraído de forma segura desde los servidores de administración.</p>
-            
-            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px; font-size: 14pt; margin-top: 20px;">1. Resumen de Saldos Monetarios</h2>
-            <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%; border: 1px solid #dddddd; font-size: 11pt;">
-                <thead>
-                    <tr style="background-color: #f8f9fa; text-align: left;">
-                        <th style="padding: 8px;">Concepto Operativo</th>
-                        <th style="padding: 8px;">Monto en Cuenta</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr><td style="padding: 8px;">🟢 Ingresos Consolidados (Liquidados)</td><td style="padding: 8px;"><strong>${ingresos:,.2f}</strong></td></tr>
-                    <tr><td style="padding: 8px;">🔴 Egresos Consolidados (Liquidados)</td><td style="padding: 8px;"><strong>${egresos:,.2f}</strong></td></tr>
-                    <tr style="background-color: #f1f3f5;"><td style="padding: 8px;"><strong>💰 Balance Neto Comercial</strong></td><td style="padding: 8px;"><strong style="color: {'#2b8a3e' if balance_neto >= 0 else '#c92a2a'};">${balance_neto:,.2f}</strong></td></tr>
-                    <tr><td style="padding: 8px;">📈 Cuentas Pendientes de Cobro</td><td style="padding: 8px;"><strong>${por_cobrar:,.2f}</strong></td></tr>
-                    <tr><td style="padding: 8px;">📉 Cuentas Pendientes de Pago</td><td style="padding: 8px;"><strong>${por_pagar:,.2f}</strong></td></tr>
-                </tbody>
-            </table>
-            
-            <br>
-            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px; font-size: 14pt; margin-top: 20px;">2. Libro Diario de Transacciones</h2>
-        """
-        
-        if not df_filtrado.empty:
-            html_template += """
-            <table border="1" cellpadding="6" style="border-collapse: collapse; width: 100%; border: 1px solid #dddddd; font-size: 9.5pt;">
-                <thead>
-                    <tr style="background-color: #f8f9fa; text-align: left;">
-                        <th style="padding: 6px;">ID Código</th><th style="padding: 6px;">Fecha</th><th style="padding: 6px;">Tipo</th><th style="padding: 6px;">Categoría</th><th style="padding: 6px;">Concepto</th><th style="padding: 6px;">Monto</th><th style="padding: 6px;">Estado</th>
-                    </tr>
-                </thead>
-                <tbody>
-            """
-            df_reporte_html = df_filtrado.copy()
-            df_reporte_html['fecha_txt'] = df_reporte_html['fecha'].dt.strftime('%Y-%m-%d')
-            
-            for _, r in df_reporte_html.iterrows():
-                html_template += f"""
-                <tr>
-                    <td style="padding: 6px;">{r.get('id','')}</td>
-                    <td style="padding: 6px;">{r.get('fecha_txt','')}</td>
-                    <td style="padding: 6px;">{r.get('tipo','')}</td>
-                    <td style="padding: 6px;">{r.get('categoria','')}</td>
-                    <td style="padding: 6px;">{r.get('concepto','')}</td>
-                    <td style="padding: 6px;">${float(r.get('monto',0)):,.2f}</td>
-                    <td style="padding: 6px; color: {'#2b8a3e' if r.get('estado_deuda')=='Pagado' else '#e67e22'}; font-weight: bold;">{r.get('estado_deuda','')}</td>
-                </tr>
-                """
-            html_template += "</tbody></table>"
-        
-        html_template += """
-            <br><br>
-            <table style="width: 100%; margin-top: 40px; text-align: center; font-size: 11pt;">
-                <tr>
-                    <td style="width: 50%;">___________________________________<br>Dirección General de Operaciones</td>
-                    <td style="width: 50%;">___________________________________<br>Control Interno y Auditoría</td>
-                </tr>
-            </table>
-        </div>
-        """
-        st.session_state["reporte_html"] = html_template
-        st.session_state["mostrar_descarga"] = True
-        st.success("¡Estructura de la plantilla con logotipo lista para ser exportada!")
-
-    if st.session_state["mostrar_descarga"]:
-        with st.expander("👁️ Previsualizar Formato HTML del Documento", expanded=True):
-            st.components.v1.html(st.session_state["reporte_html"], height=500, scrolling=True)
-            
-            st.markdown("### 📋 Instrucciones para copiar a Google Documentos:")
-            st.info("Para llevar este reporte a Google Docs manteniendo el logotipo y los cuadros financieros intactos: "
-                    "\n1. Haz clic dentro del recuadro de previsualización superior."
-                    "\n2. Presiona `Ctrl + A` (o `Cmd + A` en Mac) para seleccionar todo y luego `Ctrl + C` para copiar."
-                    "\n3. Ve a tu archivo de Google Documentos vacío y presiona `Ctrl + V` para pegar de forma directa.")
 else:
-    st.info("💡 Registra movimientos en la pestaña de finanzas para generar el balance corporativo.")
-
-st.markdown("---")
-
+    st.warning("No se encontraron registros financieros para procesar en el sistema.")
 # ==========================================
 # 5. PESTAÑAS OPERATIVAS
 # ==========================================
