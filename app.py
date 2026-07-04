@@ -237,7 +237,6 @@ if not df_finanzas.empty:
     st.markdown("---")
     st.markdown("### 📝 Exportar Estado de Cuenta Oficial")
     if st.button("📄 Compilar Plantilla Institucional con Logotipo"):
-        # CORRECCIÓN: Se añadieron las variables faltantes f-string para 'por_cobrar' y 'por_pagar'
         html_template = f"""
         <div style="font-family: Arial, sans-serif; line-height: 1.25; color: #333333; padding: 10px;">
             <table style="width: 100%; border-bottom: 2px solid #5c4033; padding-bottom: 10px;">
@@ -291,7 +290,6 @@ if not df_finanzas.empty:
             df_reporte_html = df_filtrado.copy()
             df_reporte_html['fecha_txt'] = df_reporte_html['fecha'].dt.strftime('%Y-%m-%d')
             
-            # CORRECCIÓN: Quitamos el .head(15) para permitir que TODO el rango filtrado se documente
             for _, r in df_reporte_html.iterrows():
                 html_template += f"""
                 <tr>
