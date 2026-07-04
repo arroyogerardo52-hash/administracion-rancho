@@ -124,22 +124,19 @@ if "reporte_html" not in st.session_state:
     st.session_state["reporte_html"] = ""
 if "mostrar_descarga" not in st.session_state:
     st.session_state["mostrar_descarga"] = False
+
 # ==========================================
 # 4. PANEL DE BALANCE GLOBAL & ESTADÍSTICAS
 # ==========================================
 st.header("📊 Balance y Control General Financiero")
 
 if not df_finanzas.empty:
-    # ---------------------------------------------------------
-    # PRE-PROCESAMIENTO SEGURO DE DATOS
-    # ---------------------------------------------------------
+    # Pre-procesamiento seguro de datos
     df_finanzas['monto'] = pd.to_numeric(df_finanzas['monto'], errors='coerce').fillna(0.0)
     df_finanzas['fecha'] = pd.to_datetime(df_finanzas['fecha'], errors='coerce')
     df_finanzas = df_finanzas.dropna(subset=['fecha'])
     
-    # ---------------------------------------------------------
-    # CONFIGURACIÓN Y FILTRO DE TIEMPO
-    # ---------------------------------------------------------
+    # Configuración y filtro de tiempo
     st.subheader("📆 Filtro de Período Temporal")
     col_filtro, col_fechas = st.columns([2, 3])
     
@@ -185,20 +182,18 @@ if not df_finanzas.empty:
                 if len(rango_fechas) == 2:
                     fecha_inicio = datetime.combine(rango_fechas[0], datetime.min.time())
                     fecha_fin = datetime.combine(rango_fechas[1], datetime.max.time())
-                elif len(rango_fechas) == 1:
-                    fecha_inicio = datetime.combine(rango_fechas[0], datetime.min.time())
-                    fecha_fin = datetime.combine(rango_fechas[0], datetime.max.time())
+                    st.info(f"Rango activo: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
+                else:
+                    st.warning("⏳ Por favor, selecciona la fecha de fin en el calendario.")
+                    st.stop()
             else:
                 fecha_inicio = datetime.combine(rango_fechas, datetime.min.time())
                 fecha_fin = datetime.combine(rango_fechas, datetime.max.time())
-                
-            st.info(f"Rango activo: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
+                st.info(f"Rango activo: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
         else:
             st.info("Mostrando la totalidad de los datos registrados.")
 
-    # ---------------------------------------------------------
-    # NORMALIZACIÓN Y FILTRADO SEGURO DE FECHAS
-    # ---------------------------------------------------------
+    # Normalización y filtrado seguro de fechas
     df_filtrado = df_finanzas.copy()
     try:
         if df_filtrado['fecha'].dt.tz is not None:
@@ -211,9 +206,7 @@ if not df_finanzas.empty:
         f_fin_pd = pd.to_datetime(fecha_fin)
         df_filtrado = df_filtrado[(df_filtrado['fecha'] >= f_inicio_pd) & (df_filtrado['fecha'] <= f_fin_pd)]
 
-    # ---------------------------------------------------------
-    # CÁLCULO DE MÉTRICAS FINANCIERAS
-    # ---------------------------------------------------------
+    # Cálculo de métricas financieras
     ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
     egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
     balance_neto = ingresos - egresos
@@ -221,13 +214,10 @@ if not df_finanzas.empty:
     por_cobrar = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
     por_pagar = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
     
-    # ---------------------------------------------------------
-    # ESTRUCTURA DE PESTAÑAS (NUEVO)
-    # ---------------------------------------------------------
+    # Estructura de pestañas
     tab_resumen, tab_graficas = st.tabs(["📋 Resumen Numérico", "📈 Análisis Gráfico"])
     
     with tab_resumen:
-        # Tarjetas de métricas
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("🟢 Ingresos Reales", f"${ingresos:,.2f}")
         m2.metric("🔴 Egresos Reales", f"${egresos:,.2f}")
@@ -237,14 +227,26 @@ if not df_finanzas.empty:
         
         st.write("---")
         st.subheader("📋 Transacciones del Período")
-        st.dataframe(df_filtrado, use_container_width=True)
-
-        # ---------------------------------------------------------
-        # BOTÓN DE EXPORTACIÓN COMPATIBLE CON GOOGLE DOCS (NUEVO)
-        # ---------------------------------------------------------
-        st.write("### 📄 Exportar Reporte Ejecutivo")
         
-        # Estructura del HTML optimizado para Google Docs
+        # BUSCADOR GENERAL: Balance de Transacciones del Periodo
+        buscar_bal = st.text_input("🔍 Buscar en las transacciones del período:", key="bus_bal").strip()
+        df_bal_vista = df_filtrado.copy()
+        
+        if buscar_bal:
+            mascara = df_bal_vista.astype(str).apply(lambda x: x.str.contains(buscar_bal, case=False)).any(axis=1)
+            df_bal_vista = df_bal_vista[mascara]
+            
+        # Formatear montos para visualización limpia en pesos en el Balance
+        if not df_bal_vista.empty:
+            df_bal_formateado = df_bal_vista.copy()
+            df_bal_formateado['monto'] = df_bal_formateado['monto'].apply(lambda x: f"${x:,.2f}")
+            df_bal_formateado['fecha'] = df_bal_formateado['fecha'].dt.strftime('%Y-%m-%d')
+            st.dataframe(df_bal_formateado, use_container_width=True)
+        else:
+            st.info("No hay registros que coincidan con la búsqueda.")
+
+        # Exportación HTML para Google Docs
+        st.write("### 📄 Exportar Reporte Ejecutivo")
         html_reporte = f"""
         <html>
         <head>
@@ -287,7 +289,6 @@ if not df_finanzas.empty:
                 </thead>
                 <tbody>
         """
-        # Inyectamos las filas de la tabla de forma limpia
         for _, fila in df_filtrado.iterrows():
             f_date = fila['fecha'].strftime('%d/%m/%Y') if pd.notnull(fila['fecha']) else ''
             concepto = fila.get('concepto', fila.get('detalle', 'Sin concepto'))
@@ -314,18 +315,15 @@ if not df_finanzas.empty:
             data=html_reporte,
             file_name=f"Balance_Financiero_{periodo.replace(' ', '_')}_{hoy.strftime('%Y%m%d')}.doc",
             mime="application/msword",
-            help="Descarga este archivo y súbelo directamente a tu Google Drive. Al abrirlo, Google Docs lo procesará como un documento formal con tablas y formato completo."
+            help="Descarga este archivo y súbelo directamente a tu Google Drive."
         )
 
     with tab_graficas:
         st.subheader("📊 Visualización de Rendimiento del Período")
-        
         if not df_filtrado.empty:
             cg1, cg2 = st.columns(2)
-            
             with cg1:
                 st.write("### 💰 Ingresos vs Egresos Reales")
-                # Agrupamos montos por Tipo (únicamente los ya pagados)
                 df_pie = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].groupby('tipo')['monto'].sum().reset_index()
                 if not df_pie.empty:
                     st.bar_chart(data=df_pie, x='tipo', y='monto', color='tipo', use_container_width=True)
@@ -334,27 +332,24 @@ if not df_finanzas.empty:
             
             with cg2:
                 st.write("### 📌 Flujo por Categoría de Gasto/Ingreso")
-                # Verificamos si existe columna de categoría o concepto
                 col_cat = 'categoria' if 'categoria' in df_filtrado.columns else ('concepto' if 'concepto' in df_filtrado.columns else 'tipo')
                 df_cat = df_filtrado.groupby([col_cat, 'tipo'])['monto'].sum().unstack().fillna(0.0)
                 st.bar_chart(df_cat, use_container_width=True)
                 
             st.write("---")
             st.write("### 📈 Tendencia Financiera Histórica del Período")
-            # Agrupamos por fecha corta para trazar la línea de tiempo del balance
             df_linea = df_filtrado.copy()
             df_linea['Fecha'] = df_linea['fecha'].dt.date
             df_tendencia = df_linea.groupby(['Fecha', 'tipo'])['monto'].sum().unstack().fillna(0.0)
             
-            # Aseguramos que existan ambas columnas para evitar errores visuales
             if 'Ingreso' not in df_tendencia.columns: df_tendencia['Ingreso'] = 0.0
             if 'Egreso' not in df_tendencia.columns: df_tendencia['Egreso'] = 0.0
-            
             st.line_chart(df_tendencia[['Ingreso', 'Egreso']], use_container_width=True)
         else:
             st.info("Selecciona un período con registros para poder desplegar los análisis gráficos.")
 else:
     st.warning("No se encontraron registros financieros para procesar en el sistema.")
+
 # ==========================================
 # 5. PESTAÑAS OPERATIVAS
 # ==========================================
@@ -381,82 +376,85 @@ with tabs[0]:
             f_venc = st.date_input("Fecha Vencimiento", datetime.today()).strftime('%Y-%m-%d')
             
         if st.form_submit_button("💾 Guardar Transacción"):
-            auto_id = f"TRA-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 100000}"
+            # NUEVO ID CORTO: Más simple y fácil de rastrear (Ej: N-20260704-542)
+            auto_id = f"N-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
             nuevo_registro = {
                 "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat,
                 "concepto": f_concepto, "monto": float(f_monto), "metodo_pago": f_pago,
                 "lote_asociado": f_lote, "estado_deuda": f_estado, "fecha_vencimiento": f_venc
             }
             if guardar_registro("finanzas", nuevo_registro, "id"):
-                st.success(f"¡Transacción registrada con ID: {auto_id}!")
+                st.success(f"¡Transacción registrada con ID simplificado: {auto_id}!")
                 st.session_state["mostrar_descarga"] = False
+                time.sleep(0.4)
                 st.rerun()
 
     st.markdown("### Historial de Movimientos")
+    
+    # BUSCADOR: Pestaña Finanzas
+    buscar_fin = st.text_input("🔍 Buscar en Historial de Finanzas:", key="bus_fin").strip()
+    
     if not df_finanzas.empty:
         df_vista_finanzas = df_finanzas.copy()
         df_vista_finanzas['fecha'] = df_vista_finanzas['fecha'].dt.strftime('%Y-%m-%d')
         df_vista_finanzas = df_vista_finanzas.reindex(columns=["id", "fecha", "tipo", "categoria", "concepto", "monto", "metodo_pago", "lote_asociado", "estado_deuda", "fecha_vencimiento"])
-        st.dataframe(df_vista_finanzas, use_container_width=True, hide_index=True)
+        
+        # Aplicar el buscador si tiene texto
+        if buscar_fin:
+            mascara = df_vista_finanzas.astype(str).apply(lambda x: x.str.contains(buscar_fin, case=False)).any(axis=1)
+            df_vista_finanzas = df_vista_finanzas[mascara]
+            
+        if not df_vista_finanzas.empty:
+            # Formatear montos a Pesos en la visualización del Historial
+            df_vista_finanzas['monto'] = df_vista_finanzas['monto'].apply(lambda x: f"${x:,.2f}")
+            st.dataframe(df_vista_finanzas, use_container_width=True, hide_index=True)
+        else:
+            st.info("No se encontraron transacciones que coincidan.")
 
-    # =========================================================
-    # SECCIÓN APARTADO: MODIFICAR O ELIMINAR TRANSACCIÓN
-    # =========================================================
+    # Modificar o Eliminar Transacción
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
         
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
         fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
-        fecha_orig_str = fila_sel['fecha'].strftime('%Y-%m-%d') if isinstance(fila_sel['fecha'], datetime) else str(fila_sel['fecha'])
+        
+        # Extracción segura de la fecha original
+        if hasattr(fila_sel['fecha'], 'strftime'):
+            fecha_orig_str = fila_sel['fecha'].strftime('%Y-%m-%d')
+        else:
+            fecha_orig_str = str(fila_sel['fecha'])[:10]
         
         c1, c2, c3 = st.columns([2, 2, 1])
         lista_estados = ["Pagado", "Pendiente"]
         idx_estado = lista_estados.index(fila_sel['estado_deuda']) if fila_sel['estado_deuda'] in lista_estados else 0
         
         with c1:
-            nuevo_estado = st.selectbox(
-                "Cambiar Estado Pago a:", 
-                lista_estados, 
-                index=idx_estado, 
-                key=f"est_fin_{id_seleccionado}"
-            )
+            nuevo_estado = st.selectbox("Cambiar Estado Pago a:", lista_estados, index=idx_estado, key=f"est_fin_{id_seleccionado}")
         with c2:
-            nuevo_monto = st.number_input(
-                "Corregir Monto ($):", 
-                min_value=0.0, 
-                value=float(fila_sel['monto']), 
-                step=100.0,
-                key=f"mon_fin_{id_seleccionado}"
-            )
+            nuevo_monto = st.number_input("Corregir Monto ($):", min_value=0.0, value=float(fila_sel['monto']), step=100.0, key=f"mon_fin_{id_seleccionado}")
         with c3:
             st.write("")
             st.write("")
             
             if st.button("🔄 Actualizar", key=f"btn_up_fin_{id_seleccionado}", use_container_width=True):
                 registro_actualizado = {
-                    "id": str(id_seleccionado),
-                    "fecha": fecha_orig_str,
-                    "tipo": str(fila_sel.get('tipo', '')),
-                    "categoria": str(fila_sel.get('categoria', '')),
-                    "concepto": str(fila_sel.get('concepto', '')),
-                    "monto": float(nuevo_monto),
-                    "metodo_pago": str(fila_sel.get('metodo_pago', '')),
-                    "lote_asociado": str(fila_sel.get('lote_asociado', '')),
-                    "estado_deuda": str(nuevo_estado),
+                    "id": str(id_seleccionado), "fecha": fecha_orig_str, "tipo": str(fila_sel.get('tipo', '')),
+                    "categoria": str(fila_sel.get('categoria', '')), "concepto": str(fila_sel.get('concepto', '')),
+                    "monto": float(nuevo_monto), "metodo_pago": str(fila_sel.get('metodo_pago', '')),
+                    "lote_asociado": str(fila_sel.get('lote_asociado', '')), "estado_deuda": str(nuevo_estado),
                     "fecha_vencimiento": str(fila_sel.get('fecha_vencimiento', ''))
                 }
-                
                 if guardar_registro("finanzas", registro_actualizado, "id"):
                     st.success("¡Registro modificado con éxito!")
                     st.session_state["mostrar_descarga"] = False
-                    time.sleep(0.5)
+                    time.sleep(0.4)
                     st.rerun()
             
             if st.button("🗑️ Eliminar", key=f"btn_del_fin_{id_seleccionado}", use_container_width=True, type="primary"):
                 if eliminar_registro("finanzas", "id", id_seleccionado):
                     st.warning("Registro eliminado de la base de datos.")
                     st.session_state["mostrar_descarga"] = False
-                    time.sleep(0.5)
+                    time.sleep(0.4)
                     st.rerun()
 
 # PESTAÑA EMPLEADOS
@@ -468,12 +466,23 @@ with tabs[1]:
         e_puesto = st.text_input("Puesto")
         if st.form_submit_button("💾 Guardar Empleado"):
             if e_nombre.strip() and guardar_registro("empleados", {"nombre": e_nombre.strip(), "telefono": e_tel, "puesto_funcion": e_puesto, "fecha_ingreso": datetime.today().strftime('%Y-%m-%d')}, "nombre"):
+                time.sleep(0.4)
                 st.rerun()
-    st.dataframe(df_empleados, use_container_width=True, hide_index=True)
+                
+    # BUSCADOR: Pestaña Empleados
+    buscar_emp = st.text_input("🔍 Buscar Empleado:", key="bus_emp").strip()
+    df_emp_vista = df_empleados.copy()
+    
+    if buscar_emp and not df_emp_vista.empty:
+        df_emp_vista = df_emp_vista[df_emp_vista.astype(str).apply(lambda x: x.str.contains(buscar_emp, case=False)).any(axis=1)]
+        
+    st.dataframe(df_emp_vista, use_container_width=True, hide_index=True)
+    
     if not df_empleados.empty:
         emp_sel = st.selectbox("Selecciona Empleado para Eliminar:", df_empleados['nombre'].unique())
         if st.button("🗑️ Eliminar Empleado"):
             if eliminar_registro("empleados", "nombre", emp_sel):
+                time.sleep(0.4)
                 st.rerun()
 
 # PESTAÑA CLIENTES
@@ -484,12 +493,23 @@ with tabs[2]:
         c_tel = st.text_input("Teléfono")
         if st.form_submit_button("💾 Guardar Cliente"):
             if c_nombre.strip() and guardar_registro("clientes", {"nombre_razon": c_nombre.strip(), "telefono": c_tel}, "nombre_razon"):
+                time.sleep(0.4)
                 st.rerun()
-    st.dataframe(df_clientes, use_container_width=True, hide_index=True)
+                
+    # BUSCADOR: Pestaña Clientes
+    buscar_cli = st.text_input("🔍 Buscar Cliente:", key="bus_cli").strip()
+    df_cli_vista = df_clientes.copy()
+    
+    if buscar_cli and not df_cli_vista.empty:
+        df_cli_vista = df_cli_vista[df_cli_vista.astype(str).apply(lambda x: x.str.contains(buscar_cli, case=False)).any(axis=1)]
+        
+    st.dataframe(df_cli_vista, use_container_width=True, hide_index=True)
+    
     if not df_clientes.empty:
         cli_sel = st.selectbox("Selecciona Cliente para Eliminar:", df_clientes['nombre_razon'].unique())
         if st.button("🗑️ Eliminar Cliente"):
             if eliminar_registro("clientes", "nombre_razon", cli_sel):
+                time.sleep(0.4)
                 st.rerun()
 
 # PESTAÑA PROVEEDORES
@@ -502,27 +522,31 @@ with tabs[3]:
         
         if st.form_submit_button("💾 Guardar Proveedor"):
             if p_nombre.strip():
-                datos_proveedor = {
-                    "nombre_proveedor": p_nombre.strip(), 
-                    "insumo_principal": p_insumo,
-                    "contacto": p_contacto
-                }
+                datos_proveedor = {"nombre_proveedor": p_nombre.strip(), "insumo_principal": p_insumo, "contacto": p_contacto}
                 if guardar_registro("proveedores", datos_proveedor, "nombre_proveedor"):
                     st.success("Proveedor guardado correctamente.")
+                    time.sleep(0.4)
                     st.rerun()
                     
-    if not df_proveedores.empty:
-        columnas_prov = ["nombre_proveedor", "insumo_principal"]
-        if "contacto" in df_proveedores.columns:
-            columnas_prov.append("contacto")
-        st.dataframe(df_proveedores.reindex(columns=columnas_prov), use_container_width=True, hide_index=True)
-    else:
-        st.dataframe(df_proveedores, use_container_width=True, hide_index=True)
+    # BUSCADOR: Pestaña Proveedores
+    buscar_prov = st.text_input("🔍 Buscar Proveedor:", key="bus_prov").strip()
+    df_prov_vista = df_proveedores.copy()
+    
+    columnas_prov = ["nombre_proveedor", "insumo_principal"]
+    if "contacto" in df_prov_vista.columns:
+        columnas_prov.append("contacto")
+    df_prov_vista = df_prov_vista.reindex(columns=columnas_prov)
+    
+    if buscar_prov and not df_prov_vista.empty:
+        df_prov_vista = df_prov_vista[df_prov_vista.astype(str).apply(lambda x: x.str.contains(buscar_prov, case=False)).any(axis=1)]
+        
+    st.dataframe(df_prov_vista, use_container_width=True, hide_index=True)
         
     if not df_proveedores.empty:
         prov_sel = st.selectbox("Selecciona Proveedor para Eliminar:", df_proveedores['nombre_proveedor'].unique())
         if st.button("🗑️ Eliminar Proveedor"):
             if eliminar_registro("proveedores", "nombre_proveedor", prov_sel):
+                time.sleep(0.4)
                 st.rerun()
 
 # PESTAÑA LOTES
@@ -533,12 +557,23 @@ with tabs[4]:
         l_desc = st.text_area("Descripción")
         if st.form_submit_button("💾 Guardar Lote"):
             if l_nombre.strip() and guardar_registro("lotes", {"nombre_lote": l_nombre.strip(), "descripcion_notas": l_desc, "fecha_creacion": datetime.today().strftime('%Y-%m-%d')}, "nombre_lote"):
+                time.sleep(0.4)
                 st.rerun()
-    st.dataframe(df_lotes, use_container_width=True, hide_index=True)
+                
+    # BUSCADOR: Pestaña Lotes
+    buscar_lote = st.text_input("🔍 Buscar Lote:", key="bus_lote").strip()
+    df_lotes_vista = df_lotes.copy()
+    
+    if buscar_lote and not df_lotes_vista.empty:
+        df_lotes_vista = df_lotes_vista[df_lotes_vista.astype(str).apply(lambda x: x.str.contains(buscar_lote, case=False)).any(axis=1)]
+        
+    st.dataframe(df_lotes_vista, use_container_width=True, hide_index=True)
+    
     if not df_lotes.empty:
         lote_sel = st.selectbox("Selecciona Lote para Eliminar:", df_lotes['nombre_lote'].unique())
         if st.button("🗑️ Eliminar Lote"):
             if eliminar_registro("lotes", "nombre_lote", lote_sel):
+                time.sleep(0.4)
                 st.rerun()
 
 # RESPALDO EXCEL EN SIDEBAR
