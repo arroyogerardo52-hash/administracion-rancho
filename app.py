@@ -16,14 +16,12 @@ st.set_page_config(page_title="Rancho AE - Administración", page_icon="🤠", l
 with st.sidebar:
     st.header("🏢 Imagen Corporativa")
     
-    # Opción para cargar el logotipo desde el dispositivo
     logo_file = st.file_uploader(
         "Sube el Logotipo de tu Empresa (PNG/JPG):",
         type=["png", "jpg", "jpeg"],
         help="Selecciona una imagen desde tu computadora o celular"
     )
     
-    # Procesar la imagen cargada y convertirla a Base64 para incrustarla en el HTML
     logo_html_src = ""
     if logo_file is not None:
         try:
@@ -35,14 +33,12 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Error al procesar la imagen: {e}")
     else:
-        # Imagen de respaldo por si no se sube un archivo
         logo_html_src = "https://images.unsplash.com/photo-1516467508483-a7212febe31a?q=80&w=200&auto=format&fit=crop"
         st.info("💡 Puedes subir tu propio logo arriba. Usando logotipo predeterminado temporalmente.")
     
     st.markdown("---")
     st.header("⚙️ Copias de Seguridad")
 
-# Título Principal con Logo Integrado
 col_title, col_logo = st.columns([4, 1])
 with col_title:
     st.title("Rancho AE: Sistema de Administración")
@@ -126,17 +122,26 @@ if "mostrar_descarga" not in st.session_state:
     st.session_state["mostrar_descarga"] = False
 
 # ==========================================
+# FUNCIONES DE ESTILO DE FILAS PARA LOS HISTORIALES
+# ==========================================
+def colorear_filas_finanzas(row):
+    """Aplica color de texto a toda la fila según si es Ingreso o Egreso con opacidad de fondo baja para legibilidad."""
+    if row['tipo'] == 'Ingreso':
+        return ['background-color: rgba(46, 204, 113, 0.15); color: #2ecc71; font-weight: bold;'] * len(row)
+    elif row['tipo'] == 'Egreso':
+        return ['background-color: rgba(231, 76, 60, 0.12); color: #e74c3c;'] * len(row)
+    return [''] * len(row)
+
+# ==========================================
 # 4. PANEL DE BALANCE GLOBAL & ESTADÍSTICAS
 # ==========================================
 st.header("📊 Balance y Control General Financiero")
 
 if not df_finanzas.empty:
-    # Pre-procesamiento seguro de datos
     df_finanzas['monto'] = pd.to_numeric(df_finanzas['monto'], errors='coerce').fillna(0.0)
     df_finanzas['fecha'] = pd.to_datetime(df_finanzas['fecha'], errors='coerce')
     df_finanzas = df_finanzas.dropna(subset=['fecha'])
     
-    # Configuración y filtro de tiempo
     st.subheader("📆 Filtro de Período Temporal")
     col_filtro, col_fechas = st.columns([2, 3])
     
@@ -193,7 +198,6 @@ if not df_finanzas.empty:
         else:
             st.info("Mostrando la totalidad de los datos registrados.")
 
-    # Normalización y filtrado seguro de fechas
     df_filtrado = df_finanzas.copy()
     try:
         if df_filtrado['fecha'].dt.tz is not None:
@@ -206,7 +210,6 @@ if not df_finanzas.empty:
         f_fin_pd = pd.to_datetime(fecha_fin)
         df_filtrado = df_filtrado[(df_filtrado['fecha'] >= f_inicio_pd) & (df_filtrado['fecha'] <= f_fin_pd)]
 
-    # Cálculo de métricas financieras
     ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
     egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
     balance_neto = ingresos - egresos
@@ -214,7 +217,6 @@ if not df_finanzas.empty:
     por_cobrar = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
     por_pagar = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
     
-    # Estructura de pestañas
     tab_resumen, tab_graficas = st.tabs(["📋 Resumen Numérico", "📈 Análisis Gráfico"])
     
     with tab_resumen:
@@ -228,7 +230,6 @@ if not df_finanzas.empty:
         st.write("---")
         st.subheader("📋 Transacciones del Período")
         
-        # BUSCADOR GENERAL: Balance de Transacciones del Periodo
         buscar_bal = st.text_input("🔍 Buscar en las transacciones del período:", key="bus_bal").strip()
         df_bal_vista = df_filtrado.copy()
         
@@ -236,16 +237,16 @@ if not df_finanzas.empty:
             mascara = df_bal_vista.astype(str).apply(lambda x: x.str.contains(buscar_bal, case=False)).any(axis=1)
             df_bal_vista = df_bal_vista[mascara]
             
-        # Formatear montos para visualización limpia en pesos en el Balance
         if not df_bal_vista.empty:
-            df_bal_formateado = df_bal_vista.copy()
-            df_bal_formateado['monto'] = df_bal_formateado['monto'].apply(lambda x: f"${x:,.2f}")
-            df_bal_formateado['fecha'] = df_bal_formateado['fecha'].dt.strftime('%Y-%m-%d')
-            st.dataframe(df_bal_formateado, use_container_width=True)
+            df_bal_vista['fecha'] = df_bal_vista['fecha'].dt.strftime('%Y-%m-%d')
+            # Aplicar estilización de filas (verde/rojo) y formato de moneda en el balance
+            df_bal_estilizado = (df_bal_vista.style
+                                 .apply(colorear_filas_finanzas, axis=1)
+                                 .format({'monto': '${:,.2f}'}))
+            st.dataframe(df_bal_estilizado, use_container_width=True)
         else:
             st.info("No hay registros que coincidan con la búsqueda.")
 
-        # Exportación HTML para Google Docs
         st.write("### 📄 Exportar Reporte Ejecutivo")
         html_reporte = f"""
         <html>
@@ -376,7 +377,6 @@ with tabs[0]:
             f_venc = st.date_input("Fecha Vencimiento", datetime.today()).strftime('%Y-%m-%d')
             
         if st.form_submit_button("💾 Guardar Transacción"):
-            # NUEVO ID CORTO: Más simple y fácil de rastrear (Ej: N-20260704-542)
             auto_id = f"N-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
             nuevo_registro = {
                 "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat,
@@ -391,7 +391,6 @@ with tabs[0]:
 
     st.markdown("### Historial de Movimientos")
     
-    # BUSCADOR: Pestaña Finanzas
     buscar_fin = st.text_input("🔍 Buscar en Historial de Finanzas:", key="bus_fin").strip()
     
     if not df_finanzas.empty:
@@ -399,15 +398,17 @@ with tabs[0]:
         df_vista_finanzas['fecha'] = df_vista_finanzas['fecha'].dt.strftime('%Y-%m-%d')
         df_vista_finanzas = df_vista_finanzas.reindex(columns=["id", "fecha", "tipo", "categoria", "concepto", "monto", "metodo_pago", "lote_asociado", "estado_deuda", "fecha_vencimiento"])
         
-        # Aplicar el buscador si tiene texto
         if buscar_fin:
             mascara = df_vista_finanzas.astype(str).apply(lambda x: x.str.contains(buscar_fin, case=False)).any(axis=1)
             df_vista_finanzas = df_vista_finanzas[mascara]
             
         if not df_vista_finanzas.empty:
-            # Formatear montos a Pesos en la visualización del Historial
-            df_vista_finanzas['monto'] = df_vista_finanzas['monto'].apply(lambda x: f"${x:,.2f}")
-            st.dataframe(df_vista_finanzas, use_container_width=True, hide_index=True)
+            # APLICACIÓN DE COLOR POR FILA COMPLETA Y FORMATEO DE PESOS MEXICANOS
+            df_fin_estilizado = (df_vista_finanzas.style
+                                 .apply(colorear_filas_finanzas, axis=1)
+                                 .format({'monto': '${:,.2f}'}))
+            
+            st.dataframe(df_fin_estilizado, use_container_width=True, hide_index=True)
         else:
             st.info("No se encontraron transacciones que coincidan.")
 
@@ -418,7 +419,6 @@ with tabs[0]:
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
         fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
         
-        # Extracción segura de la fecha original
         if hasattr(fila_sel['fecha'], 'strftime'):
             fecha_orig_str = fila_sel['fecha'].strftime('%Y-%m-%d')
         else:
@@ -469,7 +469,6 @@ with tabs[1]:
                 time.sleep(0.4)
                 st.rerun()
                 
-    # BUSCADOR: Pestaña Empleados
     buscar_emp = st.text_input("🔍 Buscar Empleado:", key="bus_emp").strip()
     df_emp_vista = df_empleados.copy()
     
@@ -496,7 +495,6 @@ with tabs[2]:
                 time.sleep(0.4)
                 st.rerun()
                 
-    # BUSCADOR: Pestaña Clientes
     buscar_cli = st.text_input("🔍 Buscar Cliente:", key="bus_cli").strip()
     df_cli_vista = df_clientes.copy()
     
@@ -528,7 +526,6 @@ with tabs[3]:
                     time.sleep(0.4)
                     st.rerun()
                     
-    # BUSCADOR: Pestaña Proveedores
     buscar_prov = st.text_input("🔍 Buscar Proveedor:", key="bus_prov").strip()
     df_prov_vista = df_proveedores.copy()
     
@@ -560,7 +557,6 @@ with tabs[4]:
                 time.sleep(0.4)
                 st.rerun()
                 
-    # BUSCADOR: Pestaña Lotes
     buscar_lote = st.text_input("🔍 Buscar Lote:", key="bus_lote").strip()
     df_lotes_vista = df_lotes.copy()
     
