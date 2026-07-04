@@ -136,6 +136,98 @@ if not df_finanzas.empty:
     df_finanzas['fecha'] = pd.to_datetime(df_finanzas['fecha'], errors='coerce')
     
     # ---------------------------------------------------------
+    # CONFIGURACIÓN Y FILTRO DE TIEMPO (CORREGIDO)
+    # ---------------------------------------------------------
+    st.subheader("📆 Filtro de Período Temporal")
+    col_filtro, col_fechas = st.columns([2, 3])
+    
+    hoy = datetime.today()
+    
+    # Valores por defecto estables (cubriendo todo el día de hoy)
+    fecha_inicio = hoy.replace(hour=0, minute=0, second=0, microsecond=0)
+    fecha_fin = hoy.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    with col_filtro:
+        periodo = st.selectbox(
+            "Selecciona el período visualizado:",
+            ["Todo el Historial", "Esta Semana", "Este Mes", "Este Año", "Rango Personalizado"]
+        )
+
+    with col_fechas:
+        if periodo == "Esta Semana":
+            lunes = hoy - timedelta(days=hoy.weekday())
+            fecha_inicio = lunes.replace(hour=0, minute=0, second=0, microsecond=0)
+            fecha_fin = (lunes + timedelta(days=6)).replace(hour=23, minute=59, second=59, microsecond=999999)
+            st.info(f"Mostrando desde el lunes: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
+            
+        elif periodo == "Este Mes":
+            fecha_inicio = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            next_month = hoy.replace(day=28) + timedelta(days=4)
+            ultimo_dia = next_month - timedelta(days=next_month.day)
+            fecha_fin = ultimo_dia.replace(hour=23, minute=59, second=59, microsecond=999999)
+            st.info(f"Mostrando el mes en curso: **{fecha_inicio.strftime('%B %Y')}**")
+            
+        elif periodo == "Este Año":
+            fecha_inicio = hoy.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            fecha_fin = hoy.replace(month=12, day=31, hour=23, minute=59, second=59, microsecond=999999)
+            st.info(f"Mostrando el año en curso: **{hoy.year}**")
+            
+        elif periodo == "Rango Personalizado":
+            fecha_defecto_inicio = (hoy - timedelta(days=30)).date()
+            fecha_defecto_fin = hoy.date()
+            
+            rango_fechas = st.date_input(
+                "Selecciona el rango (Inicio - Fin):", 
+                [fecha_defecto_inicio, fecha_defecto_fin],
+                help="Asegúrate de seleccionar tanto la fecha de inicio como la de fin."
+            )
+            
+            # Forzar la desestructuración limpia y agregar horas exactas para abarcar los extremos
+            if isinstance(rango_fechas, (list, tuple)):
+                if len(rango_fechas) == 2:
+                    fecha_inicio = datetime.combine(rango_fechas[0], datetime.min.time())
+                    fecha_fin = datetime.combine(rango_fechas[1], datetime.max.time())
+                elif len(rango_fechas) == 1:
+                    fecha_inicio = datetime.combine(rango_fechas[0], datetime.min.time())
+                    fecha_fin = datetime.combine(rango_fechas[0], datetime.max.time())
+            else:
+                fecha_inicio = datetime.combine(rango_fechas, datetime.min.time())
+                fecha_fin = datetime.combine(rango_fechas, datetime.max.time())
+                
+            st.info(f"Rango activo: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
+        else:
+            st.info("Mostrando la totalidad de los datos registrados.")
+
+    # --- NORMALIZACIÓN Y FILTRADO SEGURO ---
+    df_filtrado = df_finanzas.copy()
+    
+    # 1. Quitamos la zona horaria de raíz de la columna para evitar errores de comparación
+    if df_filtrado['fecha'].dt.tz is not None:
+        df_filtrado['fecha'] = df_filtrado['fecha'].dt.tz_localize(None)
+
+    # 2. Aplicamos el filtro usando los datetimes nativos ya calculados arriba
+    if periodo != "Todo el Historial":
+        df_filtrado = df_filtrado[
+            (df_filtrado['fecha'] >= pd.to_datetime(fecha_inicio)) & 
+            (df_filtrado['fecha'] <= pd.to_datetime(fecha_fin))
+        ]
+
+    # Volver a calcular métricas usando únicamente los datos filtrados
+    ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
+    egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
+    balance_neto = ingresos - egresos
+    
+    por_cobrar = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
+    por_pagar = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
+    
+    # Renderizar tarjetas de métricas en pantalla
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("🟢 Ingresos Reales", f"${ingresos:,.2f}")
+    m2.metric("🔴 Egresos Reales", f"${egresos:,.2f}")
+    m3.metric("💰 Balance Neto", f"${balance_neto:,.2f}", delta=f"${balance_neto:,.2f}" if balance_neto >= 0 else f"${balance_neto:,.2f}", delta_color="normal" if balance_neto >= 0 else "inverse")
+    m4.metric("📈 Por Cobrar", f"${por_cobrar:,.2f}")
+    m5.metric("📉 Por Pagar", f"${por_pagar:,.2f}")
+    # ---------------------------------------------------------
     # CONFIGURACIÓN Y FILTRO DE TIEMPO
     # ---------------------------------------------------------
     st.subheader("📆 Filtro de Período Temporal")
