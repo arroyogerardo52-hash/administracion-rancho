@@ -237,6 +237,7 @@ if not df_finanzas.empty:
     st.markdown("---")
     st.markdown("### 📝 Exportar Estado de Cuenta Oficial")
     if st.button("📄 Compilar Plantilla Institucional con Logotipo"):
+        # CORRECCIÓN: Se añadieron las variables faltantes f-string para 'por_cobrar' y 'por_pagar'
         html_template = f"""
         <div style="font-family: Arial, sans-serif; line-height: 1.25; color: #333333; padding: 10px;">
             <table style="width: 100%; border-bottom: 2px solid #5c4033; padding-bottom: 10px;">
@@ -268,13 +269,13 @@ if not df_finanzas.empty:
                     <tr><td style="padding: 8px;">🟢 Ingresos Consolidados (Liquidados)</td><td style="padding: 8px;"><strong>${ingresos:,.2f}</strong></td></tr>
                     <tr><td style="padding: 8px;">🔴 Egresos Consolidados (Liquidados)</td><td style="padding: 8px;"><strong>${egresos:,.2f}</strong></td></tr>
                     <tr style="background-color: #f1f3f5;"><td style="padding: 8px;"><strong>💰 Balance Neto Comercial</strong></td><td style="padding: 8px;"><strong style="color: {'#2b8a3e' if balance_neto >= 0 else '#c92a2a'};">${balance_neto:,.2f}</strong></td></tr>
-                    <tr><td style="padding: 8px;">📈 Cuentas Pendientes de Cobro</td><td style="padding: 8px;">{por_cobrar:,.2f}</td></tr>
-                    <tr><td style="padding: 8px;">📉 Cuentas Pendientes de Pago</td><td style="padding: 8px;">{por_pagar:,.2f}</td></tr>
+                    <tr><td style="padding: 8px;">📈 Cuentas Pendientes de Cobro</td><td style="padding: 8px;"><strong>${por_cobrar:,.2f}</strong></td></tr>
+                    <tr><td style="padding: 8px;">📉 Cuentas Pendientes de Pago</td><td style="padding: 8px;"><strong>${por_pagar:,.2f}</strong></td></tr>
                 </tbody>
             </table>
             
             <br>
-            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px; font-size: 14pt; margin-top: 20px;">2. Libro Diario Reciente</h2>
+            <h2 style="color: #5c4033; border-left: 4px solid #5c4033; padding-left: 8px; font-size: 14pt; margin-top: 20px;">2. Libro Diario de Transacciones</h2>
         """
         
         if not df_filtrado.empty:
@@ -289,7 +290,9 @@ if not df_finanzas.empty:
             """
             df_reporte_html = df_filtrado.copy()
             df_reporte_html['fecha_txt'] = df_reporte_html['fecha'].dt.strftime('%Y-%m-%d')
-            for _, r in df_reporte_html.head(15).iterrows():
+            
+            # CORRECCIÓN: Quitamos el .head(15) para permitir que TODO el rango filtrado se documente
+            for _, r in df_reporte_html.iterrows():
                 html_template += f"""
                 <tr>
                     <td style="padding: 6px;">{r.get('id','')}</td>
@@ -376,23 +379,16 @@ with tabs[0]:
         st.dataframe(df_vista_finanzas, use_container_width=True, hide_index=True)
 
     # =========================================================
-    # SECCIÓN APARTADO: MODIFICAR O ELIMINAR TRANSACCIÓN (CORREGIDA)
+    # SECCIÓN APARTADO: MODIFICAR O ELIMINAR TRANSACCIÓN
     # =========================================================
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
         
-        # Selector de la transacción a alterar
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
-        
-        # Obtener la fila correspondiente
         fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
-        
-        # Formatear la fecha original correctamente para evitar problemas de tipos en el backend
         fecha_orig_str = fila_sel['fecha'].strftime('%Y-%m-%d') if isinstance(fila_sel['fecha'], datetime) else str(fila_sel['fecha'])
         
-        # Formulario de edición con claves dinámicas basadas en el ID seleccionado para forzar refresco interactivo
         c1, c2, c3 = st.columns([2, 2, 1])
-        
         lista_estados = ["Pagado", "Pendiente"]
         idx_estado = lista_estados.index(fila_sel['estado_deuda']) if fila_sel['estado_deuda'] in lista_estados else 0
         
@@ -415,7 +411,6 @@ with tabs[0]:
             st.write("")
             st.write("")
             
-            # Botón de actualización
             if st.button("🔄 Actualizar", key=f"btn_up_fin_{id_seleccionado}", use_container_width=True):
                 registro_actualizado = {
                     "id": str(id_seleccionado),
@@ -436,7 +431,6 @@ with tabs[0]:
                     time.sleep(0.5)
                     st.rerun()
             
-            # Botón de eliminación
             if st.button("🗑️ Eliminar", key=f"btn_del_fin_{id_seleccionado}", use_container_width=True, type="primary"):
                 if eliminar_registro("finanzas", "id", id_seleccionado):
                     st.warning("Registro eliminado de la base de datos.")
@@ -496,7 +490,6 @@ with tabs[3]:
                     st.success("Proveedor guardado correctamente.")
                     st.rerun()
                     
-    # Reorganizar el orden de las columnas en la vista si la tabla tiene datos
     if not df_proveedores.empty:
         columnas_prov = ["nombre_proveedor", "insumo_principal"]
         if "contacto" in df_proveedores.columns:
