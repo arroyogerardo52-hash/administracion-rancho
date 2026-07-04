@@ -338,10 +338,10 @@ if not df_finanzas.empty:
                 st.bar_chart(df_cat, use_container_width=True)
                 
             # ==========================================
-            # NUEVA SECCIÓN: GRÁFICA DE DONA (DISTRIBUCIÓN DE CAPITAL)
+            # NUEVA SECCIÓN: GRÁFICA DE DONA (DISTRIBUCIÓN DE CAPITAL) CORREGIDA
             # ==========================================
             st.write("---")
-            col_dona_centrada, _ = st.columns([2, 1])  # Se usa proporción para que luzca limpia y amplia
+            col_dona_centrada, _ = st.columns([2, 1])
             with col_dona_centrada:
                 st.write("### 🍩 Distribución de Capital")
                 if not df_pie.empty:
@@ -349,12 +349,16 @@ if not df_finanzas.empty:
                         df_pie, 
                         values='monto', 
                         names='tipo', 
-                        hole=0.6,  # Grosor del centro de la dona para simular la imagen enviada
+                        hole=0.6,  
                         color='tipo',
-                        color_discrete_map={'Ingreso': '#2ecc71', 'Egreso': '#e74c3c'}  # Colores corporativos verde/rojo
+                        color_discrete_map={'Ingreso': '#2ecc71', 'Egreso': '#e74c3c'}  
                     )
-                    # Configuración de etiquetas de porcentaje internas y estilo limpio
-                    fig_donut.update_traces(textinfo='percent', textposition='inside', font_size=14)
+                    # Sintaxis corregida usando diccionario de estilo para evitar el error de fuentes
+                    fig_donut.update_traces(
+                        textinfo='percent', 
+                        textposition='inside', 
+                        insidetextfont=dict(size=14)
+                    )
                     fig_donut.update_layout(
                         showlegend=True,
                         margin=dict(t=30, b=25, l=20, r=20),
