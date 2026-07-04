@@ -363,8 +363,8 @@ with tabs[0]:
         with col1:
             f_fecha = st.date_input("Fecha Transacción", datetime.today()).strftime('%Y-%m-%d')
             f_tipo = st.selectbox("Tipo de Movimiento", ["Ingreso", "Egreso"])
-            f_cat = st.text_input("Categoría (Ej: Alimento, Venta Animales)")
-            f_concepto = st.text_input("Concepto / Descripción")
+            f_cat = st.text_input("Categoría (Ej: Alimento, Venta Animales)").strip().upper()
+            f_concepto = st.text_input("Concepto / Descripción").strip()
         with col2:
             f_monto = st.number_input("Monto total ($)", min_value=0.0, step=100.0)
             f_pago = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque", "Crédito"])
@@ -439,7 +439,7 @@ with tabs[0]:
             if st.button("🔄 Actualizar", key=f"btn_up_fin_{id_seleccionado}", use_container_width=True):
                 registro_actualizado = {
                     "id": str(id_seleccionado), "fecha": fecha_orig_str, "tipo": str(fila_sel.get('tipo', '')),
-                    "categoria": str(fila_sel.get('categoria', '')), "concepto": str(fila_sel.get('concepto', '')),
+                    "categoria": str(fila_sel.get('categoria', '')).strip().upper(), "concepto": str(fila_sel.get('concepto', '')).strip(),
                     "monto": float(nuevo_monto), "metodo_pago": str(fila_sel.get('metodo_pago', '')),
                     "lote_asociado": str(fila_sel.get('lote_asociado', '')), "estado_deuda": str(nuevo_estado),
                     "fecha_vencimiento": str(fila_sel.get('fecha_vencimiento', ''))
@@ -461,11 +461,11 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("Administración de Personal")
     with st.form("form_empleados", clear_on_submit=True):
-        e_nombre = st.text_input("Nombre del Empleado")
-        e_tel = st.text_input("Teléfono")
-        e_puesto = st.text_input("Puesto")
+        e_nombre = st.text_input("Nombre del Empleado").strip().upper()
+        e_tel = st.text_input("Teléfono").strip()
+        e_puesto = st.text_input("Puesto").strip().upper()
         if st.form_submit_button("💾 Guardar Empleado"):
-            if e_nombre.strip() and guardar_registro("empleados", {"nombre": e_nombre.strip(), "telefono": e_tel, "puesto_funcion": e_puesto, "fecha_ingreso": datetime.today().strftime('%Y-%m-%d')}, "nombre"):
+            if e_nombre.strip() and guardar_registro("empleados", {"nombre": e_nombre, "telefono": e_tel, "puesto_funcion": e_puesto, "fecha_ingreso": datetime.today().strftime('%Y-%m-%d')}, "nombre"):
                 time.sleep(0.4)
                 st.rerun()
                 
@@ -489,10 +489,10 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("Registro de Clientes")
     with st.form("form_clientes", clear_on_submit=True):
-        c_nombre = st.text_input("Razón Social")
-        c_tel = st.text_input("Teléfono")
+        c_nombre = st.text_input("Razón Social").strip().upper()
+        c_tel = st.text_input("Teléfono").strip()
         if st.form_submit_button("💾 Guardar Cliente"):
-            if c_nombre.strip() and guardar_registro("clientes", {"nombre_razon": c_nombre.strip(), "telefono": c_tel}, "nombre_razon"):
+            if c_nombre.strip() and guardar_registro("clientes", {"nombre_razon": c_nombre, "telefono": c_tel}, "nombre_razon"):
                 time.sleep(0.4)
                 st.rerun()
                 
@@ -516,13 +516,13 @@ with tabs[2]:
 with tabs[3]:
     st.subheader("Catálogo de Proveedores")
     with st.form("form_proveedores", clear_on_submit=True):
-        p_nombre = st.text_input("Nombre del Proveedor / Razón Social")
-        p_insumo = st.text_input("Insumo Principal (Ej: Alimento, Medicinas, Diésel)")
-        p_contacto = st.text_input("Información de Contacto (Teléfono / Correo)")
+        p_nombre = st.text_input("Nombre del Proveedor / Razón Social").strip().upper()
+        p_insumo = st.text_input("Insumo Principal (Ej: Alimento, Medicinas, Diésel)").strip().upper()
+        p_contacto = st.text_input("Información de Contacto (Teléfono / Correo)").strip()
         
         if st.form_submit_button("💾 Guardar Proveedor"):
             if p_nombre.strip():
-                datos_proveedor = {"nombre_proveedor": p_nombre.strip(), "insumo_principal": p_insumo, "contacto": p_contacto}
+                datos_proveedor = {"nombre_proveedor": p_nombre, "insumo_principal": p_insumo, "contacto": p_contacto}
                 if guardar_registro("proveedores", datos_proveedor, "nombre_proveedor"):
                     st.success("Proveedor guardado correctamente.")
                     time.sleep(0.4)
@@ -553,10 +553,10 @@ with tabs[3]:
 with tabs[4]:
     st.subheader("Control de Lotes de Ganado")
     with st.form("form_lotes", clear_on_submit=True):
-        l_nombre = st.text_input("Código del Lote (Ej: Lote_Sardo_01)")
-        l_desc = st.text_area("Descripción")
+        l_nombre = st.text_input("Código del Lote (Ej: Lote_Sardo_01)").strip().upper()
+        l_desc = st.text_area("Descripción").strip()
         if st.form_submit_button("💾 Guardar Lote"):
-            if l_nombre.strip() and guardar_registro("lotes", {"nombre_lote": l_nombre.strip(), "descripcion_notas": l_desc, "fecha_creacion": datetime.today().strftime('%Y-%m-%d')}, "nombre_lote"):
+            if l_nombre.strip() and guardar_registro("lotes", {"nombre_lote": l_nombre, "descripcion_notas": l_desc, "fecha_creacion": datetime.today().strftime('%Y-%m-%d')}, "nombre_lote"):
                 time.sleep(0.4)
                 st.rerun()
                 
