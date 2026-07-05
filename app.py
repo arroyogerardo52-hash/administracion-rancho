@@ -126,7 +126,6 @@ if "mostrar_descarga" not in st.session_state:
 # FUNCIONES DE ESTILO DE FILAS PARA LOS HISTORIALES
 # ==========================================
 def colorear_filas_finanzas(row):
-    """Aplica color de texto a toda la fila según si es Ingreso o Egreso con opacidad de fondo baja para legibilidad."""
     if row['tipo'] == 'Ingreso':
         return ['background-color: rgba(46, 204, 113, 0.15); color: #2ecc71; font-weight: bold;'] * len(row)
     elif row['tipo'] == 'Egreso':
@@ -234,7 +233,7 @@ if not df_finanzas.empty:
         buscar_bal = st.text_input("🔍 Buscar en las transacciones del período:", key="bus_bal").strip()
         df_bal_vista = df_filtrado.copy()
         
-        if buscar_bal:
+        if buscar_bal and not df_bal_vista.empty:
             mascara = df_bal_vista.astype(str).apply(lambda x: x.str.contains(buscar_bal, case=False)).any(axis=1)
             df_bal_vista = df_bal_vista[mascara]
             
@@ -323,9 +322,10 @@ if not df_finanzas.empty:
         st.subheader("📊 Visualización de Rendimiento del Período")
         if not df_filtrado.empty:
             cg1, cg2 = st.columns(2)
+            df_pie = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].groupby('tipo')['monto'].sum().reset_index()
+            
             with cg1:
                 st.write("### 💰 Ingresos vs Egresos Reales")
-                df_pie = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].groupby('tipo')['monto'].sum().reset_index()
                 if not df_pie.empty:
                     st.bar_chart(data=df_pie, x='tipo', y='monto', color='tipo', use_container_width=True)
                 else:
@@ -337,9 +337,6 @@ if not df_finanzas.empty:
                 df_cat = df_filtrado.groupby([col_cat, 'tipo'])['monto'].sum().unstack().fillna(0.0)
                 st.bar_chart(df_cat, use_container_width=True)
                 
-            # ==========================================
-            # NUEVA SECCIÓN: GRÁFICA DE DONA (DISTRIBUCIÓN DE CAPITAL) CORREGIDA
-            # ==========================================
             st.write("---")
             col_dona_centrada, _ = st.columns([2, 1])
             with col_dona_centrada:
@@ -353,7 +350,6 @@ if not df_finanzas.empty:
                         color='tipo',
                         color_discrete_map={'Ingreso': '#2ecc71', 'Egreso': '#e74c3c'}  
                     )
-                    # Sintaxis corregida usando diccionario de estilo para evitar el error de fuentes
                     fig_donut.update_traces(
                         textinfo='percent', 
                         textposition='inside', 
@@ -409,21 +405,22 @@ with tabs[0]:
             f_estado = st.selectbox("Estado del Pago", ["Pagado", "Pendiente"])
             f_venc = st.date_input("Fecha Vencimiento", datetime.today()).strftime('%Y-%m-%d')
             
-        if st.form_submit_button("💾 Guardar Transacción"):
-            auto_id = f"N-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
-            nuevo_registro = {
-                "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat,
-                "concepto": f_concepto, "monto": float(f_monto), "metodo_pago": f_pago,
-                "lote_asociado": f_lote, "estado_deuda": f_estado, "fecha_vencimiento": f_venc
-            }
-            if guardar_registro("finanzas", nuevo_registro, "id"):
-                st.success(f"¡Transacción registrada con ID simplificado: {auto_id}!")
-                st.session_state["mostrar_descarga"] = False
-                time.sleep(0.4)
-                st.rerun()
+        guardar_fin_btn = st.form_submit_button("💾 Guardar Transacción")
+        
+    if guardar_fin_btn:
+        auto_id = f"N-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
+        nuevo_registro = {
+            "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat,
+            "concepto": f_concepto, "monto": float(f_monto), "metodo_pago": f_pago,
+            "lote_asociado": f_lote, "estado_deuda": f_estado, "fecha_vencimiento": f_venc
+        }
+        if guardar_registro("finanzas", nuevo_registro, "id"):
+            st.success(f"¡Transacción registrada con ID simplificado: {auto_id}!")
+            st.session_state["mostrar_descarga"] = False
+            time.sleep(0.4)
+            st.rerun()
 
     st.markdown("### Historial de Movimientos")
-    
     buscar_fin = st.text_input("🔍 Buscar en Historial de Finanzas:", key="bus_fin").strip()
     
     if not df_finanzas.empty:
@@ -439,7 +436,6 @@ with tabs[0]:
             df_fin_estilizado = (df_vista_finanzas.style
                                  .apply(colorear_filas_finanzas, axis=1)
                                  .format({'monto': '${:,.2f}'}))
-            
             st.dataframe(df_fin_estilizado, use_container_width=True, hide_index=True)
         else:
             st.info("No se encontraron transacciones que coincidan.")
@@ -447,14 +443,10 @@ with tabs[0]:
     # Modificar o Eliminar Transacción
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
-        
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
         fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
         
-        if hasattr(fila_sel['fecha'], 'strftime'):
-            fecha_orig_str = fila_sel['fecha'].strftime('%Y-%m-%d')
-        else:
-            fecha_orig_str = str(fila_sel['fecha'])[:10]
+        fecha_orig_str = fila_sel['fecha'].strftime('%Y-%m-%d') if hasattr(fila_sel['fecha'], 'strftime') else str(fila_sel['fecha'])[:10]
         
         c1, c2, c3 = st.columns([2, 2, 1])
         lista_estados = ["Pagado", "Pendiente"]
@@ -496,25 +488,28 @@ with tabs[1]:
         e_nombre = st.text_input("Nombre del Empleado").strip().upper()
         e_tel = st.text_input("Teléfono").strip()
         e_puesto = st.text_input("Puesto").strip().upper()
-        if st.form_submit_button("💾 Guardar Empleado"):
-            if e_nombre.strip() and guardar_registro("empleados", {"nombre": e_nombre, "telefono": e_tel, "puesto_funcion": e_puesto, "fecha_ingreso": datetime.today().strftime('%Y-%m-%d')}, "nombre"):
-                time.sleep(0.4)
-                st.rerun()
+        guardar_emp_btn = st.form_submit_button("💾 Guardar Empleado")
+        
+    if guardar_emp_btn and e_nombre.strip():
+        if guardar_registro("empleados", {"nombre": e_nombre, "telefono": e_tel, "puesto_funcion": e_puesto, "fecha_ingreso": datetime.today().strftime('%Y-%m-%d')}, "nombre"):
+            time.sleep(0.4)
+            st.rerun()
                 
     buscar_emp = st.text_input("🔍 Buscar Empleado:", key="bus_emp").strip()
     df_emp_vista = df_empleados.copy()
     
-    if buscar_emp and not df_emp_vista.empty:
-        df_emp_vista = df_emp_vista[df_emp_vista.astype(str).apply(lambda x: x.str.contains(buscar_emp, case=False)).any(axis=1)]
+    if not df_emp_vista.empty:
+        if buscar_emp:
+            df_emp_vista = df_emp_vista[df_emp_vista.astype(str).apply(lambda x: x.str.contains(buscar_emp, case=False)).any(axis=1)]
+        st.dataframe(df_emp_vista, use_container_width=True, hide_index=True)
         
-    st.dataframe(df_emp_vista, use_container_width=True, hide_index=True)
-    
-    if not df_empleados.empty:
         emp_sel = st.selectbox("Selecciona Empleado para Eliminar:", df_empleados['nombre'].unique())
         if st.button("🗑️ Eliminar Empleado"):
             if eliminar_registro("empleados", "nombre", emp_sel):
                 time.sleep(0.4)
                 st.rerun()
+    else:
+        st.info("No hay empleados registrados.")
 
 # PESTAÑA CLIENTES
 with tabs[2]:
@@ -522,25 +517,28 @@ with tabs[2]:
     with st.form("form_clientes", clear_on_submit=True):
         c_nombre = st.text_input("Razón Social").strip().upper()
         c_tel = st.text_input("Teléfono").strip()
-        if st.form_submit_button("💾 Guardar Cliente"):
-            if c_nombre.strip() and guardar_registro("clientes", {"nombre_razon": c_nombre, "telefono": c_tel}, "nombre_razon"):
-                time.sleep(0.4)
-                st.rerun()
+        guardar_cli_btn = st.form_submit_button("💾 Guardar Cliente")
+        
+    if guardar_cli_btn and c_nombre.strip():
+        if guardar_registro("clientes", {"nombre_razon": c_nombre, "telefono": c_tel}, "nombre_razon"):
+            time.sleep(0.4)
+            st.rerun()
                 
     buscar_cli = st.text_input("🔍 Buscar Cliente:", key="bus_cli").strip()
     df_cli_vista = df_clientes.copy()
     
-    if buscar_cli and not df_cli_vista.empty:
-        df_cli_vista = df_cli_vista[df_cli_vista.astype(str).apply(lambda x: x.str.contains(buscar_cli, case=False)).any(axis=1)]
+    if not df_cli_vista.empty:
+        if buscar_cli:
+            df_cli_vista = df_cli_vista[df_cli_vista.astype(str).apply(lambda x: x.str.contains(buscar_cli, case=False)).any(axis=1)]
+        st.dataframe(df_cli_vista, use_container_width=True, hide_index=True)
         
-    st.dataframe(df_cli_vista, use_container_width=True, hide_index=True)
-    
-    if not df_clientes.empty:
         cli_sel = st.selectbox("Selecciona Cliente para Eliminar:", df_clientes['nombre_razon'].unique())
         if st.button("🗑️ Eliminar Cliente"):
             if eliminar_registro("clientes", "nombre_razon", cli_sel):
                 time.sleep(0.4)
                 st.rerun()
+    else:
+        st.info("No hay clientes registrados.")
 
 # PESTAÑA PROVEEDORES
 with tabs[3]:
@@ -549,34 +547,35 @@ with tabs[3]:
         p_nombre = st.text_input("Nombre del Proveedor / Razón Social").strip().upper()
         p_insumo = st.text_input("Insumo Principal (Ej: Alimento, Medicinas, Diésel)").strip().upper()
         p_contacto = st.text_input("Información de Contacto (Teléfono / Correo)").strip()
+        guardar_prov_btn = st.form_submit_button("💾 Guardar Proveedor")
         
-        if st.form_submit_button("💾 Guardar Proveedor"):
-            if p_nombre.strip():
-                datos_proveedor = {"nombre_proveedor": p_nombre, "insumo_principal": p_insumo, "contacto": p_contacto}
-                if guardar_registro("proveedores", datos_proveedor, "nombre_proveedor"):
-                    st.success("Proveedor guardado correctamente.")
-                    time.sleep(0.4)
-                    st.rerun()
+    if guardar_prov_btn and p_nombre.strip():
+        datos_proveedor = {"nombre_proveedor": p_nombre, "insumo_principal": p_insumo, "contacto": p_contacto}
+        if guardar_registro("proveedores", datos_proveedor, "nombre_proveedor"):
+            st.success("Proveedor guardado correctamente.")
+            time.sleep(0.4)
+            st.rerun()
                     
     buscar_prov = st.text_input("🔍 Buscar Proveedor:", key="bus_prov").strip()
     df_prov_vista = df_proveedores.copy()
     
-    columnas_prov = ["nombre_proveedor", "insumo_principal"]
-    if "contacto" in df_prov_vista.columns:
-        columnas_prov.append("contacto")
-    df_prov_vista = df_prov_vista.reindex(columns=columnas_prov)
-    
-    if buscar_prov and not df_prov_vista.empty:
-        df_prov_vista = df_prov_vista[df_prov_vista.astype(str).apply(lambda x: x.str.contains(buscar_prov, case=False)).any(axis=1)]
+    if not df_prov_vista.empty:
+        columnas_prov = ["nombre_proveedor", "insumo_principal"]
+        if "contacto" in df_prov_vista.columns:
+            columnas_prov.append("contacto")
+        df_prov_vista = df_prov_vista.reindex(columns=columnas_prov)
         
-    st.dataframe(df_prov_vista, use_container_width=True, hide_index=True)
-        
-    if not df_proveedores.empty:
+        if buscar_prov:
+            df_prov_vista = df_prov_vista[df_prov_vista.astype(str).apply(lambda x: x.str.contains(buscar_prov, case=False)).any(axis=1)]
+        st.dataframe(df_prov_vista, use_container_width=True, hide_index=True)
+            
         prov_sel = st.selectbox("Selecciona Proveedor para Eliminar:", df_proveedores['nombre_proveedor'].unique())
         if st.button("🗑️ Eliminar Proveedor"):
             if eliminar_registro("proveedores", "nombre_proveedor", prov_sel):
                 time.sleep(0.4)
                 st.rerun()
+    else:
+        st.info("No hay proveedores registrados.")
 
 # PESTAÑA LOTES
 with tabs[4]:
@@ -584,25 +583,28 @@ with tabs[4]:
     with st.form("form_lotes", clear_on_submit=True):
         l_nombre = st.text_input("Código del Lote (Ej: Lote_Sardo_01)").strip().upper()
         l_desc = st.text_area("Descripción").strip()
-        if st.form_submit_button("💾 Guardar Lote"):
-            if l_nombre.strip() and guardar_registro("lotes", {"nombre_lote": l_nombre, "descripcion_notas": l_desc, "fecha_creacion": datetime.today().strftime('%Y-%m-%d')}, "nombre_lote"):
-                time.sleep(0.4)
-                st.rerun()
+        guardar_lote_btn = st.form_submit_button("💾 Guardar Lote")
+        
+    if guardar_lote_btn and l_nombre.strip():
+        if guardar_registro("lotes", {"nombre_lote": l_nombre, "descripcion_notas": l_desc, "fecha_creacion": datetime.today().strftime('%Y-%m-%d')}, "nombre_lote"):
+            time.sleep(0.4)
+            st.rerun()
                 
     buscar_lote = st.text_input("🔍 Buscar Lote:", key="bus_lote").strip()
     df_lotes_vista = df_lotes.copy()
     
-    if buscar_lote and not df_lotes_vista.empty:
-        df_lotes_vista = df_lotes_vista[df_lotes_vista.astype(str).apply(lambda x: x.str.contains(buscar_lote, case=False)).any(axis=1)]
+    if not df_lotes_vista.empty:
+        if buscar_lote:
+            df_lotes_vista = df_lotes_vista[df_lotes_vista.astype(str).apply(lambda x: x.str.contains(buscar_lote, case=False)).any(axis=1)]
+        st.dataframe(df_lotes_vista, use_container_width=True, hide_index=True)
         
-    st.dataframe(df_lotes_vista, use_container_width=True, hide_index=True)
-    
-    if not df_lotes.empty:
         lote_sel = st.selectbox("Selecciona Lote para Eliminar:", df_lotes['nombre_lote'].unique())
         if st.button("🗑️ Eliminar Lote"):
             if eliminar_registro("lotes", "nombre_lote", lote_sel):
                 time.sleep(0.4)
                 st.rerun()
+    else:
+        st.info("No hay lotes de ganado registrados.")
 
 # RESPALDO EXCEL EN SIDEBAR
 with st.sidebar:
@@ -610,18 +612,27 @@ with st.sidebar:
         try:
             buffer = io.BytesIO()
             df_excel_fin = df_finanzas.copy()
-            if 'fecha' in df_excel_fin.columns:
+            if not df_excel_fin.empty and 'fecha' in df_excel_fin.columns:
                 df_excel_fin['fecha'] = df_excel_fin['fecha'].dt.strftime('%Y-%m-%d')
                 
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df_excel_fin.to_excel(writer, sheet_name='Finanzas', index=False)
-                df_empleados.to_excel(writer, sheet_name='Empleados', index=False)
-                df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
-                df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
-                df_lotes.to_excel(writer, sheet_name='Lotes', index=False)
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                if not df_excel_fin.empty:
+                    df_excel_fin.to_excel(writer, sheet_name='Finanzas', index=False)
+                if not df_empleados.empty:
+                    df_empleados.to_excel(writer, sheet_name='Empleados', index=False)
+                if not df_clientes.empty:
+                    df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
+                if not df_proveedores.empty:
+                    df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
+                if not df_lotes.empty:
+                    df_lotes.to_excel(writer, sheet_name='Lotes', index=False)
+            
             st.download_button(
-                label="📥 Descargar Respaldo Excel", data=buffer.getvalue(),
-                file_name=f"Respaldo_Rancho_AE_{datetime.now().strftime('%Y-%m-%d')}.xlsx", mime="application/vnd.ms-excel", use_container_width=True
+                label="📥 Descargar Respaldo Excel", 
+                data=buffer.getvalue(),
+                file_name=f"Respaldo_Rancho_AE_{datetime.now().strftime('%Y-%m-%d')}.xlsx", 
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                use_container_width=True
             )
-        except Exception:
-            pass
+        except Exception as e:
+            st.sidebar.error(f"Error al generar Excel: {e}")
