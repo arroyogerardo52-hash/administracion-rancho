@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import io
 import base64
 import time
-import plotly.express as px  # <- Necesario para el gráfico de dona ejecutivo
+import plotly.express as px
 
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA
@@ -247,68 +247,229 @@ if not df_finanzas.empty:
             st.info("No hay registros que coincidan con la búsqueda.")
 
         st.write("### 📄 Exportar Reporte Ejecutivo")
+        
+        # =========================================================================
+        # AQUÍ COMIENZA EL REEMPLAZO DEL NUEVO BLOQUE DE DISEÑO PROFESIONAL
+        # =========================================================================
+        df_ingresos_cat = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado')].groupby('categoria')['monto'].sum()
+        df_egresos_cat = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')].groupby('categoria')['monto'].sum()
+
+        folio_reporte = f"R-AE-{hoy.strftime('%Y%m%d')}-{int(time.time()) % 10000}"
+
         html_reporte = f"""
         <html>
         <head>
             <meta charset="utf-8">
             <style>
-                body {{ font-family: Arial, sans-serif; color: #333333; line-height: 1.6; }}
-                h1 {{ color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 5px; }}
-                h2 {{ color: #2e75b6; margin-top: 20px; }}
-                .metric-box {{ padding: 10px; margin: 5px; border: 1px solid #ddd; background-color: #f9f9f9; display: inline-block; width: 18%; text-align: center; }}
-                .positive {{ color: green; font-weight: bold; }}
-                .negative {{ color: red; font-weight: bold; }}
-                table {{ border-collapse: collapse; width: 100%; margin-top: 15px; }}
-                th {{ background-color: #1f4e79; color: white; padding: 8px; text-align: left; }}
-                td {{ border: 1px solid #ddd; padding: 8px; }}
-                tr:nth-child(even) {{ background-color: #f2f2f2; }}
+                body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #2d3748; line-height: 1.6; margin: 30px; }}
+                .header-table {{ width: 100%; border-collapse: collapse; margin-bottom: 30px; border-bottom: 3px solid #1a365d; }}
+                .header-logo {{ width: 30%; text-align: left; padding-bottom: 15px; }}
+                .header-title {{ width: 70%; text-align: right; padding-bottom: 15px; }}
+                .header-title h1 {{ margin: 0; color: #1a365d; font-size: 26px; text-transform: uppercase; letter-spacing: 1px; }}
+                .header-title p {{ margin: 5px 0 0 0; color: #718096; font-size: 13px; }}
+                
+                .meta-table {{ width: 100%; border-collapse: collapse; margin-bottom: 30px; background-color: #f7fafc; }}
+                .meta-table td {{ padding: 12px; border: 1px solid #e2e8f0; font-size: 13px; }}
+                .meta-label {{ font-weight: bold; color: #4a5568; background-color: #edf2f7; width: 20%; }}
+                
+                h2 {{ color: #1a365d; font-size: 14px; margin-top: 35px; margin-bottom: 15px; border-bottom: 1px solid #cbd5e0; padding-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }}
+                
+                .financial-table {{ width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 14px; }}
+                .financial-table th {{ background-color: #1a365d; color: white; padding: 10px 12px; text-align: left; font-weight: 600; text-transform: uppercase; font-size: 12px; }}
+                .financial-table td {{ padding: 10px 12px; border-bottom: 1px solid #e2e8f0; }}
+                .financial-table tr:nth-child(even) {{ background-color: #f8fafc; }}
+                
+                .text-right {{ text-align: right; }}
+                .text-center {{ text-align: center; }}
+                .font-bold {{ font-weight: bold; }}
+                
+                .row-total {{ background-color: #edf2f7 !important; font-weight: bold; color: #1a365d; }}
+                .row-grand-total {{ background-color: #e2e8f0 !important; font-weight: bold; color: #1a365d; font-size: 15px; }}
+                .double-underline {{ border-bottom: 4px double #1a365d !important; }}
+                
+                .positive {{ color: #2f855a; }}
+                .negative {{ color: #9b2c2c; }}
+                .badge-paid {{ background-color: #c6f6d5; color: #22543d; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }}
+                .badge-pending {{ background-color: #feebc8; color: #744210; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }}
+                
+                .footer {{ margin-top: 60px; text-align: center; font-size: 11px; color: #a0aec0; border-top: 1px solid #e2e8f0; padding-top: 15px; }}
+                .signature-area {{ width: 100%; margin-top: 50px; border-collapse: collapse; }}
+                .signature-box {{ width: 50%; text-align: center; font-size: 13px; padding-top: 40px; }}
+                .signature-line {{ width: 60%; margin: 0 auto; border-top: 1px solid #4a5568; padding-top: 5px; }}
             </style>
         </head>
         <body>
-            <h1>Reporte de Balance y Control Financiero</h1>
-            <p><strong>Período seleccionado:</strong> {periodo} ({fecha_inicio.strftime('%d/%m/%Y')} - {fecha_fin.strftime('%d/%m/%Y')})</p>
-            <p><strong>Fecha de generación:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
-            
-            <h2>Resumen Financiero</h2>
-            <div class="metric-box"><strong>Ingresos Reales</strong><br><span class="positive">${ingresos:,.2f}</span></div>
-            <div class="metric-box"><strong>Egresos Reales</strong><br><span class="negative">${egresos:,.2f}</span></div>
-            <div class="metric-box"><strong>Balance Neto</strong><br><span class="{'positive' if balance_neto >= 0 else 'negative'}">${balance_neto:,.2f}</span></div>
-            <div class="metric-box"><strong>Por Cobrar</strong><br><span style="color:#2e75b6;">${por_cobrar:,.2f}</span></div>
-            <div class="metric-box"><strong>Por Pagar</strong><br><span style="color:#e46c0a;">${por_pagar:,.2f}</span></div>
-            
-            <h2>Desglose de Movimientos Registrados</h2>
-            <table>
+
+            <table class="header-table">
+                <tr>
+                    <td class="header-logo">
+                        <span style="font-size: 24px; font-weight: bold; color: #1a365d;">🤠 RANCHO AE</span>
+                    </td>
+                    <td class="header-title">
+                        <h1>Informe de Situación Financiera</h1>
+                        <p>Control Interno de Gestión y Resultados Operativos</p>
+                    </td>
+                </tr>
+            </table>
+
+            <table class="meta-table">
+                <tr>
+                    <td class="meta-label">Organización:</td>
+                    <td>Rancho AE | Genética y Engorda Comercial</td>
+                    <td class="meta-label">Folio Reporte:</td>
+                    <td class="font-bold">{folio_reporte}</td>
+                </tr>
+                <tr>
+                    <td class="meta-label">Período Contable:</td>
+                    <td>{periodo} ({fecha_inicio.strftime('%d/%m/%Y')} - {fecha_fin.strftime('%d/%m/%Y')})</td>
+                    <td class="meta-label">Fecha de Emisión:</td>
+                    <td>{datetime.now().strftime('%d/%m/%Y %H:%M')}</td>
+                </tr>
+            </table>
+
+            <h2>I. Resumen Ejecutivo de Rendimiento (P&L)</h2>
+            <table class="financial-table">
                 <thead>
                     <tr>
-                        <th>Fecha</th>
-                        <th>Concepto/Detalle</th>
-                        <th>Tipo</th>
-                        <th>Monto</th>
-                        <th>Estado</th>
+                        <th style="width: 70%;">Cuenta / Concepto Contable</th>
+                        <th style="width: 30%; text-align: right;">Monto Liquidado (MXN)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="font-bold">Ingresos Operativos Totales</td>
+                        <td class="text-right positive font-bold">${ingresos:,.2f}</td>
+                    </tr>
+                    <tr>
+                        <td class="font-bold" style="padding-left: 20px; color: #4a5568;">(-) Costos y Gastos Operativos</td>
+                        <td class="text-right negative" style="border-bottom: 1px solid #4a5568;">(${egresos:,.2f})</td>
+                    </tr>
+                    <tr class="row-grand-total">
+                        <td>UTILIDAD BRUTA (BALANCE NETO LIQUIDADO)</td>
+                        <td class="text-right double-underline {'positive' if balance_neto >= 0 else 'negative'}">${balance_neto:,.2f}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2>II. Cuentas Corrientes y Obligaciones Pendientes</h2>
+            <table class="financial-table">
+                <thead>
+                    <tr>
+                        <th style="width: 70%;">Rubro de Exigibilidad</th>
+                        <th style="width: 30%; text-align: right;">Saldo Proyectado (MXN)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Cuentas por Cobrar (Ingresos en Cartera Pendiente)</td>
+                        <td class="text-right" style="color: #2b6cb0;">${por_cobrar:,.2f}</td>
+                    </tr>
+                    <tr>
+                        <td>Cuentas por Pagar (Obligaciones y Compromisos Pendientes)</td>
+                        <td class="text-right" style="color: #dd6b20;">${por_pagar:,.2f}</td>
+                    </tr>
+                    <tr class="row-total">
+                        <td class="font-bold">Flujo de Caja Potencial en Cartera</td>
+                        <td class="text-right font-bold">${(por_cobrar - por_pagar):,.2f}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h2>III. Análisis de Distribución por Categoría</h2>
+            <table class="financial-table">
+                <thead>
+                    <tr>
+                        <th>Categoría / Tipo de Flujo</th>
+                        <th>Naturaleza</th>
+                        <th class="text-right">Total Acumulado</th>
                     </tr>
                 </thead>
                 <tbody>
         """
-        for _, fila in df_filtrado.iterrows():
-            f_date = fila['fecha'].strftime('%d/%m/%Y') if pd.notnull(fila['fecha']) else ''
-            concepto = fila.get('concepto', fila.get('detalle', 'Sin concepto'))
+        for cat, monto in df_ingresos_cat.items():
             html_reporte += f"""
                     <tr>
-                        <td>{f_date}</td>
-                        <td>{concepto}</td>
-                        <td>{fila['tipo']}</td>
-                        <td>${fila['monto']:,.2f}</td>
-                        <td>{fila['estado_deuda']}</td>
+                        <td>{cat}</td>
+                        <td style="color: #2f855a; font-size: 12px;">Ingreso Operativo</td>
+                        <td class="text-right positive">${monto:,.2f}</td>
+                    </tr>
+            """
+        for cat, monto in df_egresos_cat.items():
+            html_reporte += f"""
+                    <tr>
+                        <td>{cat}</td>
+                        <td style="color: #9b2c2c; font-size: 12px;">Costo / Gasto Operativo</td>
+                        <td class="text-right negative">${monto:,.2f}</td>
                     </tr>
             """
             
         html_reporte += """
                 </tbody>
             </table>
-            <p style='margin-top:30px; font-size:11px; color:#777;'>Generado automáticamente por el Panel de Administración Financiera.</p>
+
+            <h2>IV. Libro Auxiliar de Transacciones Detalladas</h2>
+            <table class="financial-table" style="font-size: 12px;">
+                <thead>
+                    <tr>
+                        <th style="width: 12%;">Fecha</th>
+                        <th style="width: 15%;">ID Transacción</th>
+                        <th style="width: 15%;">Categoría</th>
+                        <th style="width: 30%;">Concepto / Descripción</th>
+                        <th style="width: 13%; text-align: center;">Estado</th>
+                        <th style="width: 15%; text-align: right;">Monto</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+        
+        for _, fila in df_filtrado.iterrows():
+            f_date = fila['fecha'].strftime('%d/%m/%Y') if pd.notnull(fila['fecha']) else ''
+            concepto = fila.get('concepto', fila.get('detalle', 'Sin concepto'))
+            clase_monto = "positive" if fila['tipo'] == "Ingreso" else "negative"
+            prefijo = "" if fila['tipo'] == "Ingreso" else "-"
+            
+            estado_badge = f"<span class='badge-paid'>PAGADO</span>" if fila['estado_deuda'] == "Pagado" else f"<span class='badge-pending'>PENDIENTE</span>"
+            
+            html_reporte += f"""
+                    <tr>
+                        <td class="text-center">{f_date}</td>
+                        <td style="color:#718096; font-family: monospace;">{fila['id']}</td>
+                        <td class="font-bold">{fila['categoria']}</td>
+                        <td>{concepto}</td>
+                        <td class="text-center">{estado_badge}</td>
+                        <td class="text-right {clase_monto}" class="font-bold">{prefijo}${fila['monto']:,.2f}</td>
+                    </tr>
+            """
+            
+        html_reporte += f"""
+                </tbody>
+            </table>
+
+            <table class="signature-area">
+                <tr>
+                    <td class="signature-box">
+                        <div class="signature-line"></div>
+                        <strong>Gerardo Arroyo Espinoza</strong><br>
+                        Dirección General / Administración A.E
+                    </td>
+                    <td class="signature-box">
+                        <div class="signature-line"></div>
+                        <strong>Control Interno</strong><br>
+                        Rancho AE - Auditoría Ganadera
+                    </td>
+                </tr>
+            </table>
+
+            <div class="footer">
+                <p>Este documento es un extracto oficial de la base de datos financiera de Rancho AE. Todos los saldos mostrados están sujetos a los criterios de conciliación de caja vigentes.</p>
+                <p>© {datetime.now().year} Administracion A.E - Zentla, Veracruz. Todos los derechos reservados.</p>
+            </div>
         </body>
         </html>
         """
+        # =========================================================================
+        # FIN DEL REEMPLAZO DEL REPORTE
+        # =========================================================================
         
         st.download_button(
             label="📥 Descargar Reporte para Google Docs",
