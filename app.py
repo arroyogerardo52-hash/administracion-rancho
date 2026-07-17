@@ -189,8 +189,9 @@ if not df_finanzas.empty:
                     fecha_fin = datetime.combine(rango_fechas[1], datetime.max.time())
                     st.info(f"Rango activo: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
                 else:
-                    st.warning("⏳ Por favor, selecciona la fecha de fin en el calendario.")
-                    st.stop()
+                    st.warning("⏳ Por favor, selecciona la fecha de fin en el calendario para actualizar los datos.")
+                    # En lugar de st.stop() para no romper toda la renderización de la app, usamos un flag de control
+                    fecha_inicio, fecha_fin = None, None
             else:
                 fecha_inicio = datetime.combine(rango_fechas, datetime.min.time())
                 fecha_fin = datetime.combine(rango_fechas, datetime.max.time())
@@ -199,13 +200,16 @@ if not df_finanzas.empty:
             st.info("Mostrando la totalidad de los datos registrados.")
 
     df_filtrado = df_finanzas.copy()
+    
+    # Manejo seguro de zonas horarias en Pandas
     try:
         if df_filtrado['fecha'].dt.tz is not None:
             df_filtrado['fecha'] = df_filtrado['fecha'].dt.tz_localize(None)
     except AttributeError:
         pass
 
-    if periodo != "Todo el Historial":
+    # Aplicar el filtro temporal solo si las fechas están correctamente definidas
+    if periodo != "Todo el Historial" and fecha_inicio is not None and fecha_fin is not None:
         f_inicio_pd = pd.to_datetime(fecha_inicio)
         f_fin_pd = pd.to_datetime(fecha_fin)
         df_filtrado = df_filtrado[(df_filtrado['fecha'] >= f_inicio_pd) & (df_filtrado['fecha'] <= f_fin_pd)]
@@ -239,7 +243,6 @@ if not df_finanzas.empty:
             
         if not df_bal_vista.empty:
             df_bal_vista['fecha'] = df_bal_vista['fecha'].dt.strftime('%Y-%m-%d')
-            # Aplicar estilización de filas (verde/rojo) y formato de moneda en el balance
             df_bal_estilizado = (df_bal_vista.style
                                  .apply(colorear_filas_finanzas, axis=1)
                                  .format({'monto': '${:,.2f}'}))
@@ -248,6 +251,11 @@ if not df_finanzas.empty:
             st.info("No hay registros que coincidan con la búsqueda.")
 
         st.write("### 📄 Exportar Reporte Ejecutivo")
+        
+        # Validamos que las fechas existan para evitar formatear un None
+        f_ini_str = fecha_inicio.strftime('%d/%m/%Y') if fecha_inicio else 'Inicio'
+        f_fin_str = fecha_fin.strftime('%d/%m/%Y') if fecha_fin else 'Fin'
+        
         html_reporte = f"""
         <html>
         <head>
@@ -267,7 +275,7 @@ if not df_finanzas.empty:
         </head>
         <body>
             <h1>Reporte de Balance y Control Financiero</h1>
-            <p><strong>Período seleccionado:</strong> {periodo} ({fecha_inicio.strftime('%d/%m/%Y')} - {fecha_fin.strftime('%d/%m/%Y')})</p>
+            <p><strong>Período seleccionado:</strong> {periodo} ({f_ini_str} - {f_fin_str})</p>
             <p><strong>Fecha de generación:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
             
             <h2>Resumen Financiero</h2>
@@ -364,7 +372,7 @@ with tabs[0]:
         with col1:
             f_fecha = st.date_input("Fecha Transacción", datetime.today()).strftime('%Y-%m-%d')
             f_tipo = st.selectbox("Tipo de Movimiento", ["Ingreso", "Egreso"])
-            f_cat = st.text_input("Categoría (Ej: Alimento, Venta Animales)").strip().upper()
+            f_cat = st.text_input("Categoría (Ej: Alimento, Venta Animales, Medicina)").strip().upper()
             f_concepto = st.text_input("Concepto / Descripción").strip()
         with col2:
             f_monto = st.number_input("Monto total ($)", min_value=0.0, step=100.0)
@@ -376,18 +384,25 @@ with tabs[0]:
             f_estado = st.selectbox("Estado del Pago", ["Pagado", "Pendiente"])
             f_venc = st.date_input("Fecha Vencimiento", datetime.today()).strftime('%Y-%m-%d')
             
-        if st.form_submit_button("💾 Guardar Transacción"):
-            auto_id = f"N-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
-            nuevo_registro = {
-                "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat,
-                "concepto": f_concepto, "monto": float(f_monto), "metodo_pago": f_pago,
-                "lote_asociado": f_lote, "estado_deuda": f_estado, "fecha_vencimiento": f_venc
-            }
-            if guardar_registro("finanzas", nuevo_registro, "id"):
-                st.success(f"¡Transacción registrada con ID simplificado: {auto_id}!")
-                st.session_state["mostrar_descarga"] = False
-                time.sleep(0.4)
-                st.rerun()
+        submit_finanzas = st.form_submit_button("💾 Guardar Transacción")
+        if submit_finanzas:
+            # COMPLEMENTACIÓN: Validaciones de campos vacíos
+            if f_monto <= 0:
+                st.error("❌ El monto debe ser mayor a $0.00 pesos.")
+            elif not f_concepto:
+                st.error("❌ Por favor escribe un Concepto o Descripción para la transacción.")
+            else:
+                auto_id = f"N-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
+                nuevo_registro = {
+                    "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat if f_cat else "GENERAL",
+                    "concepto": f_concepto, "monto": float(f_monto), "metodo_pago": f_pago,
+                    "lote_asociado": f_lote, "estado_deuda": f_estado, "fecha_vencimiento": f_venc
+                }
+                if guardar_registro("finanzas", nuevo_registro, "id"):
+                    st.success(f"¡Transacción registrada con ID simplificado: {auto_id}!")
+                    st.session_state["mostrar_descarga"] = False
+                    time.sleep(0.4)
+                    st.rerun()
 
     st.markdown("### Historial de Movimientos")
     
@@ -403,7 +418,6 @@ with tabs[0]:
             df_vista_finanzas = df_vista_finanzas[mascara]
             
         if not df_vista_finanzas.empty:
-            # APLICACIÓN DE COLOR POR FILA COMPLETA Y FORMATEO DE PESOS MEXICANOS
             df_fin_estilizado = (df_vista_finanzas.style
                                  .apply(colorear_filas_finanzas, axis=1)
                                  .format({'monto': '${:,.2f}'}))
@@ -462,12 +476,21 @@ with tabs[1]:
     st.subheader("Administración de Personal")
     with st.form("form_empleados", clear_on_submit=True):
         e_nombre = st.text_input("Nombre del Empleado").strip().upper()
-        e_tel = st.text_input("Teléfono").strip()
+        e_tel = st.text_input("Teléfono (10 dígitos)").strip()
         e_puesto = st.text_input("Puesto").strip().upper()
-        if st.form_submit_button("💾 Guardar Empleado"):
-            if e_nombre.strip() and guardar_registro("empleados", {"nombre": e_nombre, "telefono": e_tel, "puesto_funcion": e_puesto, "fecha_ingreso": datetime.today().strftime('%Y-%m-%d')}, "nombre"):
-                time.sleep(0.4)
-                st.rerun()
+        submit_empleado = st.form_submit_button("💾 Guardar Empleado")
+        
+        if submit_empleado:
+            # COMPLEMENTACIÓN: Validación de número de teléfono y nombre vacío
+            if not e_nombre:
+                st.error("❌ El nombre del empleado es obligatorio.")
+            elif e_tel and (not e_tel.isdigit() or len(e_tel) != 10):
+                st.error("❌ El teléfono debe constar exactamente de 10 dígitos numéricos.")
+            else:
+                if guardar_registro("empleados", {"nombre": e_nombre, "telefono": e_tel, "puesto_funcion": e_puesto, "fecha_ingreso": datetime.today().strftime('%Y-%m-%d')}, "nombre"):
+                    st.success("Empleado guardado correctamente.")
+                    time.sleep(0.4)
+                    st.rerun()
                 
     buscar_emp = st.text_input("🔍 Buscar Empleado:", key="bus_emp").strip()
     df_emp_vista = df_empleados.copy()
@@ -488,12 +511,21 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("Registro de Clientes")
     with st.form("form_clientes", clear_on_submit=True):
-        c_nombre = st.text_input("Razón Social").strip().upper()
-        c_tel = st.text_input("Teléfono").strip()
-        if st.form_submit_button("💾 Guardar Cliente"):
-            if c_nombre.strip() and guardar_registro("clientes", {"nombre_razon": c_nombre, "telefono": c_tel}, "nombre_razon"):
-                time.sleep(0.4)
-                st.rerun()
+        c_nombre = st.text_input("Razón Social / Nombre").strip().upper()
+        c_tel = st.text_input("Teléfono (10 dígitos)").strip()
+        submit_cliente = st.form_submit_button("💾 Guardar Cliente")
+        
+        if submit_cliente:
+            # COMPLEMENTACIÓN: Validaciones para Clientes
+            if not c_nombre:
+                st.error("❌ El nombre o razón social es obligatorio.")
+            elif c_tel and (not c_tel.isdigit() or len(c_tel) != 10):
+                st.error("❌ El teléfono debe constar exactamente de 10 dígitos numéricos.")
+            else:
+                if guardar_registro("clientes", {"nombre_razon": c_nombre, "telefono": c_tel}, "nombre_razon"):
+                    st.success("Cliente guardado correctamente.")
+                    time.sleep(0.4)
+                    st.rerun()
                 
     buscar_cli = st.text_input("🔍 Buscar Cliente:", key="bus_cli").strip()
     df_cli_vista = df_clientes.copy()
@@ -517,9 +549,12 @@ with tabs[3]:
         p_nombre = st.text_input("Nombre del Proveedor / Razón Social").strip().upper()
         p_insumo = st.text_input("Insumo Principal (Ej: Alimento, Medicinas, Diésel)").strip().upper()
         p_contacto = st.text_input("Información de Contacto (Teléfono / Correo)").strip()
+        submit_prov = st.form_submit_button("💾 Guardar Proveedor")
         
-        if st.form_submit_button("💾 Guardar Proveedor"):
-            if p_nombre.strip():
+        if submit_prov:
+            if not p_nombre.strip():
+                st.error("❌ El nombre del proveedor es obligatorio.")
+            else:
                 datos_proveedor = {"nombre_proveedor": p_nombre, "insumo_principal": p_insumo, "contacto": p_contacto}
                 if guardar_registro("proveedores", datos_proveedor, "nombre_proveedor"):
                     st.success("Proveedor guardado correctamente.")
@@ -550,12 +585,30 @@ with tabs[3]:
 with tabs[4]:
     st.subheader("Control de Lotes de Ganado")
     with st.form("form_lotes", clear_on_submit=True):
-        l_nombre = st.text_input("Código del Lote (Ej: Lote_Sardo_01)").strip().upper()
-        l_desc = st.text_area("Descripción").strip()
-        if st.form_submit_button("💾 Guardar Lote"):
-            if l_nombre.strip() and guardar_registro("lotes", {"nombre_lote": l_nombre, "descripcion_notas": l_desc, "fecha_creacion": datetime.today().strftime('%Y-%m-%d')}, "nombre_lote"):
-                time.sleep(0.4)
-                st.rerun()
+        # COMPLEMENTACIÓN: Agregamos campos clave para manejo físico del lote
+        l_nombre = st.text_input("Código del Lote (Ej: LOTE_SARDO_01)").strip().upper()
+        col_lote_1, col_lote_2 = st.columns(2)
+        with col_lote_1:
+            l_cabezas = st.number_input("Número de cabezas de ganado:", min_value=0, step=1, value=10)
+        with col_lote_2:
+            l_raza = st.text_input("Raza / Genética preponderante (Ej: SARDO NEGRO, SUIZBU):").strip().upper()
+            
+        l_desc = st.text_area("Descripción / Notas de Alimentación o Potrero").strip()
+        submit_lote = st.form_submit_button("💾 Guardar Lote")
+        
+        if submit_lote:
+            if not l_nombre.strip():
+                st.error("❌ El código del lote es obligatorio para el control administrativo.")
+            else:
+                registro_lote = {
+                    "nombre_lote": l_nombre, 
+                    "descripcion_notas": f"Raza: {l_raza} | Cabezas: {l_cabezas} | Notas: {l_desc}", 
+                    "fecha_creacion": datetime.today().strftime('%Y-%m-%d')
+                }
+                if guardar_registro("lotes", registro_lote, "nombre_lote"):
+                    st.success(f"¡Lote {l_nombre} guardado con éxito!")
+                    time.sleep(0.4)
+                    st.rerun()
                 
     buscar_lote = st.text_input("🔍 Buscar Lote:", key="bus_lote").strip()
     df_lotes_vista = df_lotes.copy()
