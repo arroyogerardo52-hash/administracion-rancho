@@ -127,7 +127,7 @@ def colorear_filas_finanzas(row):
     return [''] * len(row)
 
 # ==========================================
-# FUNCIÓN GENÉRICA PARA GENERAR REPORTES DOCS (HTML)
+# FUNCIONES PARA GENERAR REPORTES PROFESIONALES (HTML COMPATIBLE CON GOOGLE DOCS)
 # ==========================================
 def generar_html_docs(titulo_seccion, columnas_headers, df_datos, mapping_columnas):
     hoy_str = datetime.now().strftime('%d/%m/%Y %H:%M')
@@ -136,20 +136,20 @@ def generar_html_docs(titulo_seccion, columnas_headers, df_datos, mapping_column
     <head>
         <meta charset="utf-8">
         <style>
-            body {{ font-family: Arial, sans-serif; color: #333333; line-height: 1.6; }}
-            h1 {{ color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 5px; }}
-            p {{ font-size: 13px; color: #555; }}
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #333333; line-height: 1.6; margin: 20px; }}
+            h1 {{ color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 5px; font-size: 24px; }}
+            p {{ font-size: 13px; color: #555; margin: 4px 0; }}
             table {{ border-collapse: collapse; width: 100%; margin-top: 15px; }}
-            th {{ background-color: #1f4e79; color: white; padding: 8px; text-align: left; font-size: 14px; }}
-            td {{ border: 1px solid #ddd; padding: 8px; font-size: 13px; }}
-            tr:nth-child(even) {{ background-color: #f2f2f2; }}
+            th {{ background-color: #1f4e79; color: white; padding: 10px 8px; text-align: left; font-size: 13px; font-weight: bold; text-transform: uppercase; border: 1px solid #1f4e79; }}
+            td {{ border: 1px solid #dddddd; padding: 8px; font-size: 12px; }}
+            tr:nth-child(even) {{ background-color: #f8f9fa; }}
         </style>
     </head>
     <body>
-        <h1>Reporte Oficial - {titulo_seccion}</h1>
-        <p><strong>Rancho AE - Sistema de Administración</strong></p>
-        <p><strong>Fecha de generación:</strong> {hoy_str}</p>
-        <p><strong>Total de registros incluidos:</strong> {len(df_datos)}</p>
+        <h1>Reporte Institucional - {titulo_seccion}</h1>
+        <p><strong>Organización:</strong> Rancho AE</p>
+        <p><strong>Fecha y Hora de Emisión:</strong> {hoy_str}</p>
+        <p><strong>Volumen de Registros:</strong> {len(df_datos)} elementos</p>
         <table>
             <thead>
                 <tr>
@@ -177,7 +177,136 @@ def generar_html_docs(titulo_seccion, columnas_headers, df_datos, mapping_column
     html += """
             </tbody>
         </table>
-        <p style='margin-top:35px; font-size:11px; color:#888;'>Este documento fue exportado de manera automática para su edición directa en Google Docs.</p>
+        <p style='margin-top:40px; font-size:11px; color:#999; text-align: center; border-top: 1px dashed #ccc; padding-top: 10px;'>Documento administrativo confidencial generado por el Sistema de Control Interno Rancho AE.</p>
+    </body>
+    </html>
+    """
+    return html
+
+def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net, cob, pag):
+    hoy_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+    html = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #2C3E50; line-height: 1.6; margin: 30px; }}
+            .header-table {{ width: 100%; border: none; margin-bottom: 20px; }}
+            .header-title {{ font-size: 26px; color: #1A365D; font-weight: bold; margin: 0; }}
+            .header-subtitle {{ font-size: 13px; color: #718096; text-transform: uppercase; letter-spacing: 1px; }}
+            .divider {{ height: 3px; background-color: #2B6CB0; margin-top: 5px; margin-bottom: 20px; }}
+            
+            .meta-section {{ background-color: #EDF2F7; padding: 15px; border-radius: 5px; margin-bottom: 25px; font-size: 13px; }}
+            .meta-table {{ width: 100%; border-collapse: collapse; }}
+            .meta-table td {{ border: none; padding: 4px 0; color: #4A5568; }}
+            
+            .kpi-container {{ width: 100%; margin-bottom: 30px; }}
+            .kpi-box {{ width: 18%; display: inline-block; background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 4px solid #4A5568; text-align: center; padding: 12px 5px; margin-right: 1%; border-radius: 4px; }}
+            .kpi-box.ingreso {{ border-top-color: #2ECC71; }}
+            .kpi-box.egreso {{ border-top-color: #E74C3C; }}
+            .kpi-box.balance {{ border-top-color: #2B6CB0; }}
+            .kpi-title {{ font-size: 11px; text-transform: uppercase; color: #718096; font-weight: bold; margin-bottom: 5px; }}
+            .kpi-value {{ font-size: 15px; font-weight: bold; color: #1A365D; }}
+            
+            .section-title {{ font-size: 18px; color: #2B6CB0; margin-top: 30px; margin-bottom: 10px; font-weight: bold; border-bottom: 1px solid #E2E8F0; padding-bottom: 5px; }}
+            
+            .data-table {{ border-collapse: collapse; width: 100%; margin-top: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
+            .data-table th {{ background-color: #1A365D; color: white; padding: 10px 8px; text-align: left; font-size: 11px; font-weight: bold; text-transform: uppercase; border: 1px solid #1A365D; }}
+            .data-table td {{ border: 1px solid #E2E8F0; padding: 8px; font-size: 11px; color: #2D3748; }}
+            .data-table tr:nth-child(even) {{ background-color: #F7FAFC; }}
+            
+            .text-right {{ text-align: right; }}
+            .bold {{ font-weight: bold; }}
+            .color-ingreso {{ color: #27AE60; }}
+            .color-egreso {{ color: #C0392B; }}
+        </style>
+    </head>
+    <body>
+        <table class="header-table">
+            <tr>
+                <td>
+                    <div class="header-title">RANCHO AE</div>
+                    <div class="header-subtitle">Estado Ejecutivo de Transacciones y Control Financiero</div>
+                </td>
+            </tr>
+        </table>
+        <div class="divider"></div>
+        
+        <div class="meta-section">
+            <table class="meta-table">
+                <tr>
+                    <td width="20%"><strong>Período Auditado:</strong></td><td width="30%">{periodo}</td>
+                    <td width="20%"><strong>Filtro de Lote:</strong></td><td width="30%">{lote}</td>
+                </tr>
+                <tr>
+                    <td><strong>Fecha de Emisión:</strong></td><td>{hoy_str}</td>
+                    <td><strong>Estatus del Reporte:</strong></td><td>Cierre de Ciclo Automatizado</td>
+                </tr>
+            </table>
+        </div>
+        
+        <div class="section-title">Indicadores de Rendimiento Financiero</div>
+        <div class="kpi-container">
+            <div class="kpi-box ingreso"><div class="kpi-title">Ingresos Reales</div><div class="kpi-value color-ingreso">${ing:,.2f}</div></div>
+            <div class="kpi-box egreso"><div class="kpi-title">Egresos Reales</div><div class="kpi-value color-egreso">${egr:,.2f}</div></div>
+            <div class="kpi-box balance"><div class="kpi-title">Balance Neto</div><div class="kpi-value">${net:,.2f}</div></div>
+            <div class="kpi-box"><div class="kpi-title">Por Cobrar</div><div class="kpi-value" style="color:#2980B9;">${cob:,.2f}</div></div>
+            <div class="kpi-box" style="margin-right:0;"><div class="kpi-title">Por Pagar</div><div class="kpi-value" style="color:#D35400;">${pag:,.2f}</div></div>
+        </div>
+        
+        <div class="section-title">Desglose Analítico de Movimientos del Período</div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Tipo</th>
+                    <th>Categoría</th>
+                    <th>Concepto / Detalle Informativo</th>
+                    <th>Lote</th>
+                    <th>Método</th>
+                    <th>Estado</th>
+                    <th class="text-right">Monto</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+    
+    for _, fila in df_datos.iterrows():
+        f_date = fila['fecha']
+        if hasattr(f_date, 'strftime'):
+            f_str = f_date.strftime('%Y-%m-%d')
+        else:
+            f_str = str(f_date)[:10]
+            
+        concepto = fila.get('concepto', 'Sin concepto')
+        lote_asoc = fila.get('lote_asociado', 'Ninguno')
+        tipo_mov = fila.get('tipo', '')
+        clase_color = "color-ingreso bold" if tipo_mov == "Ingreso" else "color-egreso"
+        
+        html += f"""
+                <tr>
+                    <td>{f_str}</td>
+                    <td class="{clase_color}">{tipo_mov}</td>
+                    <td>{fila.get('categoria', 'GENERAL')}</td>
+                    <td>{concepto}</td>
+                    <td>{lote_asoc}</td>
+                    <td>{fila.get('metodo_pago', 'No especificado')}</td>
+                    <td>{fila.get('estado_deuda', 'Pagado')}</td>
+                    <td class="text-right bold {clase_color}">${fila['monto']:,.2f}</td>
+                </tr>
+        """
+        
+    html += f"""
+                <tr style="background-color: #E2E8F0; font-weight: bold;">
+                    <td colspan="7" class="text-right" style="font-size: 12px; padding: 10px;">BALANCE DEL PERÍODO EXPORTADO:</td>
+                    <td class="text-right" style="font-size: 12px; padding: 10px; color: {'#27AE60' if net >= 0 else '#C0392B'}">${net:,.2f}</td>
+                </tr>
+            </tbody>
+        </table>
+        
+        <p style='margin-top:50px; font-size:11px; color:#A0AEC0; text-align: center; border-top: 1px solid #E2E8F0; padding-top: 15px;'>
+            Este balance ejecutivo constituye un extracto oficial de la contabilidad interna de Rancho AE. Súbase directamente a Google Drive para su archivo permanente o firmas conducentes.
+        </p>
     </body>
     </html>
     """
@@ -289,7 +418,24 @@ if not df_finanzas.empty:
         m5.metric("📉 Por Pagar", f"${por_pagar:,.2f}")
         
         st.write("---")
-        st.subheader("📋 Transacciones del Período")
+        
+        # MÓDULO NUEVO Y REUBICADO: Botón de Reporte Ejecutivo Profesional por Período Filtrado
+        col_tit_trans, col_btn_rep_filtrado = st.columns([3, 1])
+        with col_tit_trans:
+            st.subheader("📋 Transacciones del Período Seleccionado")
+        with col_btn_rep_filtrado:
+            if not df_filtrado.empty:
+                html_profesional_finanzas = generar_reporte_finanzas_profesional(
+                    df_filtrado, periodo, lote_seleccionado, ingresos, egresos, balance_neto, por_cobrar, por_pagar
+                )
+                st.download_button(
+                    label="📄 Exportar Reporte de este Período (Docs)",
+                    data=html_profesional_finanzas,
+                    file_name=f"Reporte_Ejecutivo_Finanzas_{periodo.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.doc",
+                    mime="application/msword",
+                    use_container_width=True,
+                    help="Genera un reporte claro y formal listo para importar en Google Drive con las transacciones del filtro actual."
+                )
         
         buscar_bal = st.text_input("🔍 Buscar en las transacciones del período:", key="bus_bal").strip()
         df_bal_vista = df_filtrado.copy()
@@ -346,7 +492,7 @@ st.markdown("---")
 # ==========================================
 tabs = st.tabs(["📊 Finanzas", "🤠 Empleados", "🤝 Clientes", "🚜 Proveedores", "🐂 Lotes"])
 
-# PESTAÑA FINANZAS
+# PESTAÑA FINANZAS (¡BOTÓN DE REPORTE REMOVIDO DE AQUÍ COMO FUE SOLICITADO!)
 with tabs[0]:
     st.subheader("Registro Financiero Automático")
     with st.form("form_finanzas", clear_on_submit=True):
@@ -385,10 +531,7 @@ with tabs[0]:
                     st.rerun()
 
     st.markdown("### Historial de Movimientos")
-    
-    col_bus_fin, col_rep_fin = st.columns([3, 1])
-    with col_bus_fin:
-        buscar_fin = st.text_input("🔍 Buscar en Historial de Finanzas:", key="bus_fin").strip()
+    buscar_fin = st.text_input("🔍 Buscar en Historial de Finanzas:", key="bus_fin").strip()
     
     df_vista_finanzas = df_finanzas.copy()
     if not df_vista_finanzas.empty:
@@ -399,22 +542,6 @@ with tabs[0]:
         if buscar_fin:
             mascara = df_vista_finanzas.astype(str).apply(lambda x: x.str.contains(buscar_fin, case=False)).any(axis=1)
             df_vista_finanzas = df_vista_finanzas[mascara]
-            
-        with col_rep_fin:
-            st.write("")
-            html_fin = generar_html_docs(
-                "Control de Finanzas", 
-                ["ID", "Fecha", "Tipo", "Categoría", "Concepto", "Monto", "Método Pago", "Lote", "Estado", "Vencimiento"],
-                df_vista_finanzas,
-                ["id", "fecha", "tipo", "categoria", "concepto", "monto", "metodo_pago", "lote_asociado", "estado_deuda", "fecha_vencimiento"]
-            )
-            st.download_button(
-                label="📄 Generar Reporte Finanzas (Docs)",
-                data=html_fin,
-                file_name=f"Reporte_Finanzas_{datetime.now().strftime('%Y%m%d')}.doc",
-                mime="application/msword",
-                use_container_width=True
-            )
             
         if not df_vista_finanzas.empty:
             df_fin_estilizado = (df_vista_finanzas.style
@@ -440,7 +567,7 @@ with tabs[0]:
         except:
             f_venc_orig = datetime.today().date()
             
-        with st.expander("¼📝 Abrir Editor Manual de la Transacción Seleccionada"):
+        with st.expander("📝 Abrir Editor Manual de la Transacción Seleccionada"):
             ec1, ec2 = st.columns(2)
             with ec1:
                 edit_fecha = st.date_input("Editar Fecha", fecha_orig, key=f"ed_f_{id_seleccionado}").strftime('%Y-%m-%d')
