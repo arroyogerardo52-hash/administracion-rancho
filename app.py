@@ -154,7 +154,6 @@ if not df_finanzas.empty:
             ["Todo el Historial", "Esta Semana", "Este Mes", "Este Año", "Rango Personalizado"]
         )
 
-    # IMPLEMENTACIÓN SUGERIDA: Filtrar el balance por un lote específico
     with col_lote_filtro:
         opciones_filtro_lote = ["Todos los Lotes"]
         if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
@@ -212,13 +211,11 @@ if not df_finanzas.empty:
     except AttributeError:
         pass
 
-    # Aplicar Filtro de Tiempo
     if periodo != "Todo el Historial" and fecha_inicio is not None and fecha_fin is not None:
         f_inicio_pd = pd.to_datetime(fecha_inicio)
         f_fin_pd = pd.to_datetime(fecha_fin)
         df_filtrado = df_filtrado[(df_filtrado['fecha'] >= f_inicio_pd) & (df_filtrado['fecha'] <= f_fin_pd)]
 
-    # Aplicar Filtro de Lote si corresponde
     if lote_seleccionado != "Todos los Lotes" and 'lote_asociado' in df_filtrado.columns:
         df_filtrado = df_filtrado[df_filtrado['lote_asociado'] == lote_seleccionado]
 
@@ -434,56 +431,74 @@ with tabs[0]:
         else:
             st.info("No se encontraron transacciones que coincidan.")
 
-    # Modificar o Eliminar Transacción
+    # MÓDULO ACTUALIZADO: Edición Completa Manual de Transacciones
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
         
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
         fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
         
-        if hasattr(fila_sel['fecha'], 'strftime'):
-            fecha_orig_str = fila_sel['fecha'].strftime('%Y-%m-%d')
-        else:
-            fecha_orig_str = str(fila_sel['fecha'])[:10]
+        # Parseo seguro de fechas originales
+        try:
+            fecha_orig = pd.to_datetime(fila_sel['fecha']).date()
+        except:
+            fecha_orig = datetime.today().date()
             
-        f_venc_orig = fila_sel.get('fecha_vencimiento', '')
-        if hasattr(f_venc_orig, 'strftime'):
-            f_venc_orig_str = f_venc_orig.strftime('%Y-%m-%d')
-        else:
-            f_venc_orig_str = str(f_venc_orig)[:10]
-        
-        c1, c2, c3 = st.columns([2, 2, 1])
-        lista_estados = ["Pagado", "Pendiente"]
-        idx_estado = lista_estados.index(fila_sel['estado_deuda']) if fila_sel['estado_deuda'] in lista_estados else 0
-        
-        with c1:
-            nuevo_estado = st.selectbox("Cambiar Estado Pago a:", lista_estados, index=idx_estado, key=f"est_fin_{id_seleccionado}")
-        with c2:
-            nuevo_monto = st.number_input("Corregir Monto ($):", min_value=0.0, value=float(fila_sel['monto']), step=100.0, key=f"mon_fin_{id_seleccionado}")
-        with c3:
-            st.write("")
-            st.write("")
+        try:
+            f_venc_orig = pd.to_datetime(fila_sel.get('fecha_vencimiento', datetime.today())).date()
+        except:
+            f_venc_orig = datetime.today().date()
             
-            if st.button("🔄 Actualizar", key=f"btn_up_fin_{id_seleccionado}", use_container_width=True):
-                registro_actualizado = {
-                    "id": str(id_seleccionado), "fecha": fecha_orig_str, "tipo": str(fila_sel.get('tipo', '')),
-                    "categoria": str(fila_sel.get('categoria', '')).strip().upper(), "concepto": str(fila_sel.get('concepto', '')).strip(),
-                    "monto": float(nuevo_monto), "metodo_pago": str(fila_sel.get('metodo_pago', '')),
-                    "lote_asociado": str(fila_sel.get('lote_asociado', '')), "estado_deuda": str(nuevo_estado),
-                    "fecha_vencimiento": f_venc_orig_str
-                }
-                if guardar_registro("finanzas", registro_actualizado, "id"):
-                    st.success("¡Registro modificado con éxito!")
-                    st.session_state["mostrar_descarga"] = False
-                    time.sleep(0.4)
-                    st.rerun()
-            
-            if st.button("🗑️ Eliminar", key=f"btn_del_fin_{id_seleccionado}", use_container_width=True, type="primary"):
-                if eliminar_registro("finanzas", "id", id_seleccionado):
-                    st.warning("Registro eliminado de la base de datos.")
-                    st.session_state["mostrar_descarga"] = False
-                    time.sleep(0.4)
-                    st.rerun()
+        with st.expander("📝 Abrir Editor Manual de la Transacción Seleccionada"):
+            ec1, ec2 = st.columns(2)
+            with ec1:
+                edit_fecha = st.date_input("Editar Fecha", fecha_orig, key=f"ed_f_{id_seleccionado}").strftime('%Y-%m-%d')
+                lista_tipos = ["Ingreso", "Egreso"]
+                edit_tipo = st.selectbox("Editar Tipo", lista_tipos, index=lista_tipos.index(fila_sel['tipo']) if fila_sel['tipo'] in lista_tipos else 0, key=f"ed_t_{id_seleccionado}")
+                edit_cat = st.text_input("Editar Categoría", str(fila_sel.get('categoria', 'GENERAL')), key=f"ed_c_{id_seleccionado}").strip().upper()
+                edit_concepto = st.text_input("Editar Concepto/Descripción", str(fila_sel.get('concepto', '')), key=f"ed_con_{id_seleccionado}").strip()
+            with ec2:
+                edit_monto = st.number_input("Editar Monto ($)", min_value=0.0, value=float(fila_sel['monto']), step=100.0, key=f"ed_m_{id_seleccionado}")
+                lista_pagos = ["Efectivo", "Transferencia", "Cheque", "Crédito"]
+                edit_pago = st.selectbox("Editar Método Pago", lista_pagos, index=lista_pagos.index(fila_sel.get('metodo_pago', 'Efectivo')) if fila_sel.get('metodo_pago', 'Efectivo') in lista_pagos else 0, key=f"ed_p_{id_seleccionado}")
+                
+                opciones_lotes_ed = ["Ninguno"]
+                if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
+                    opciones_lotes_ed += list(df_lotes['nombre_lote'].dropna().unique())
+                lote_actual = fila_sel.get('lote_asociado', 'Ninguno')
+                idx_lote = opciones_lotes_ed.index(lote_actual) if lote_actual in opciones_lotes_ed else 0
+                edit_lote = st.selectbox("Editar Lote Asociado", opciones_lotes_ed, index=idx_lote, key=f"ed_l_{id_seleccionado}")
+                
+                lista_estados = ["Pagado", "Pendiente"]
+                edit_estado = st.selectbox("Editar Estado Pago", lista_estados, index=lista_estados.index(fila_sel['estado_deuda']) if fila_sel['estado_deuda'] in lista_estados else 0, key=f"ed_est_{id_seleccionado}")
+                edit_venc = st.date_input("Editar Vencimiento", f_venc_orig, key=f"ed_v_{id_seleccionado}").strftime('%Y-%m-%d')
+
+            btn_act, btn_elim = st.columns(2)
+            with btn_act:
+                if st.button("🔄 Guardar Cambios Manuales", key=f"btn_up_fin_{id_seleccionado}", use_container_width=True):
+                    if edit_monto <= 0:
+                        st.error("El monto debe ser superior a $0")
+                    elif not edit_concepto:
+                        st.error("El concepto no puede estar vacío")
+                    else:
+                        registro_actualizado = {
+                            "id": str(id_seleccionado), "fecha": edit_fecha, "tipo": edit_tipo,
+                            "categoria": edit_cat, "concepto": edit_concepto, "monto": float(edit_monto),
+                            "metodo_pago": edit_pago, "lote_asociado": edit_lote, "estado_deuda": edit_estado,
+                            "fecha_vencimiento": edit_venc
+                        }
+                        if guardar_registro("finanzas", registro_actualizado, "id"):
+                            st.success("¡Transacción actualizada!")
+                            st.session_state["mostrar_descarga"] = False
+                            time.sleep(0.4)
+                            st.rerun()
+            with btn_elim:
+                if st.button("🗑️ Eliminar permanentemente", key=f"btn_del_fin_{id_seleccionado}", use_container_width=True, type="primary"):
+                    if eliminar_registro("finanzas", "id", id_seleccionado):
+                        st.warning("Registro eliminado.")
+                        st.session_state["mostrar_descarga"] = False
+                        time.sleep(0.4)
+                        st.rerun()
 
 # PESTAÑA EMPLEADOS
 with tabs[1]:
@@ -547,12 +562,30 @@ with tabs[2]:
         
     st.dataframe(df_cli_vista, use_container_width=True, hide_index=True)
     
+    # NUEVO MÓDULO: Edición Manual de Clientes
     if not df_clientes.empty:
-        cli_sel = st.selectbox("Selecciona Cliente para Eliminar:", df_clientes['nombre_razon'].unique())
-        if st.button("🗑️ Eliminar Cliente"):
-            if eliminar_registro("clientes", "nombre_razon", cli_sel):
-                time.sleep(0.4)
-                st.rerun()
+        st.markdown("#### 🛠️ Editar o Eliminar Cliente")
+        cli_sel = st.selectbox("Selecciona un Cliente:", df_clientes['nombre_razon'].unique(), key="sel_cli_edit")
+        fila_cli = df_clientes[df_clientes['nombre_razon'] == cli_sel].iloc[0]
+        
+        with st.expander(f"📝 Editar Datos de {cli_sel}"):
+            edit_cli_tel = st.text_input("Modificar Teléfono:", str(fila_cli.get('telefono', '')), key=f"tel_cli_{cli_sel}").strip()
+            
+            c_act, c_elim = st.columns(2)
+            with c_act:
+                if st.button("🔄 Actualizar Teléfono", key=f"btn_up_cli_{cli_sel}", use_container_width=True):
+                    if edit_cli_tel and (not edit_cli_tel.isdigit() or len(edit_cli_tel) != 10):
+                        st.error("El teléfono debe tener 10 números.")
+                    else:
+                        if guardar_registro("clientes", {"nombre_razon": cli_sel, "telefono": edit_cli_tel}, "nombre_razon"):
+                            st.success("¡Cliente actualizado con éxito!")
+                            time.sleep(0.4)
+                            st.rerun()
+            with c_elim:
+                if st.button("🗑️ Eliminar Cliente", key=f"btn_del_cli_{cli_sel}", use_container_width=True, type="primary"):
+                    if eliminar_registro("clientes", "nombre_razon", cli_sel):
+                        time.sleep(0.4)
+                        st.rerun()
 
 # PESTAÑA PROVEEDORES
 with tabs[3]:
@@ -611,12 +644,11 @@ with tabs[4]:
             if not l_nombre.strip():
                 st.error("❌ El código del lote es obligatorio para el control administrativo.")
             else:
-                # IMPLEMENTACIÓN SUGERIDA: Guardar raza y cabezas en columnas independientes de Supabase
                 registro_lote = {
                     "nombre_lote": l_nombre, 
                     "cabezas": int(l_cabezas),
                     "raza": l_raza,
-                    "descripcion_notas": l_desc, 
+                    "descripcion_notes": l_desc, 
                     "fecha_creacion": datetime.today().strftime('%Y-%m-%d')
                 }
                 if guardar_registro("lotes", registro_lote, "nombre_lote"):
@@ -632,12 +664,40 @@ with tabs[4]:
         
     st.dataframe(df_lotes_vista, use_container_width=True, hide_index=True)
     
+    # NUEVO MÓDULO: Edición Manual de Lotes (Cabezas, Raza, Notas)
     if not df_lotes.empty:
-        lote_sel = st.selectbox("Selecciona Lote para Eliminar:", df_lotes['nombre_lote'].unique())
-        if st.button("🗑️ Eliminar Lote"):
-            if eliminar_registro("lotes", "nombre_lote", lote_sel):
-                time.sleep(0.4)
-                st.rerun()
+        st.markdown("#### 🛠️ Editar o Eliminar Lote de Ganado")
+        lote_sel = st.selectbox("Selecciona un Lote para Modificar:", df_lotes['nombre_lote'].unique(), key="sel_lot_edit")
+        fila_lot = df_lotes[df_lotes['nombre_lote'] == lote_sel].iloc[0]
+        
+        with st.expander(f"📝 Modificar Parámetros de {lote_sel}"):
+            le_c1, le_c2 = st.columns(2)
+            with le_c1:
+                edit_lot_cabezas = st.number_input("Corregir Cabezas:", min_value=0, step=1, value=int(fila_lot.get('cabezas', 0)) if pd.notnull(fila_lot.get('cabezas')) else 0, key=f"cab_{lote_sel}")
+            with le_c2:
+                edit_lot_raza = st.text_input("Corregir Raza/Genética:", str(fila_lot.get('raza', '')), key=f"raz_{lote_sel}").strip().upper()
+            
+            edit_lot_desc = st.text_area("Modificar Notas / Potrero:", str(fila_lot.get('descripcion_notas', fila_lot.get('descripcion_notes', ''))), key=f"desc_{lote_sel}").strip()
+            
+            l_act, l_elim = st.columns(2)
+            with l_act:
+                if st.button("🔄 Guardar Cambios en Lote", key=f"btn_up_lot_{lote_sel}", use_container_width=True):
+                    registro_lote_act = {
+                        "nombre_lote": lote_sel,
+                        "cabezas": int(edit_lot_cabezas),
+                        "raza": edit_lot_raza,
+                        "descripcion_notas": edit_lot_desc,
+                        "fecha_creacion": str(fila_lot.get('fecha_creacion', datetime.today().strftime('%Y-%m-%d')))
+                    }
+                    if guardar_registro("lotes", registro_lote_act, "nombre_lote"):
+                        st.success("¡Lote actualizado en Supabase!")
+                        time.sleep(0.4)
+                        st.rerun()
+            with l_elim:
+                if st.button("🗑️ Eliminar Lote Completo", key=f"btn_del_lot_{lote_sel}", use_container_width=True, type="primary"):
+                    if eliminar_registro("lotes", "nombre_lote", lote_sel):
+                        time.sleep(0.4)
+                        st.rerun()
 
 # RESPALDO EXCEL EN SIDEBAR
 with st.sidebar:
@@ -654,7 +714,7 @@ with st.sidebar:
                 df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
                 df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
                 df_lotes.to_excel(writer, sheet_name='Lotes', index=False)
-            
+                
             st.download_button(
                 label="📥 Descargar Respaldo Excel", 
                 data=buffer.getvalue(),
