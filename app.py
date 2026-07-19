@@ -125,7 +125,6 @@ if "mostrar_descarga" not in st.session_state:
 # FUNCIONES DE ESTILO DE FILAS PARA LOS HISTORIALES
 # ==========================================
 def colorear_filas_finanzas(row):
-    """Aplica color de texto a toda la fila según si es Ingreso o Egreso con opacidad de fondo baja para legibilidad."""
     if row['tipo'] == 'Ingreso':
         return ['background-color: rgba(46, 204, 113, 0.15); color: #2ecc71; font-weight: bold;'] * len(row)
     elif row['tipo'] == 'Egreso':
@@ -142,8 +141,8 @@ if not df_finanzas.empty:
     df_finanzas['fecha'] = pd.to_datetime(df_finanzas['fecha'], errors='coerce')
     df_finanzas = df_finanzas.dropna(subset=['fecha'])
     
-    st.subheader("📆 Filtro de Período Temporal")
-    col_filtro, col_fechas = st.columns([2, 3])
+    st.subheader("📆 Filtros de Consulta")
+    col_filtro, col_lote_filtro, col_fechas = st.columns([2, 2, 3])
     
     hoy = datetime.today()
     fecha_inicio = hoy.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -154,6 +153,13 @@ if not df_finanzas.empty:
             "Selecciona el período visualizado:",
             ["Todo el Historial", "Esta Semana", "Este Mes", "Este Año", "Rango Personalizado"]
         )
+
+    # IMPLEMENTACIÓN SUGERIDA: Filtrar el balance por un lote específico
+    with col_lote_filtro:
+        opciones_filtro_lote = ["Todos los Lotes"]
+        if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
+            opciones_filtro_lote += list(df_lotes['nombre_lote'].dropna().unique())
+        lote_seleccionado = st.selectbox("Filtrar por Lote Asociado:", opciones_filtro_lote)
 
     with col_fechas:
         if periodo == "Esta Semana":
@@ -190,7 +196,6 @@ if not df_finanzas.empty:
                     st.info(f"Rango activo: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
                 else:
                     st.warning("⏳ Por favor, selecciona la fecha de fin en el calendario para actualizar los datos.")
-                    # En lugar de st.stop() para no romper toda la renderización de la app, usamos un flag de control
                     fecha_inicio, fecha_fin = None, None
             else:
                 fecha_inicio = datetime.combine(rango_fechas, datetime.min.time())
@@ -201,18 +206,21 @@ if not df_finanzas.empty:
 
     df_filtrado = df_finanzas.copy()
     
-    # Manejo seguro de zonas horarias en Pandas
     try:
         if df_filtrado['fecha'].dt.tz is not None:
             df_filtrado['fecha'] = df_filtrado['fecha'].dt.tz_localize(None)
     except AttributeError:
         pass
 
-    # Aplicar el filtro temporal solo si las fechas están correctamente definidas
+    # Aplicar Filtro de Tiempo
     if periodo != "Todo el Historial" and fecha_inicio is not None and fecha_fin is not None:
         f_inicio_pd = pd.to_datetime(fecha_inicio)
         f_fin_pd = pd.to_datetime(fecha_fin)
         df_filtrado = df_filtrado[(df_filtrado['fecha'] >= f_inicio_pd) & (df_filtrado['fecha'] <= f_fin_pd)]
+
+    # Aplicar Filtro de Lote si corresponde
+    if lote_seleccionado != "Todos los Lotes" and 'lote_asociado' in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado['lote_asociado'] == lote_seleccionado]
 
     ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
     egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
@@ -252,7 +260,6 @@ if not df_finanzas.empty:
 
         st.write("### 📄 Exportar Reporte Ejecutivo")
         
-        # Validamos que las fechas existan para evitar formatear un None
         f_ini_str = fecha_inicio.strftime('%d/%m/%Y') if fecha_inicio else 'Inicio'
         f_fin_str = fecha_fin.strftime('%d/%m/%Y') if fecha_fin else 'Fin'
         
@@ -276,6 +283,7 @@ if not df_finanzas.empty:
         <body>
             <h1>Reporte de Balance y Control Financiero</h1>
             <p><strong>Período seleccionado:</strong> {periodo} ({f_ini_str} - {f_fin_str})</p>
+            <p><strong>Filtro de Lote:</strong> {lote_seleccionado}</p>
             <p><strong>Fecha de generación:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
             
             <h2>Resumen Financiero</h2>
@@ -293,6 +301,7 @@ if not df_finanzas.empty:
                         <th>Concepto/Detalle</th>
                         <th>Tipo</th>
                         <th>Monto</th>
+                        <th>Lote</th>
                         <th>Estado</th>
                     </tr>
                 </thead>
@@ -301,12 +310,14 @@ if not df_finanzas.empty:
         for _, fila in df_filtrado.iterrows():
             f_date = fila['fecha'].strftime('%d/%m/%Y') if pd.notnull(fila['fecha']) else ''
             concepto = fila.get('concepto', fila.get('detalle', 'Sin concepto'))
+            lote_asoc = fila.get('lote_asociado', 'Ninguno')
             html_reporte += f"""
                     <tr>
                         <td>{f_date}</td>
                         <td>{concepto}</td>
                         <td>{fila['tipo']}</td>
                         <td>${fila['monto']:,.2f}</td>
+                        <td>{lote_asoc}</td>
                         <td>{fila['estado_deuda']}</td>
                     </tr>
             """
@@ -328,7 +339,7 @@ if not df_finanzas.empty:
         )
 
     with tab_graficas:
-        st.subheader("📊 Visualización de Rendimiento del Período")
+        st.subheader("📊 Visualización de Rendimiento")
         if not df_filtrado.empty:
             cg1, cg2 = st.columns(2)
             with cg1:
@@ -340,7 +351,7 @@ if not df_finanzas.empty:
                     st.info("No hay transacciones pagadas en este rango para graficar.")
             
             with cg2:
-                st.write("### 📌 Flujo por Categoría de Gasto/Ingreso")
+                st.write("### 📌 Flujo por Categoría")
                 col_cat = 'categoria' if 'categoria' in df_filtrado.columns else ('concepto' if 'concepto' in df_filtrado.columns else 'tipo')
                 df_cat = df_filtrado.groupby([col_cat, 'tipo'])['monto'].sum().unstack().fillna(0.0)
                 st.bar_chart(df_cat, use_container_width=True)
@@ -386,7 +397,6 @@ with tabs[0]:
             
         submit_finanzas = st.form_submit_button("💾 Guardar Transacción")
         if submit_finanzas:
-            # COMPLEMENTACIÓN: Validaciones de campos vacíos
             if f_monto <= 0:
                 st.error("❌ El monto debe ser mayor a $0.00 pesos.")
             elif not f_concepto:
@@ -405,7 +415,6 @@ with tabs[0]:
                     st.rerun()
 
     st.markdown("### Historial de Movimientos")
-    
     buscar_fin = st.text_input("🔍 Buscar en Historial de Finanzas:", key="bus_fin").strip()
     
     if not df_finanzas.empty:
@@ -421,7 +430,6 @@ with tabs[0]:
             df_fin_estilizado = (df_vista_finanzas.style
                                  .apply(colorear_filas_finanzas, axis=1)
                                  .format({'monto': '${:,.2f}'}))
-            
             st.dataframe(df_fin_estilizado, use_container_width=True, hide_index=True)
         else:
             st.info("No se encontraron transacciones que coincidan.")
@@ -437,6 +445,12 @@ with tabs[0]:
             fecha_orig_str = fila_sel['fecha'].strftime('%Y-%m-%d')
         else:
             fecha_orig_str = str(fila_sel['fecha'])[:10]
+            
+        f_venc_orig = fila_sel.get('fecha_vencimiento', '')
+        if hasattr(f_venc_orig, 'strftime'):
+            f_venc_orig_str = f_venc_orig.strftime('%Y-%m-%d')
+        else:
+            f_venc_orig_str = str(f_venc_orig)[:10]
         
         c1, c2, c3 = st.columns([2, 2, 1])
         lista_estados = ["Pagado", "Pendiente"]
@@ -456,7 +470,7 @@ with tabs[0]:
                     "categoria": str(fila_sel.get('categoria', '')).strip().upper(), "concepto": str(fila_sel.get('concepto', '')).strip(),
                     "monto": float(nuevo_monto), "metodo_pago": str(fila_sel.get('metodo_pago', '')),
                     "lote_asociado": str(fila_sel.get('lote_asociado', '')), "estado_deuda": str(nuevo_estado),
-                    "fecha_vencimiento": str(fila_sel.get('fecha_vencimiento', ''))
+                    "fecha_vencimiento": f_venc_orig_str
                 }
                 if guardar_registro("finanzas", registro_actualizado, "id"):
                     st.success("¡Registro modificado con éxito!")
@@ -481,7 +495,6 @@ with tabs[1]:
         submit_empleado = st.form_submit_button("💾 Guardar Empleado")
         
         if submit_empleado:
-            # COMPLEMENTACIÓN: Validación de número de teléfono y nombre vacío
             if not e_nombre:
                 st.error("❌ El nombre del empleado es obligatorio.")
             elif e_tel and (not e_tel.isdigit() or len(e_tel) != 10):
@@ -516,7 +529,6 @@ with tabs[2]:
         submit_cliente = st.form_submit_button("💾 Guardar Cliente")
         
         if submit_cliente:
-            # COMPLEMENTACIÓN: Validaciones para Clientes
             if not c_nombre:
                 st.error("❌ El nombre o razón social es obligatorio.")
             elif c_tel and (not c_tel.isdigit() or len(c_tel) != 10):
@@ -585,7 +597,6 @@ with tabs[3]:
 with tabs[4]:
     st.subheader("Control de Lotes de Ganado")
     with st.form("form_lotes", clear_on_submit=True):
-        # COMPLEMENTACIÓN: Agregamos campos clave para manejo físico del lote
         l_nombre = st.text_input("Código del Lote (Ej: LOTE_SARDO_01)").strip().upper()
         col_lote_1, col_lote_2 = st.columns(2)
         with col_lote_1:
@@ -593,20 +604,23 @@ with tabs[4]:
         with col_lote_2:
             l_raza = st.text_input("Raza / Genética preponderante (Ej: SARDO NEGRO, SUIZBU):").strip().upper()
             
-        l_desc = st.text_area("Descripción / Notas de Alimentación o Potrero").strip()
+        l_desc = st.text_area("Notas Adicionales de Alimentación o Potrero").strip()
         submit_lote = st.form_submit_button("💾 Guardar Lote")
         
         if submit_lote:
             if not l_nombre.strip():
                 st.error("❌ El código del lote es obligatorio para el control administrativo.")
             else:
+                # IMPLEMENTACIÓN SUGERIDA: Guardar raza y cabezas en columnas independientes de Supabase
                 registro_lote = {
                     "nombre_lote": l_nombre, 
-                    "descripcion_notas": f"Raza: {l_raza} | Cabezas: {l_cabezas} | Notas: {l_desc}", 
+                    "cabezas": int(l_cabezas),
+                    "raza": l_raza,
+                    "descripcion_notas": l_desc, 
                     "fecha_creacion": datetime.today().strftime('%Y-%m-%d')
                 }
                 if guardar_registro("lotes", registro_lote, "nombre_lote"):
-                    st.success(f"¡Lote {l_nombre} guardado con éxito!")
+                    st.success(f"¡Lote {l_nombre} guardado con éxito con datos estructurados!")
                     time.sleep(0.4)
                     st.rerun()
                 
@@ -640,9 +654,13 @@ with st.sidebar:
                 df_clientes.to_excel(writer, sheet_name='Clientes', index=False)
                 df_proveedores.to_excel(writer, sheet_name='Proveedores', index=False)
                 df_lotes.to_excel(writer, sheet_name='Lotes', index=False)
+            
             st.download_button(
-                label="📥 Descargar Respaldo Excel", data=buffer.getvalue(),
-                file_name=f"Respaldo_Rancho_AE_{datetime.now().strftime('%Y-%m-%d')}.xlsx", mime="application/vnd.ms-excel", use_container_width=True
+                label="📥 Descargar Respaldo Excel", 
+                data=buffer.getvalue(),
+                file_name=f"Respaldo_Rancho_AE_{datetime.now().strftime('%Y-%m-%d')}.xlsx", 
+                mime="application/vnd.ms-excel", 
+                use_container_width=True
             )
-        except Exception:
-            pass
+        except Exception as e:
+            st.error(f"Error al generar el respaldo: {e}")
