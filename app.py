@@ -116,11 +116,6 @@ df_clientes = cargar_tabla("clientes")
 df_proveedores = cargar_tabla("proveedores")
 df_lotes = cargar_tabla("lotes")
 
-if "reporte_html" not in st.session_state:
-    st.session_state["reporte_html"] = ""
-if "mostrar_descarga" not in st.session_state:
-    st.session_state["mostrar_descarga"] = False
-
 # ==========================================
 # FUNCIONES DE ESTILO DE FILAS PARA LOS HISTORIALES
 # ==========================================
@@ -130,6 +125,63 @@ def colorear_filas_finanzas(row):
     elif row['tipo'] == 'Egreso':
         return ['background-color: rgba(231, 76, 60, 0.12); color: #e74c3c;'] * len(row)
     return [''] * len(row)
+
+# ==========================================
+# FUNCIÓN GENÉRICA PARA GENERAR REPORTES DOCS (HTML)
+# ==========================================
+def generar_html_docs(titulo_seccion, columnas_headers, df_datos, mapping_columnas):
+    hoy_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+    html = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; color: #333333; line-height: 1.6; }}
+            h1 {{ color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 5px; }}
+            p {{ font-size: 13px; color: #555; }}
+            table {{ border-collapse: collapse; width: 100%; margin-top: 15px; }}
+            th {{ background-color: #1f4e79; color: white; padding: 8px; text-align: left; font-size: 14px; }}
+            td {{ border: 1px solid #ddd; padding: 8px; font-size: 13px; }}
+            tr:nth-child(even) {{ background-color: #f2f2f2; }}
+        </style>
+    </head>
+    <body>
+        <h1>Reporte Oficial - {titulo_seccion}</h1>
+        <p><strong>Rancho AE - Sistema de Administración</strong></p>
+        <p><strong>Fecha de generación:</strong> {hoy_str}</p>
+        <p><strong>Total de registros incluidos:</strong> {len(df_datos)}</p>
+        <table>
+            <thead>
+                <tr>
+    """
+    for header in columnas_headers:
+        html += f"<th>{header}</th>"
+    html += """
+                </tr>
+            </thead>
+            <tbody>
+    """
+    for _, fila in df_datos.iterrows():
+        html += "<tr>"
+        for col_bd in mapping_columnas:
+            val = fila.get(col_bd, '')
+            if pd.isnull(val):
+                val = ''
+            elif isinstance(val, datetime) or hasattr(val, 'strftime'):
+                val = val.strftime('%Y-%m-%d')
+            elif isinstance(val, (int, float)) and col_bd == 'monto':
+                val = f"${val:,.2f}"
+            html += f"<td>{val}</td>"
+        html += "</tr>"
+        
+    html += """
+            </tbody>
+        </table>
+        <p style='margin-top:35px; font-size:11px; color:#888;'>Este documento fue exportado de manera automática para su edición directa en Google Docs.</p>
+    </body>
+    </html>
+    """
+    return html
 
 # ==========================================
 # 4. PANEL DE BALANCE GLOBAL & ESTADÍSTICAS
@@ -255,86 +307,6 @@ if not df_finanzas.empty:
         else:
             st.info("No hay registros que coincidan con la búsqueda.")
 
-        st.write("### 📄 Exportar Reporte Ejecutivo")
-        
-        f_ini_str = fecha_inicio.strftime('%d/%m/%Y') if fecha_inicio else 'Inicio'
-        f_fin_str = fecha_fin.strftime('%d/%m/%Y') if fecha_fin else 'Fin'
-        
-        html_reporte = f"""
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <style>
-                body {{ font-family: Arial, sans-serif; color: #333333; line-height: 1.6; }}
-                h1 {{ color: #1f4e79; border-bottom: 2px solid #1f4e79; padding-bottom: 5px; }}
-                h2 {{ color: #2e75b6; margin-top: 20px; }}
-                .metric-box {{ padding: 10px; margin: 5px; border: 1px solid #ddd; background-color: #f9f9f9; display: inline-block; width: 18%; text-align: center; }}
-                .positive {{ color: green; font-weight: bold; }}
-                .negative {{ color: red; font-weight: bold; }}
-                table {{ border-collapse: collapse; width: 100%; margin-top: 15px; }}
-                th {{ background-color: #1f4e79; color: white; padding: 8px; text-align: left; }}
-                td {{ border: 1px solid #ddd; padding: 8px; }}
-                tr:nth-child(even) {{ background-color: #f2f2f2; }}
-            </style>
-        </head>
-        <body>
-            <h1>Reporte de Balance y Control Financiero</h1>
-            <p><strong>Período seleccionado:</strong> {periodo} ({f_ini_str} - {f_fin_str})</p>
-            <p><strong>Filtro de Lote:</strong> {lote_seleccionado}</p>
-            <p><strong>Fecha de generación:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M')}</p>
-            
-            <h2>Resumen Financiero</h2>
-            <div class="metric-box"><strong>Ingresos Reales</strong><br><span class="positive">${ingresos:,.2f}</span></div>
-            <div class="metric-box"><strong>Egresos Reales</strong><br><span class="negative">${egresos:,.2f}</span></div>
-            <div class="metric-box"><strong>Balance Neto</strong><br><span class="{'positive' if balance_neto >= 0 else 'negative'}">${balance_neto:,.2f}</span></div>
-            <div class="metric-box"><strong>Por Cobrar</strong><br><span style="color:#2e75b6;">${por_cobrar:,.2f}</span></div>
-            <div class="metric-box"><strong>Por Pagar</strong><br><span style="color:#e46c0a;">${por_pagar:,.2f}</span></div>
-            
-            <h2>Desglose de Movimientos Registrados</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Fecha</th>
-                        <th>Concepto/Detalle</th>
-                        <th>Tipo</th>
-                        <th>Monto</th>
-                        <th>Lote</th>
-                        <th>Estado</th>
-                    </tr>
-                </thead>
-                <tbody>
-        """
-        for _, fila in df_filtrado.iterrows():
-            f_date = fila['fecha'].strftime('%d/%m/%Y') if pd.notnull(fila['fecha']) else ''
-            concepto = fila.get('concepto', fila.get('detalle', 'Sin concepto'))
-            lote_asoc = fila.get('lote_asociado', 'Ninguno')
-            html_reporte += f"""
-                    <tr>
-                        <td>{f_date}</td>
-                        <td>{concepto}</td>
-                        <td>{fila['tipo']}</td>
-                        <td>${fila['monto']:,.2f}</td>
-                        <td>{lote_asoc}</td>
-                        <td>{fila['estado_deuda']}</td>
-                    </tr>
-            """
-            
-        html_reporte += """
-                </tbody>
-            </table>
-            <p style='margin-top:30px; font-size:11px; color:#777;'>Generado automáticamente por el Panel de Administración Financiera.</p>
-        </body>
-        </html>
-        """
-        
-        st.download_button(
-            label="📥 Descargar Reporte para Google Docs",
-            data=html_reporte,
-            file_name=f"Balance_Financiero_{periodo.replace(' ', '_')}_{hoy.strftime('%Y%m%d')}.doc",
-            mime="application/msword",
-            help="Descarga este archivo y súbelo directamente a tu Google Drive."
-        )
-
     with tab_graficas:
         st.subheader("📊 Visualización de Rendimiento")
         if not df_filtrado.empty:
@@ -367,8 +339,10 @@ if not df_finanzas.empty:
 else:
     st.warning("No se encontraron registros financieros para procesar en el sistema.")
 
+st.markdown("---")
+
 # ==========================================
-# 5. PESTAÑAS OPERATIVAS
+# 5. PESTAÑAS OPERATIVAS CON BOTONES DE REPORTE INDEPENDIENTES
 # ==========================================
 tabs = st.tabs(["📊 Finanzas", "🤠 Empleados", "🤝 Clientes", "🚜 Proveedores", "🐂 Lotes"])
 
@@ -407,21 +381,40 @@ with tabs[0]:
                 }
                 if guardar_registro("finanzas", nuevo_registro, "id"):
                     st.success(f"¡Transacción registrada con ID simplificado: {auto_id}!")
-                    st.session_state["mostrar_descarga"] = False
                     time.sleep(0.4)
                     st.rerun()
 
     st.markdown("### Historial de Movimientos")
-    buscar_fin = st.text_input("🔍 Buscar en Historial de Finanzas:", key="bus_fin").strip()
     
-    if not df_finanzas.empty:
-        df_vista_finanzas = df_finanzas.copy()
-        df_vista_finanzas['fecha'] = df_vista_finanzas['fecha'].dt.strftime('%Y-%m-%d')
+    col_bus_fin, col_rep_fin = st.columns([3, 1])
+    with col_bus_fin:
+        buscar_fin = st.text_input("🔍 Buscar en Historial de Finanzas:", key="bus_fin").strip()
+    
+    df_vista_finanzas = df_finanzas.copy()
+    if not df_vista_finanzas.empty:
+        if 'fecha' in df_vista_finanzas.columns:
+            df_vista_finanzas['fecha'] = pd.to_datetime(df_vista_finanzas['fecha']).dt.strftime('%Y-%m-%d')
         df_vista_finanzas = df_vista_finanzas.reindex(columns=["id", "fecha", "tipo", "categoria", "concepto", "monto", "metodo_pago", "lote_asociado", "estado_deuda", "fecha_vencimiento"])
         
         if buscar_fin:
             mascara = df_vista_finanzas.astype(str).apply(lambda x: x.str.contains(buscar_fin, case=False)).any(axis=1)
             df_vista_finanzas = df_vista_finanzas[mascara]
+            
+        with col_rep_fin:
+            st.write("")
+            html_fin = generar_html_docs(
+                "Control de Finanzas", 
+                ["ID", "Fecha", "Tipo", "Categoría", "Concepto", "Monto", "Método Pago", "Lote", "Estado", "Vencimiento"],
+                df_vista_finanzas,
+                ["id", "fecha", "tipo", "categoria", "concepto", "monto", "metodo_pago", "lote_asociado", "estado_deuda", "fecha_vencimiento"]
+            )
+            st.download_button(
+                label="📄 Generar Reporte Finanzas (Docs)",
+                data=html_fin,
+                file_name=f"Reporte_Finanzas_{datetime.now().strftime('%Y%m%d')}.doc",
+                mime="application/msword",
+                use_container_width=True
+            )
             
         if not df_vista_finanzas.empty:
             df_fin_estilizado = (df_vista_finanzas.style
@@ -431,14 +424,12 @@ with tabs[0]:
         else:
             st.info("No se encontraron transacciones que coincidan.")
 
-    # MÓDULO ACTUALIZADO: Edición Completa Manual de Transacciones
+    # Edición Manual de Transacciones
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
-        
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
         fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
         
-        # Parseo seguro de fechas originales
         try:
             fecha_orig = pd.to_datetime(fila_sel['fecha']).date()
         except:
@@ -449,7 +440,7 @@ with tabs[0]:
         except:
             f_venc_orig = datetime.today().date()
             
-        with st.expander("📝 Abrir Editor Manual de la Transacción Seleccionada"):
+        with st.expander("¼📝 Abrir Editor Manual de la Transacción Seleccionada"):
             ec1, ec2 = st.columns(2)
             with ec1:
                 edit_fecha = st.date_input("Editar Fecha", fecha_orig, key=f"ed_f_{id_seleccionado}").strftime('%Y-%m-%d')
@@ -489,14 +480,12 @@ with tabs[0]:
                         }
                         if guardar_registro("finanzas", registro_actualizado, "id"):
                             st.success("¡Transacción actualizada!")
-                            st.session_state["mostrar_descarga"] = False
                             time.sleep(0.4)
                             st.rerun()
             with btn_elim:
                 if st.button("🗑️ Eliminar permanentemente", key=f"btn_del_fin_{id_seleccionado}", use_container_width=True, type="primary"):
                     if eliminar_registro("finanzas", "id", id_seleccionado):
                         st.warning("Registro eliminado.")
-                        st.session_state["mostrar_descarga"] = False
                         time.sleep(0.4)
                         st.rerun()
 
@@ -520,12 +509,26 @@ with tabs[1]:
                     time.sleep(0.4)
                     st.rerun()
                 
-    buscar_emp = st.text_input("🔍 Buscar Empleado:", key="bus_emp").strip()
-    df_emp_vista = df_empleados.copy()
-    
-    if buscar_emp and not df_emp_vista.empty:
-        df_emp_vista = df_emp_vista[df_emp_vista.astype(str).apply(lambda x: x.str.contains(buscar_emp, case=False)).any(axis=1)]
+    col_bus_emp, col_rep_emp = st.columns([3, 1])
+    with col_bus_emp:
+        buscar_emp = st.text_input("🔍 Buscar Empleado:", key="bus_emp").strip()
         
+    df_emp_vista = df_empleados.copy()
+    if not df_emp_vista.empty:
+        if buscar_emp:
+            df_emp_vista = df_emp_vista[df_emp_vista.astype(str).apply(lambda x: x.str.contains(buscar_emp, case=False)).any(axis=1)]
+            
+        with col_rep_emp:
+            st.write("")
+            html_emp = generar_html_docs("Listado de Personal", ["Nombre", "Teléfono", "Puesto/Función", "Fecha Ingreso"], df_emp_vista, ["nombre", "telefono", "puesto_funcion", "fecha_ingreso"])
+            st.download_button(
+                label="📄 Generar Reporte Personal (Docs)",
+                data=html_emp,
+                file_name=f"Reporte_Empleados_{datetime.now().strftime('%Y%m%d')}.doc",
+                mime="application/msword",
+                use_container_width=True
+            )
+            
     st.dataframe(df_emp_vista, use_container_width=True, hide_index=True)
     
     if not df_empleados.empty:
@@ -554,15 +557,28 @@ with tabs[2]:
                     time.sleep(0.4)
                     st.rerun()
                 
-    buscar_cli = st.text_input("🔍 Buscar Cliente:", key="bus_cli").strip()
-    df_cli_vista = df_clientes.copy()
-    
-    if buscar_cli and not df_cli_vista.empty:
-        df_cli_vista = df_cli_vista[df_cli_vista.astype(str).apply(lambda x: x.str.contains(buscar_cli, case=False)).any(axis=1)]
+    col_bus_cli, col_rep_cli = st.columns([3, 1])
+    with col_bus_cli:
+        buscar_cli = st.text_input("🔍 Buscar Cliente:", key="bus_cli").strip()
         
+    df_cli_vista = df_clientes.copy()
+    if not df_cli_vista.empty:
+        if buscar_cli:
+            df_cli_vista = df_cli_vista[df_cli_vista.astype(str).apply(lambda x: x.str.contains(buscar_cli, case=False)).any(axis=1)]
+            
+        with col_rep_cli:
+            st.write("")
+            html_cli = generar_html_docs("Catálogo de Clientes", ["Nombre/Razón Social", "Teléfono"], df_cli_vista, ["nombre_razon", "telefono"])
+            st.download_button(
+                label="📄 Generar Reporte Clientes (Docs)",
+                data=html_cli,
+                file_name=f"Reporte_Clientes_{datetime.now().strftime('%Y%m%d')}.doc",
+                mime="application/msword",
+                use_container_width=True
+            )
+            
     st.dataframe(df_cli_vista, use_container_width=True, hide_index=True)
     
-    # NUEVO MÓDULO: Edición Manual de Clientes
     if not df_clientes.empty:
         st.markdown("#### 🛠️ Editar o Eliminar Cliente")
         cli_sel = st.selectbox("Selecciona un Cliente:", df_clientes['nombre_razon'].unique(), key="sel_cli_edit")
@@ -606,17 +622,31 @@ with tabs[3]:
                     time.sleep(0.4)
                     st.rerun()
                     
-    buscar_prov = st.text_input("🔍 Buscar Proveedor:", key="bus_prov").strip()
-    df_prov_vista = df_proveedores.copy()
-    
-    columnas_prov = ["nombre_proveedor", "insumo_principal"]
-    if "contacto" in df_prov_vista.columns:
-        columnas_prov.append("contacto")
-    df_prov_vista = df_prov_vista.reindex(columns=columnas_prov)
-    
-    if buscar_prov and not df_prov_vista.empty:
-        df_prov_vista = df_prov_vista[df_prov_vista.astype(str).apply(lambda x: x.str.contains(buscar_prov, case=False)).any(axis=1)]
+    col_bus_prov, col_rep_prov = st.columns([3, 1])
+    with col_bus_prov:
+        buscar_prov = st.text_input("🔍 Buscar Proveedor:", key="bus_prov").strip()
         
+    df_prov_vista = df_proveedores.copy()
+    if not df_prov_vista.empty:
+        columnas_prov = ["nombre_proveedor", "insumo_principal"]
+        if "contacto" in df_prov_vista.columns:
+            columnas_prov.append("contacto")
+        df_prov_vista = df_prov_vista.reindex(columns=columnas_prov)
+        
+        if buscar_prov:
+            df_prov_vista = df_prov_vista[df_prov_vista.astype(str).apply(lambda x: x.str.contains(buscar_prov, case=False)).any(axis=1)]
+            
+        with col_rep_prov:
+            st.write("")
+            html_prov = generar_html_docs("Registro de Proveedores", ["Nombre Proveedor", "Insumo Principal", "Contacto"], df_prov_vista, ["nombre_proveedor", "insumo_principal", "contacto"])
+            st.download_button(
+                label="📄 Generar Reporte Proveedores (Docs)",
+                data=html_prov,
+                file_name=f"Reporte_Proveedores_{datetime.now().strftime('%Y%m%d')}.doc",
+                mime="application/msword",
+                use_container_width=True
+            )
+            
     st.dataframe(df_prov_vista, use_container_width=True, hide_index=True)
         
     if not df_proveedores.empty:
@@ -648,7 +678,7 @@ with tabs[4]:
                     "nombre_lote": l_nombre, 
                     "cabezas": int(l_cabezas),
                     "raza": l_raza,
-                    "descripcion_notes": l_desc, 
+                    "descripcion_notas": l_desc, 
                     "fecha_creacion": datetime.today().strftime('%Y-%m-%d')
                 }
                 if guardar_registro("lotes", registro_lote, "nombre_lote"):
@@ -656,15 +686,29 @@ with tabs[4]:
                     time.sleep(0.4)
                     st.rerun()
                 
-    buscar_lote = st.text_input("🔍 Buscar Lote:", key="bus_lote").strip()
-    df_lotes_vista = df_lotes.copy()
-    
-    if buscar_lote and not df_lotes_vista.empty:
-        df_lotes_vista = df_lotes_vista[df_lotes_vista.astype(str).apply(lambda x: x.str.contains(buscar_lote, case=False)).any(axis=1)]
+    col_bus_lot, col_rep_lot = st.columns([3, 1])
+    with col_bus_lot:
+        buscar_lote = st.text_input("🔍 Buscar Lote:", key="bus_lote").strip()
         
+    df_lotes_vista = df_lotes.copy()
+    if not df_lotes_vista.empty:
+        if buscar_lote:
+            df_lotes_vista = df_lotes_vista[df_lotes_vista.astype(str).apply(lambda x: x.str.contains(buscar_lote, case=False)).any(axis=1)]
+            
+        with col_rep_lot:
+            st.write("")
+            html_lot = generar_html_docs("Inventario de Lotes de Ganado", ["Código Lote", "Cabezas", "Raza/Genética", "Notas/Potrero", "Fecha Creación"], df_lotes_vista, ["nombre_lote", "cabezas", "raza", "descripcion_notas", "fecha_creacion"])
+            st.download_button(
+                label="📄 Generar Reporte Lotes (Docs)",
+                data=html_lot,
+                file_name=f"Reporte_Lotes_{datetime.now().strftime('%Y%m%d')}.doc",
+                mime="application/msword",
+                use_container_width=True
+            )
+            
     st.dataframe(df_lotes_vista, use_container_width=True, hide_index=True)
     
-    # NUEVO MÓDULO: Edición Manual de Lotes (Cabezas, Raza, Notas)
+    # Edición Manual de Lotes
     if not df_lotes.empty:
         st.markdown("#### 🛠️ Editar o Eliminar Lote de Ganado")
         lote_sel = st.selectbox("Selecciona un Lote para Modificar:", df_lotes['nombre_lote'].unique(), key="sel_lot_edit")
