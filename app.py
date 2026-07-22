@@ -419,6 +419,7 @@ if not df_finanzas.empty:
         
         st.write("---")
         
+        # MÓDULO NUEVO Y REUBICADO: Botón de Reporte Ejecutivo Profesional por Período Filtrado
         col_tit_trans, col_btn_rep_filtrado = st.columns([3, 1])
         with col_tit_trans:
             st.subheader("📋 Transacciones del Período Seleccionado")
@@ -491,7 +492,7 @@ st.markdown("---")
 # ==========================================
 tabs = st.tabs(["📊 Finanzas", "🤠 Empleados", "🤝 Clientes", "🚜 Proveedores", "🐂 Lotes"])
 
-# PESTAÑA FINANZAS
+# PESTAÑA FINANZAS (¡BOTÓN DE REPORTE REMOVIDO DE AQUÍ COMO FUE SOLICITADO!)
 with tabs[0]:
     st.subheader("Registro Financiero Automático")
     with st.form("form_finanzas", clear_on_submit=True):
