@@ -453,7 +453,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         por_cobrar = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
         por_pagar = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
         
-        # --- CREACIÓN DE PESTAÑAS (AQUÍ AGREGAMOS LA NUEVA) ---
+        # --- CREACIÓN DE PESTAÑAS ---
         tab_resumen, tab_graficas, tab_rentabilidad = st.tabs(["📋 Resumen Numérico", "📈 Análisis Gráfico", "📊 Estados Financieros y Rentabilidad"])
         
         with tab_resumen:
@@ -520,23 +520,19 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             else:
                 st.info("No hay datos para graficar.")
 
-        # --- NUEVA PESTAÑA: ESTADOS FINANCIEROS Y RENTABILIDAD ---
         with tab_rentabilidad:
             st.subheader("📊 Estado de Resultados (P&L) y Rentabilidad")
             st.markdown("Cálculos basados **exclusivamente en transacciones pagadas/cobradas** dentro del período.")
             
-            # Clasificar y sumar
             df_pagados = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].copy()
             if not df_pagados.empty:
-                # Agregamos la columna Rubro (Ingreso, Costo Directo, Gasto Operativo)
                 df_pagados['Rubro'] = df_pagados['categoria'].apply(lambda x: clasificar_categoria(x)[1])
                 
                 tot_ingresos = df_pagados[df_pagados['Rubro'] == 'Ingreso']['monto'].sum()
                 tot_costos_directos = df_pagados[df_pagados['Rubro'] == 'Costo Directo']['monto'].sum()
                 tot_gastos_operativos = df_pagados[df_pagados['Rubro'] == 'Gasto Operativo']['monto'].sum()
-                tot_otros = df_pagados[df_pagados['Rubro'] == 'Otros']['monto'].sum() # Porsiacaso
+                tot_otros = df_pagados[df_pagados['Rubro'] == 'Otros']['monto'].sum()
                 
-                # Cálculos Financieros
                 utilidad_bruta = tot_ingresos - tot_costos_directos
                 margen_bruto = (utilidad_bruta / tot_ingresos * 100) if tot_ingresos > 0 else 0.0
                 
@@ -545,7 +541,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 
                 flujo_caja = tot_ingresos - (tot_costos_directos + tot_gastos_operativos + tot_otros)
                 
-                # Mostrar KPIs principales
                 k1, k2, k3, k4 = st.columns(4)
                 k1.metric("1️⃣ Flujo de Caja Total", f"${flujo_caja:,.2f}", help="Efectivo real que quedó en la bolsa")
                 k2.metric("2️⃣ Utilidad Bruta", f"${utilidad_bruta:,.2f}", help="Ingresos menos Costos Directos (Ganado, Alimento, Medicina)")
@@ -553,8 +548,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 k4.metric("4️⃣ Rentabilidad (Margen Neto)", f"{margen_neto:.1f}%", delta=f"${utilidad_neta:,.2f} Netos")
                 
                 st.write("---")
-                
-                # Tabla de Estado de Resultados Estilizada
                 st.markdown("### 📑 Desglose de Estado de Resultados")
                 
                 html_pnl = f"""
@@ -596,15 +589,26 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
     st.markdown("---")
     
-    # --- FORMULARIO DE REGISTRO MEJORADO ---
+    # --- FORMULARIO DE REGISTRO MEJORADO CON SELECCIÓN DINÁMICA ---
     st.subheader("➕ Registro Financiero Automático")
+    
+    # 1. Colocamos la selección del tipo AFUERA del formulario para que sea reactivo al instante
+    f_tipo_dinamico = st.radio("¿Qué tipo de transacción vas a registrar?", ["Ingreso", "Egreso"], horizontal=True)
+    
     with st.form("form_finanzas", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
             f_fecha = st.date_input("Fecha Transacción", datetime.today()).strftime('%Y-%m-%d')
-            # ¡Mejora!: Ahora eliges la categoría directo de la lista maestra que creamos arriba.
-            f_cat = st.selectbox("Categoría del Movimiento", todas_las_categorias)
+            
+            # 2. Mostramos las categorías correspondientes según el tipo seleccionado arriba
+            if f_tipo_dinamico == "Ingreso":
+                opciones_categorias = cat_ingresos
+            else:
+                opciones_categorias = cat_costos_directos + cat_gastos_operativos
+                
+            f_cat = st.selectbox("Categoría del Movimiento", opciones_categorias)
             f_concepto = st.text_input("Concepto / Descripción").strip()
+            
         with col2:
             f_monto = st.number_input("Monto total ($)", min_value=0.0, step=100.0)
             f_pago = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque", "Crédito"])
@@ -624,21 +628,18 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             elif not f_concepto:
                 st.error("❌ Por favor escribe un Concepto o Descripción.")
             else:
-                # Deducimos automáticamente si es Ingreso o Egreso según la categoría
-                f_tipo, _ = clasificar_categoria(f_cat) 
-                
                 auto_id = f"N-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
                 nuevo_registro = {
-                    "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat,
+                    "id": auto_id, "fecha": f_fecha, "tipo": f_tipo_dinamico, "categoria": f_cat,
                     "concepto": f_concepto, "monto": float(f_monto), "metodo_pago": f_pago,
                     "lote_asociado": f_lote, "estado_deuda": f_estado, "fecha_vencimiento": f_venc
                 }
                 if guardar_registro("finanzas", nuevo_registro, "id"):
-                    st.success(f"¡Transacción guardada! ID: {auto_id} - Se registró como: {f_tipo}")
-                    time.sleep(1) # Un segundo para que el usuario lea el success
+                    st.success(f"¡Transacción guardada! ID: {auto_id} - Se registró como: {f_tipo_dinamico}")
+                    time.sleep(1)
                     st.rerun()
 
-    # --- EDICIÓN MANUAL CORREGIDA ---
+    # --- EDICIÓN MANUAL CORREGIDA Y DINÁMICA ---
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
@@ -651,13 +652,27 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         except: f_venc_orig = datetime.today().date()
             
         with st.expander("📝 Abrir Editor Manual de la Transacción Seleccionada"):
+            # También agregamos la selección de Ingreso/Egreso dinámica en la edición
+            tipo_actual_bd = fila_sel.get('tipo', 'Egreso')
+            idx_tipo_actual = 0 if tipo_actual_bd == "Ingreso" else 1
+            edit_tipo = st.selectbox("Editar Tipo de Transacción", ["Ingreso", "Egreso"], index=idx_tipo_actual, key=f"ed_tipo_{id_seleccionado}")
+            
             ec1, ec2 = st.columns(2)
             with ec1:
                 edit_fecha = st.date_input("Editar Fecha", fecha_orig, key=f"ed_f_{id_seleccionado}").strftime('%Y-%m-%d')
+                
+                # Asignar categorías dinámicas para la edición
+                if edit_tipo == "Ingreso":
+                    opciones_cat_ed = cat_ingresos
+                else:
+                    opciones_cat_ed = cat_costos_directos + cat_gastos_operativos
+                
                 cat_actual = str(fila_sel.get('categoria', ''))
-                idx_cat = todas_las_categorias.index(cat_actual) if cat_actual in todas_las_categorias else 0
-                edit_cat = st.selectbox("Editar Categoría", todas_las_categorias, index=idx_cat, key=f"ed_c_{id_seleccionado}")
+                idx_cat = opciones_cat_ed.index(cat_actual) if cat_actual in opciones_cat_ed else 0
+                
+                edit_cat = st.selectbox("Editar Categoría", opciones_cat_ed, index=idx_cat, key=f"ed_c_{id_seleccionado}")
                 edit_concepto = st.text_input("Editar Concepto/Descripción", str(fila_sel.get('concepto', '')), key=f"ed_con_{id_seleccionado}").strip()
+            
             with ec2:
                 edit_monto = st.number_input("Editar Monto ($)", min_value=0.0, value=float(fila_sel['monto']), step=100.0, key=f"ed_m_{id_seleccionado}")
                 lista_pagos = ["Efectivo", "Transferencia", "Cheque", "Crédito"]
@@ -680,7 +695,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     if edit_monto <= 0: st.error("El monto debe ser superior a $0")
                     elif not edit_concepto: st.error("El concepto no puede estar vacío")
                     else:
-                        edit_tipo, _ = clasificar_categoria(edit_cat)
                         registro_actualizado = {
                             "id": str(id_seleccionado), "fecha": edit_fecha, "tipo": edit_tipo,
                             "categoria": edit_cat, "concepto": edit_concepto, "monto": float(edit_monto),
@@ -692,13 +706,11 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             time.sleep(0.4)
                             st.rerun()
             with btn_elim:
-                # Corrección del botón de eliminar que estaba incompleto
                 if st.button("🗑️ Eliminar permanentemente", key=f"btn_del_fin_{id_seleccionado}", use_container_width=True, type="primary"):
                     if eliminar_registro("finanzas", "id", id_seleccionado):
                         st.warning("Registro eliminado exitosamente.")
                         time.sleep(0.4)
                         st.rerun()
-
 # MÓDULO 2: EMPLEADOS
 elif modulo_activo == "🤠 Personal / Empleados":
     st.header("🤠 Administración de Personal")
