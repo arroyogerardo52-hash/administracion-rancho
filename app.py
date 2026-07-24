@@ -354,9 +354,23 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
 # RENDERIZADO CONDICIONAL DE MÓDULOS
 # ==========================================
 
+# ==========================================
 # MÓDULO 1: DASHBOARD Y FINANZAS
+# ==========================================
 if modulo_activo == "📊 Dashboard & Finanzas":
     st.header("📊 Balance y Control General Financiero")
+
+    # --- DEFINICIÓN DE CATEGORÍAS PARA EL ESTADO DE RESULTADOS ---
+    cat_ingresos = ["Venta de ganado", "Varios (Ingresos)"]
+    cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos)"]
+    cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Varios (Gastos)"]
+    todas_las_categorias = cat_ingresos + cat_costos_directos + cat_gastos_operativos
+
+    def clasificar_categoria(cat):
+        if cat in cat_ingresos: return "Ingreso", "Ingreso"
+        elif cat in cat_costos_directos: return "Egreso", "Costo Directo"
+        elif cat in cat_gastos_operativos: return "Egreso", "Gasto Operativo"
+        else: return "Egreso", "Otros" # Por seguridad en registros viejos
 
     if not df_finanzas.empty:
         df_finanzas['monto'] = pd.to_numeric(df_finanzas['monto'], errors='coerce').fillna(0.0)
@@ -387,56 +401,47 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 lunes = hoy - timedelta(days=hoy.weekday())
                 fecha_inicio = lunes.replace(hour=0, minute=0, second=0, microsecond=0)
                 fecha_fin = (lunes + timedelta(days=6)).replace(hour=23, minute=59, second=59, microsecond=999999)
-                st.info(f"Mostrando desde el lunes: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
+                st.info(f"Mostrando desde: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
                 
             elif periodo == "Este Mes":
                 fecha_inicio = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 next_month = hoy.replace(day=28) + timedelta(days=4)
                 ultimo_dia = next_month - timedelta(days=next_month.day)
                 fecha_fin = ultimo_dia.replace(hour=23, minute=59, second=59, microsecond=999999)
-                st.info(f"Mostrando el mes en curso: **{fecha_inicio.strftime('%B %Y')}**")
+                st.info(f"Mostrando: **{fecha_inicio.strftime('%B %Y')}**")
                 
             elif periodo == "Este Año":
                 fecha_inicio = hoy.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
                 fecha_fin = hoy.replace(month=12, day=31, hour=23, minute=59, second=59, microsecond=999999)
-                st.info(f"Mostrando el año en curso: **{hoy.year}**")
+                st.info(f"Mostrando el año: **{hoy.year}**")
                 
             elif periodo == "Rango Personalizado":
                 fecha_defecto_inicio = (hoy - timedelta(days=30)).date()
                 fecha_defecto_fin = hoy.date()
-                
-                rango_fechas = st.date_input(
-                    "Selecciona el rango (Inicio - Fin):", 
-                    [fecha_defecto_inicio, fecha_defecto_fin]
-                )
-                
+                rango_fechas = st.date_input("Selecciona el rango:", [fecha_defecto_inicio, fecha_defecto_fin])
                 if isinstance(rango_fechas, (list, tuple)):
                     if len(rango_fechas) == 2:
                         fecha_inicio = datetime.combine(rango_fechas[0], datetime.min.time())
                         fecha_fin = datetime.combine(rango_fechas[1], datetime.max.time())
-                        st.info(f"Rango activo: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
+                        st.info(f"Rango: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
                     else:
-                        st.warning("⏳ Por favor, selecciona la fecha de fin en el calendario para actualizar los datos.")
+                        st.warning("⏳ Por favor, selecciona la fecha de fin.")
                         fecha_inicio, fecha_fin = None, None
                 else:
                     fecha_inicio = datetime.combine(rango_fechas, datetime.min.time())
                     fecha_fin = datetime.combine(rango_fechas, datetime.max.time())
-                    st.info(f"Rango activo: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
+                    st.info(f"Rango: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
             else:
                 st.info("Mostrando la totalidad de los datos registrados.")
 
         df_filtrado = df_finanzas.copy()
-        
         try:
             if df_filtrado['fecha'].dt.tz is not None:
                 df_filtrado['fecha'] = df_filtrado['fecha'].dt.tz_localize(None)
-        except AttributeError:
-            pass
+        except AttributeError: pass
 
         if periodo != "Todo el Historial" and fecha_inicio is not None and fecha_fin is not None:
-            f_inicio_pd = pd.to_datetime(fecha_inicio)
-            f_fin_pd = pd.to_datetime(fecha_fin)
-            df_filtrado = df_filtrado[(df_filtrado['fecha'] >= f_inicio_pd) & (df_filtrado['fecha'] <= f_fin_pd)]
+            df_filtrado = df_filtrado[(df_filtrado['fecha'] >= pd.to_datetime(fecha_inicio)) & (df_filtrado['fecha'] <= pd.to_datetime(fecha_fin))]
 
         if lote_seleccionado != "Todos los Lotes" and 'lote_asociado' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['lote_asociado'] == lote_seleccionado]
@@ -448,7 +453,8 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         por_cobrar = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
         por_pagar = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
         
-        tab_resumen, tab_graficas = st.tabs(["📋 Resumen Numérico", "📈 Análisis Gráfico"])
+        # --- CREACIÓN DE PESTAÑAS (AQUÍ AGREGAMOS LA NUEVA) ---
+        tab_resumen, tab_graficas, tab_rentabilidad = st.tabs(["📋 Resumen Numérico", "📈 Análisis Gráfico", "📊 Estados Financieros y Rentabilidad"])
         
         with tab_resumen:
             m1, m2, m3, m4, m5 = st.columns(5)
@@ -459,7 +465,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             m5.metric("📉 Por Pagar", f"${por_pagar:,.2f}")
             
             st.write("---")
-            
             col_tit_trans, col_btn_rep_filtrado = st.columns([3, 1])
             with col_tit_trans:
                 st.subheader("📋 Transacciones del Período Seleccionado")
@@ -469,20 +474,18 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         df_filtrado, periodo, lote_seleccionado, ingresos, egresos, balance_neto, por_cobrar, por_pagar
                     )
                     st.download_button(
-                        label="📄 Exportar Reporte de este Período (Docs)",
+                        label="📄 Exportar Reporte (Docs)",
                         data=html_profesional_finanzas,
-                        file_name=f"Reporte_Ejecutivo_Finanzas_{periodo.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.doc",
+                        file_name=f"Reporte_Finanzas_{periodo.replace(' ', '_')}.doc",
                         mime="application/msword",
-                        use_container_width=True,
-                        help="Genera un reporte claro y formal listo para importar en Google Drive con las transacciones del filtro actual."
+                        use_container_width=True
                     )
             
             buscar_bal = st.text_input("🔍 Buscar en las transacciones del período:", key="bus_bal").strip()
             df_bal_vista = df_filtrado.copy()
             
             if buscar_bal:
-                mascara = df_bal_vista.astype(str).apply(lambda x: x.str.contains(buscar_bal, case=False)).any(axis=1)
-                df_bal_vista = df_bal_vista[mascara]
+                df_bal_vista = df_bal_vista[df_bal_vista.astype(str).apply(lambda x: x.str.contains(buscar_bal, case=False)).any(axis=1)]
                 
             if not df_bal_vista.empty:
                 df_bal_vista['fecha'] = df_bal_vista['fecha'].dt.strftime('%Y-%m-%d')
@@ -502,46 +505,115 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     df_pie = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].groupby('tipo')['monto'].sum().reset_index()
                     if not df_pie.empty:
                         st.bar_chart(data=df_pie, x='tipo', y='monto', color='tipo', use_container_width=True)
-                    else:
-                        st.info("No hay transacciones pagadas en este rango para graficar.")
-                
                 with cg2:
                     st.write("### 📌 Flujo por Categoría")
-                    col_cat = 'categoria' if 'categoria' in df_filtrado.columns else ('concepto' if 'concepto' in df_filtrado.columns else 'tipo')
+                    col_cat = 'categoria' if 'categoria' in df_filtrado.columns else 'tipo'
                     df_cat = df_filtrado.groupby([col_cat, 'tipo'])['monto'].sum().unstack().fillna(0.0)
                     st.bar_chart(df_cat, use_container_width=True)
-                    
-                st.write("---")
-                st.write("### 📈 Tendencia Financiera Histórica del Período")
+                st.write("### 📈 Tendencia Financiera Histórica")
                 df_linea = df_filtrado.copy()
                 df_linea['Fecha'] = df_linea['fecha'].dt.date
                 df_tendencia = df_linea.groupby(['Fecha', 'tipo'])['monto'].sum().unstack().fillna(0.0)
-                
                 if 'Ingreso' not in df_tendencia.columns: df_tendencia['Ingreso'] = 0.0
                 if 'Egreso' not in df_tendencia.columns: df_tendencia['Egreso'] = 0.0
                 st.line_chart(df_tendencia[['Ingreso', 'Egreso']], use_container_width=True)
             else:
-                st.info("Selecciona un período con registros para poder desplegar los análisis gráficos.")
+                st.info("No hay datos para graficar.")
+
+        # --- NUEVA PESTAÑA: ESTADOS FINANCIEROS Y RENTABILIDAD ---
+        with tab_rentabilidad:
+            st.subheader("📊 Estado de Resultados (P&L) y Rentabilidad")
+            st.markdown("Cálculos basados **exclusivamente en transacciones pagadas/cobradas** dentro del período.")
+            
+            # Clasificar y sumar
+            df_pagados = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].copy()
+            if not df_pagados.empty:
+                # Agregamos la columna Rubro (Ingreso, Costo Directo, Gasto Operativo)
+                df_pagados['Rubro'] = df_pagados['categoria'].apply(lambda x: clasificar_categoria(x)[1])
+                
+                tot_ingresos = df_pagados[df_pagados['Rubro'] == 'Ingreso']['monto'].sum()
+                tot_costos_directos = df_pagados[df_pagados['Rubro'] == 'Costo Directo']['monto'].sum()
+                tot_gastos_operativos = df_pagados[df_pagados['Rubro'] == 'Gasto Operativo']['monto'].sum()
+                tot_otros = df_pagados[df_pagados['Rubro'] == 'Otros']['monto'].sum() # Porsiacaso
+                
+                # Cálculos Financieros
+                utilidad_bruta = tot_ingresos - tot_costos_directos
+                margen_bruto = (utilidad_bruta / tot_ingresos * 100) if tot_ingresos > 0 else 0.0
+                
+                utilidad_neta = utilidad_bruta - tot_gastos_operativos - tot_otros
+                margen_neto = (utilidad_neta / tot_ingresos * 100) if tot_ingresos > 0 else 0.0
+                
+                flujo_caja = tot_ingresos - (tot_costos_directos + tot_gastos_operativos + tot_otros)
+                
+                # Mostrar KPIs principales
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("1️⃣ Flujo de Caja Total", f"${flujo_caja:,.2f}", help="Efectivo real que quedó en la bolsa")
+                k2.metric("2️⃣ Utilidad Bruta", f"${utilidad_bruta:,.2f}", help="Ingresos menos Costos Directos (Ganado, Alimento, Medicina)")
+                k3.metric("3️⃣ Margen Bruto (%)", f"{margen_bruto:.1f}%")
+                k4.metric("4️⃣ Rentabilidad (Margen Neto)", f"{margen_neto:.1f}%", delta=f"${utilidad_neta:,.2f} Netos")
+                
+                st.write("---")
+                
+                # Tabla de Estado de Resultados Estilizada
+                st.markdown("### 📑 Desglose de Estado de Resultados")
+                
+                html_pnl = f"""
+                <div style="background-color:#1e1e1e; padding:20px; border-radius:10px; color:white; font-family:sans-serif;">
+                    <table style="width:100%; border-collapse:collapse; font-size:16px;">
+                        <tr style="border-bottom: 2px solid #4CAF50;">
+                            <td style="padding:10px; font-weight:bold;">(+) INGRESOS TOTALES</td>
+                            <td style="padding:10px; text-align:right; font-weight:bold; color:#4CAF50;">${tot_ingresos:,.2f}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #555;">
+                            <td style="padding:10px; padding-left:30px;">(-) Costos Directos (Ganado, Alimento, Salud)</td>
+                            <td style="padding:10px; text-align:right; color:#ff9800;">-${tot_costos_directos:,.2f}</td>
+                        </tr>
+                        <tr style="border-bottom: 2px solid #2196F3; background-color:#2a2a2a;">
+                            <td style="padding:10px; font-weight:bold;">(=) UTILIDAD BRUTA</td>
+                            <td style="padding:10px; text-align:right; font-weight:bold; color:#2196F3;">${utilidad_bruta:,.2f}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #555;">
+                            <td style="padding:10px; padding-left:30px;">(-) Gastos Operativos (Nómina, Oficina, Mantenimiento)</td>
+                            <td style="padding:10px; text-align:right; color:#f44336;">-${tot_gastos_operativos:,.2f}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #555;">
+                            <td style="padding:10px; padding-left:30px;">(-) Otros Gastos No Clasificados</td>
+                            <td style="padding:10px; text-align:right; color:#f44336;">-${tot_otros:,.2f}</td>
+                        </tr>
+                        <tr style="background-color:#000000;">
+                            <td style="padding:15px; font-weight:bold; font-size:18px;">(=) UTILIDAD NETA (Ganancia Real)</td>
+                            <td style="padding:15px; text-align:right; font-weight:bold; font-size:18px; color:{'#4CAF50' if utilidad_neta >= 0 else '#f44336'};">${utilidad_neta:,.2f}</td>
+                        </tr>
+                    </table>
+                </div>
+                """
+                st.markdown(html_pnl, unsafe_allow_html=True)
+            else:
+                st.info("No hay transacciones pagadas registradas en este período para calcular la rentabilidad.")
+
     else:
         st.warning("No se encontraron registros financieros para procesar en el sistema.")
 
     st.markdown("---")
     
+    # --- FORMULARIO DE REGISTRO MEJORADO ---
     st.subheader("➕ Registro Financiero Automático")
     with st.form("form_finanzas", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
             f_fecha = st.date_input("Fecha Transacción", datetime.today()).strftime('%Y-%m-%d')
-            f_tipo = st.selectbox("Tipo de Movimiento", ["Ingreso", "Egreso"])
-            f_cat = st.text_input("Categoría (Ej: Alimento, Venta Animales, Medicina)").strip().upper()
+            # ¡Mejora!: Ahora eliges la categoría directo de la lista maestra que creamos arriba.
+            f_cat = st.selectbox("Categoría del Movimiento", todas_las_categorias)
             f_concepto = st.text_input("Concepto / Descripción").strip()
         with col2:
             f_monto = st.number_input("Monto total ($)", min_value=0.0, step=100.0)
             f_pago = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque", "Crédito"])
+            
             opciones_lotes = ["Ninguno"]
             if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
                 opciones_lotes += list(df_lotes['nombre_lote'].dropna().unique())
             f_lote = st.selectbox("Lote Asociado", opciones_lotes)
+            
             f_estado = st.selectbox("Estado del Pago", ["Pagado", "Pendiente"])
             f_venc = st.date_input("Fecha Vencimiento", datetime.today()).strftime('%Y-%m-%d')
             
@@ -550,42 +622,41 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             if f_monto <= 0:
                 st.error("❌ El monto debe ser mayor a $0.00 pesos.")
             elif not f_concepto:
-                st.error("❌ Por favor escribe un Concepto o Descripción para la transacción.")
+                st.error("❌ Por favor escribe un Concepto o Descripción.")
             else:
+                # Deducimos automáticamente si es Ingreso o Egreso según la categoría
+                f_tipo, _ = clasificar_categoria(f_cat) 
+                
                 auto_id = f"N-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
                 nuevo_registro = {
-                    "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat if f_cat else "GENERAL",
+                    "id": auto_id, "fecha": f_fecha, "tipo": f_tipo, "categoria": f_cat,
                     "concepto": f_concepto, "monto": float(f_monto), "metodo_pago": f_pago,
                     "lote_asociado": f_lote, "estado_deuda": f_estado, "fecha_vencimiento": f_venc
                 }
                 if guardar_registro("finanzas", nuevo_registro, "id"):
-                    st.success(f"¡Transacción registrada con ID: {auto_id}!")
-                    time.sleep(0.4)
+                    st.success(f"¡Transacción guardada! ID: {auto_id} - Se registró como: {f_tipo}")
+                    time.sleep(1) # Un segundo para que el usuario lea el success
                     st.rerun()
 
-    # Edición Manual de Transacciones
+    # --- EDICIÓN MANUAL CORREGIDA ---
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
         fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
         
-        try:
-            fecha_orig = pd.to_datetime(fila_sel['fecha']).date()
-        except:
-            fecha_orig = datetime.today().date()
+        try: fecha_orig = pd.to_datetime(fila_sel['fecha']).date()
+        except: fecha_orig = datetime.today().date()
             
-        try:
-            f_venc_orig = pd.to_datetime(fila_sel.get('fecha_vencimiento', datetime.today())).date()
-        except:
-            f_venc_orig = datetime.today().date()
+        try: f_venc_orig = pd.to_datetime(fila_sel.get('fecha_vencimiento', datetime.today())).date()
+        except: f_venc_orig = datetime.today().date()
             
         with st.expander("📝 Abrir Editor Manual de la Transacción Seleccionada"):
             ec1, ec2 = st.columns(2)
             with ec1:
                 edit_fecha = st.date_input("Editar Fecha", fecha_orig, key=f"ed_f_{id_seleccionado}").strftime('%Y-%m-%d')
-                lista_tipos = ["Ingreso", "Egreso"]
-                edit_tipo = st.selectbox("Editar Tipo", lista_tipos, index=lista_tipos.index(fila_sel['tipo']) if fila_sel['tipo'] in lista_tipos else 0, key=f"ed_t_{id_seleccionado}")
-                edit_cat = st.text_input("Editar Categoría", str(fila_sel.get('categoria', 'GENERAL')), key=f"ed_c_{id_seleccionado}").strip().upper()
+                cat_actual = str(fila_sel.get('categoria', ''))
+                idx_cat = todas_las_categorias.index(cat_actual) if cat_actual in todas_las_categorias else 0
+                edit_cat = st.selectbox("Editar Categoría", todas_las_categorias, index=idx_cat, key=f"ed_c_{id_seleccionado}")
                 edit_concepto = st.text_input("Editar Concepto/Descripción", str(fila_sel.get('concepto', '')), key=f"ed_con_{id_seleccionado}").strip()
             with ec2:
                 edit_monto = st.number_input("Editar Monto ($)", min_value=0.0, value=float(fila_sel['monto']), step=100.0, key=f"ed_m_{id_seleccionado}")
@@ -597,20 +668,19 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     opciones_lotes_ed += list(df_lotes['nombre_lote'].dropna().unique())
                 lote_actual = fila_sel.get('lote_asociado', 'Ninguno')
                 idx_lote = opciones_lotes_ed.index(lote_actual) if lote_actual in opciones_lotes_ed else 0
-                edit_lote = st.selectbox("Editar Lote Asociado", opciones_lotes_ed, index=idx_lote, key=f"ed_l_{id_seleccionado}")
+                edit_lote = st.selectbox("Editar Lote", opciones_lotes_ed, index=idx_lote, key=f"ed_l_{id_seleccionado}")
                 
                 lista_estados = ["Pagado", "Pendiente"]
-                edit_estado = st.selectbox("Editar Estado Pago", lista_estados, index=lista_estados.index(fila_sel['estado_deuda']) if fila_sel['estado_deuda'] in lista_estados else 0, key=f"ed_est_{id_seleccionado}")
+                edit_estado = st.selectbox("Editar Estado", lista_estados, index=lista_estados.index(fila_sel['estado_deuda']) if fila_sel['estado_deuda'] in lista_estados else 0, key=f"ed_est_{id_seleccionado}")
                 edit_venc = st.date_input("Editar Vencimiento", f_venc_orig, key=f"ed_v_{id_seleccionado}").strftime('%Y-%m-%d')
 
             btn_act, btn_elim = st.columns(2)
             with btn_act:
                 if st.button("🔄 Guardar Cambios Manuales", key=f"btn_up_fin_{id_seleccionado}", use_container_width=True):
-                    if edit_monto <= 0:
-                        st.error("El monto debe ser superior a $0")
-                    elif not edit_concepto:
-                        st.error("El concepto no puede estar vacío")
+                    if edit_monto <= 0: st.error("El monto debe ser superior a $0")
+                    elif not edit_concepto: st.error("El concepto no puede estar vacío")
                     else:
+                        edit_tipo, _ = clasificar_categoria(edit_cat)
                         registro_actualizado = {
                             "id": str(id_seleccionado), "fecha": edit_fecha, "tipo": edit_tipo,
                             "categoria": edit_cat, "concepto": edit_concepto, "monto": float(edit_monto),
@@ -622,9 +692,10 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             time.sleep(0.4)
                             st.rerun()
             with btn_elim:
+                # Corrección del botón de eliminar que estaba incompleto
                 if st.button("🗑️ Eliminar permanentemente", key=f"btn_del_fin_{id_seleccionado}", use_container_width=True, type="primary"):
                     if eliminar_registro("finanzas", "id", id_seleccionado):
-                        st.warning("Registro eliminado.")
+                        st.warning("Registro eliminado exitosamente.")
                         time.sleep(0.4)
                         st.rerun()
 
