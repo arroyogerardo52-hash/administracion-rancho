@@ -387,8 +387,8 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
     # --- DEFINICIÓN DE CATEGORÍAS PARA EL ESTADO DE RESULTADOS ---
     cat_ingresos = ["Venta de ganado", "Varios (Ingresos)"]
-    cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos)"]
-    cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Varios (Gastos)"]
+    cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)"]
+    cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Varios (Gastos operativos)"]
     todas_las_categorias = cat_ingresos + cat_costos_directos + cat_gastos_operativos
 
     def clasificar_categoria(cat):
