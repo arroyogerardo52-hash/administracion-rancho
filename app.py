@@ -458,11 +458,11 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         
         with tab_resumen:
             m1, m2, m3, m4, m5 = st.columns(5)
-            m1.metric("🟢 Ingresos Reales", f"${ingresos:,.2f}")
-            m2.metric("🔴 Egresos Reales", f"${egresos:,.2f}")
-            m3.metric("💰 Balance Neto", f"${balance_neto:,.2f}", delta=f"${balance_neto:,.2f}" if balance_neto >= 0 else f"${balance_neto:,.2f}", delta_color="normal" if balance_neto >= 0 else "inverse")
-            m4.metric("📈 Por Cobrar", f"${por_cobrar:,.2f}")
-            m5.metric("📉 Por Pagar", f"${por_pagar:,.2f}")
+            m1.metric("🟢 Ingresos Reales", f"$ {ingresos:,.2f} MXN")
+            m2.metric("🔴 Egresos Reales", f"$ {egresos:,.2f} MXN")
+            m3.metric("💰 Balance Neto", f"$ {balance_neto:,.2f} MXN", delta=f"$ {balance_neto:,.2f} MXN" if balance_neto >= 0 else f"$ {balance_neto:,.2f} MXN", delta_color="normal" if balance_neto >= 0 else "inverse")
+            m4.metric("📈 Por Cobrar", f"$ {por_cobrar:,.2f} MXN")
+            m5.metric("📉 Por Pagar", f"$ {por_pagar:,.2f} MXN")
             
             st.write("---")
             col_tit_trans, col_btn_rep_filtrado = st.columns([3, 1])
@@ -491,7 +491,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 df_bal_vista['fecha'] = df_bal_vista['fecha'].dt.strftime('%Y-%m-%d')
                 df_bal_estilizado = (df_bal_vista.style
                                      .apply(colorear_filas_finanzas, axis=1)
-                                     .format({'monto': '${:,.2f}'}))
+                                     .format({'monto': '$ {:,.2f} MXN'}))
                 st.dataframe(df_bal_estilizado, use_container_width=True)
             else:
                 st.info("No hay registros que coincidan con la búsqueda.")
@@ -501,16 +501,16 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             if not df_filtrado.empty:
                 cg1, cg2 = st.columns(2)
                 with cg1:
-                    st.write("### 💰 Ingresos vs Egresos Reales")
+                    st.write("### 💰 Ingresos vs Egresos Reales (MXN)")
                     df_pie = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].groupby('tipo')['monto'].sum().reset_index()
                     if not df_pie.empty:
                         st.bar_chart(data=df_pie, x='tipo', y='monto', color='tipo', use_container_width=True)
                 with cg2:
-                    st.write("### 📌 Flujo por Categoría")
+                    st.write("### 📌 Flujo por Categoría (MXN)")
                     col_cat = 'categoria' if 'categoria' in df_filtrado.columns else 'tipo'
                     df_cat = df_filtrado.groupby([col_cat, 'tipo'])['monto'].sum().unstack().fillna(0.0)
                     st.bar_chart(df_cat, use_container_width=True)
-                st.write("### 📈 Tendencia Financiera Histórica")
+                st.write("### 📈 Tendencia Financiera Histórica (MXN)")
                 df_linea = df_filtrado.copy()
                 df_linea['Fecha'] = df_linea['fecha'].dt.date
                 df_tendencia = df_linea.groupby(['Fecha', 'tipo'])['monto'].sum().unstack().fillna(0.0)
@@ -522,7 +522,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
         with tab_rentabilidad:
             st.subheader("📊 Estado de Resultados (P&L) y Rentabilidad")
-            st.markdown("Cálculos basados **exclusivamente en transacciones pagadas/cobradas** dentro del período.")
+            st.markdown("Cálculos expresados en **Pesos Mexicanos (MXN)** basados **exclusivamente en transacciones pagadas/cobradas** dentro del período.")
             
             df_pagados = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].copy()
             if not df_pagados.empty:
@@ -542,40 +542,40 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 flujo_caja = tot_ingresos - (tot_costos_directos + tot_gastos_operativos + tot_otros)
                 
                 k1, k2, k3, k4 = st.columns(4)
-                k1.metric("1️⃣ Flujo de Caja Total", f"${flujo_caja:,.2f}", help="Efectivo real que quedó en la bolsa")
-                k2.metric("2️⃣ Utilidad Bruta", f"${utilidad_bruta:,.2f}", help="Ingresos menos Costos Directos (Ganado, Alimento, Medicina)")
+                k1.metric("1️⃣ Flujo de Caja Total", f"$ {flujo_caja:,.2f} MXN", help="Efectivo real que quedó en la bolsa")
+                k2.metric("2️⃣ Utilidad Bruta", f"$ {utilidad_bruta:,.2f} MXN", help="Ingresos menos Costos Directos (Ganado, Alimento, Medicina)")
                 k3.metric("3️⃣ Margen Bruto (%)", f"{margen_bruto:.1f}%")
-                k4.metric("4️⃣ Rentabilidad (Margen Neto)", f"{margen_neto:.1f}%", delta=f"${utilidad_neta:,.2f} Netos")
+                k4.metric("4️⃣ Rentabilidad (Margen Neto)", f"{margen_neto:.1f}%", delta=f"$ {utilidad_neta:,.2f} MXN Netos")
                 
                 st.write("---")
-                st.markdown("### 📑 Desglose de Estado de Resultados")
+                st.markdown("### 📑 Desglose de Estado de Resultados (MXN)")
                 
                 html_pnl = f"""
                 <div style="background-color:#1e1e1e; padding:20px; border-radius:10px; color:white; font-family:sans-serif;">
                     <table style="width:100%; border-collapse:collapse; font-size:16px;">
                         <tr style="border-bottom: 2px solid #4CAF50;">
                             <td style="padding:10px; font-weight:bold;">(+) INGRESOS TOTALES</td>
-                            <td style="padding:10px; text-align:right; font-weight:bold; color:#4CAF50;">${tot_ingresos:,.2f}</td>
+                            <td style="padding:10px; text-align:right; font-weight:bold; color:#4CAF50;">$ {tot_ingresos:,.2f} MXN</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #555;">
                             <td style="padding:10px; padding-left:30px;">(-) Costos Directos (Ganado, Alimento, Salud)</td>
-                            <td style="padding:10px; text-align:right; color:#ff9800;">-${tot_costos_directos:,.2f}</td>
+                            <td style="padding:10px; text-align:right; color:#ff9800;">-$ {tot_costos_directos:,.2f} MXN</td>
                         </tr>
                         <tr style="border-bottom: 2px solid #2196F3; background-color:#2a2a2a;">
                             <td style="padding:10px; font-weight:bold;">(=) UTILIDAD BRUTA</td>
-                            <td style="padding:10px; text-align:right; font-weight:bold; color:#2196F3;">${utilidad_bruta:,.2f}</td>
+                            <td style="padding:10px; text-align:right; font-weight:bold; color:#2196F3;">$ {utilidad_bruta:,.2f} MXN</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #555;">
                             <td style="padding:10px; padding-left:30px;">(-) Gastos Operativos (Nómina, Oficina, Mantenimiento)</td>
-                            <td style="padding:10px; text-align:right; color:#f44336;">-${tot_gastos_operativos:,.2f}</td>
+                            <td style="padding:10px; text-align:right; color:#f44336;">-$ {tot_gastos_operativos:,.2f} MXN</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #555;">
                             <td style="padding:10px; padding-left:30px;">(-) Otros Gastos No Clasificados</td>
-                            <td style="padding:10px; text-align:right; color:#f44336;">-${tot_otros:,.2f}</td>
+                            <td style="padding:10px; text-align:right; color:#f44336;">-$ {tot_otros:,.2f} MXN</td>
                         </tr>
                         <tr style="background-color:#000000;">
                             <td style="padding:15px; font-weight:bold; font-size:18px;">(=) UTILIDAD NETA (Ganancia Real)</td>
-                            <td style="padding:15px; text-align:right; font-weight:bold; font-size:18px; color:{'#4CAF50' if utilidad_neta >= 0 else '#f44336'};">${utilidad_neta:,.2f}</td>
+                            <td style="padding:15px; text-align:right; font-weight:bold; font-size:18px; color:{'#4CAF50' if utilidad_neta >= 0 else '#f44336'};">$ {utilidad_neta:,.2f} MXN</td>
                         </tr>
                     </table>
                 </div>
@@ -610,7 +610,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             f_concepto = st.text_input("Concepto / Descripción").strip()
             
         with col2:
-            f_monto = st.number_input("Monto total ($)", min_value=0.0, step=100.0)
+            f_monto = st.number_input("Monto total ($ MXN)", min_value=0.0, step=100.0)
             f_pago = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque", "Crédito"])
             
             opciones_lotes = ["Ninguno"]
@@ -624,7 +624,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         submit_finanzas = st.form_submit_button("💾 Guardar Transacción", use_container_width=True)
         if submit_finanzas:
             if f_monto <= 0:
-                st.error("❌ El monto debe ser mayor a $0.00 pesos.")
+                st.error("❌ El monto debe ser mayor a $0.00 MXN.")
             elif not f_concepto:
                 st.error("❌ Por favor escribe un Concepto o Descripción.")
             else:
@@ -652,7 +652,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         except: f_venc_orig = datetime.today().date()
             
         with st.expander("📝 Abrir Editor Manual de la Transacción Seleccionada"):
-            # También agregamos la selección de Ingreso/Egreso dinámica en la edición
             tipo_actual_bd = fila_sel.get('tipo', 'Egreso')
             idx_tipo_actual = 0 if tipo_actual_bd == "Ingreso" else 1
             edit_tipo = st.selectbox("Editar Tipo de Transacción", ["Ingreso", "Egreso"], index=idx_tipo_actual, key=f"ed_tipo_{id_seleccionado}")
@@ -661,7 +660,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             with ec1:
                 edit_fecha = st.date_input("Editar Fecha", fecha_orig, key=f"ed_f_{id_seleccionado}").strftime('%Y-%m-%d')
                 
-                # Asignar categorías dinámicas para la edición
                 if edit_tipo == "Ingreso":
                     opciones_cat_ed = cat_ingresos
                 else:
@@ -674,7 +672,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 edit_concepto = st.text_input("Editar Concepto/Descripción", str(fila_sel.get('concepto', '')), key=f"ed_con_{id_seleccionado}").strip()
             
             with ec2:
-                edit_monto = st.number_input("Editar Monto ($)", min_value=0.0, value=float(fila_sel['monto']), step=100.0, key=f"ed_m_{id_seleccionado}")
+                edit_monto = st.number_input("Editar Monto ($ MXN)", min_value=0.0, value=float(fila_sel['monto']), step=100.0, key=f"ed_m_{id_seleccionado}")
                 lista_pagos = ["Efectivo", "Transferencia", "Cheque", "Crédito"]
                 edit_pago = st.selectbox("Editar Método Pago", lista_pagos, index=lista_pagos.index(fila_sel.get('metodo_pago', 'Efectivo')) if fila_sel.get('metodo_pago', 'Efectivo') in lista_pagos else 0, key=f"ed_p_{id_seleccionado}")
                 
@@ -692,7 +690,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             btn_act, btn_elim = st.columns(2)
             with btn_act:
                 if st.button("🔄 Guardar Cambios Manuales", key=f"btn_up_fin_{id_seleccionado}", use_container_width=True):
-                    if edit_monto <= 0: st.error("El monto debe ser superior a $0")
+                    if edit_monto <= 0: st.error("El monto debe ser superior a $0 MXN")
                     elif not edit_concepto: st.error("El concepto no puede estar vacío")
                     else:
                         registro_actualizado = {
