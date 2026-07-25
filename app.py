@@ -160,9 +160,11 @@ st.markdown("---")
 # ==========================================
 # FUNCIONES AUXILIARES Y DE REPORTES HTML
 # ==========================================
-from datetime import datetime
+from datetime import datetime, timedelta
+import time
 import pandas as pd
 import pytz
+import streamlit as st
 
 def colorear_filas_finanzas(row):
     if row['tipo'] == 'Ingreso':
@@ -347,10 +349,11 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
                 </tr>
         """
         
+    color_balance = '#27AE60' if net >= 0 else '#C0392B'
     html += f"""
                 <tr style="background-color: #E2E8F0; font-weight: bold;">
                     <td colspan="7" class="text-right" style="font-size: 12px; padding: 10px;">BALANCE DEL PERÍODO EXPORTADO:</td>
-                    <td class="text-right" style="font-size: 12px; padding: 10px; color: {'#27AE60' if net >= 0 else '#C0392B'}">${net:,.2f}</td>
+                    <td class="text-right" style="font-size: 12px; padding: 10px; color: {color_balance}">${net:,.2f}</td>
                 </tr>
             </tbody>
         </table>
@@ -620,6 +623,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 
                 st.markdown("### 📑 Desglose General de Estado de Resultados (MXN)")
                 
+                color_neta = '#4CAF50' if utilidad_neta >= 0 else '#f44336'
                 html_pnl = f"""
                 <div style="background-color:#1e1e1e; padding:20px; border-radius:10px; color:white; font-family:sans-serif;">
                     <table style="width:100%; border-collapse:collapse; font-size:16px;">
@@ -645,7 +649,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         </tr>
                         <tr style="background-color:#000000;">
                             <td style="padding:15px; font-weight:bold; font-size:18px;">(=) UTILIDAD NETA (Ganancia Real)</td>
-                            <td style="padding:15px; text-align:right; font-weight:bold; font-size:18px; color:{'#4CAF50' if utilidad_neta >= 0 else '#f44336'};">$ {utilidad_neta:,.2f} MXN</td>
+                            <td style="padding:15px; text-align:right; font-weight:bold; font-size:18px; color:{color_neta};">$ {utilidad_neta:,.2f} MXN</td>
                         </tr>
                     </table>
                 </div>
@@ -726,56 +730,59 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             
             ec1, ec2 = st.columns(2)
             with ec1:
-                edit_fecha = st.date_input("Editar Fecha", fecha_orig, key=f"ed_f_{id_seleccionado}").strftime('%Y-%m-%d')
+                edit_fecha = st.date_input("Fecha Transacción", value=fecha_orig, key=f"ed_fec_{id_seleccionado}").strftime('%Y-%m-%d')
                 
-                if edit_tipo == "Ingreso":
-                    opciones_cat_ed = cat_ingresos
-                else:
-                    opciones_cat_ed = cat_costos_directos + cat_gastos_operativos
+                cats_posibles = cat_ingresos if edit_tipo == "Ingreso" else cat_costos_directos + cat_gastos_operativos
+                cat_actual = fila_sel.get('categoria', '')
+                idx_cat = cats_posibles.index(cat_actual) if cat_actual in cats_posibles else 0
+                edit_cat = st.selectbox("Categoría", cats_posibles, index=idx_cat, key=f"ed_cat_{id_seleccionado}")
                 
-                cat_actual = str(fila_sel.get('categoria', ''))
-                idx_cat = opciones_cat_ed.index(cat_actual) if cat_actual in opciones_cat_ed else 0
-                
-                edit_cat = st.selectbox("Editar Categoría", opciones_cat_ed, index=idx_cat, key=f"ed_c_{id_seleccionado}")
-                edit_concepto = st.text_input("Editar Concepto/Descripción", str(fila_sel.get('concepto', '')), key=f"ed_con_{id_seleccionado}").strip()
+                edit_concepto = st.text_input("Concepto / Descripción", value=str(fila_sel.get('concepto', '')), key=f"ed_con_{id_seleccionado}").strip()
             
             with ec2:
-                edit_monto = st.number_input("Editar Monto ($ MXN)", min_value=0.0, value=float(fila_sel['monto']), step=100.0, key=f"ed_m_{id_seleccionado}")
-                lista_pagos = ["Efectivo", "Transferencia", "Cheque", "Crédito"]
-                edit_pago = st.selectbox("Editar Método Pago", lista_pagos, index=lista_pagos.index(fila_sel.get('metodo_pago', 'Efectivo')) if fila_sel.get('metodo_pago', 'Efectivo') in lista_pagos else 0, key=f"ed_p_{id_seleccionado}")
+                edit_monto = st.number_input("Monto ($ MXN)", value=float(fila_sel.get('monto', 0.0)), min_value=0.0, step=50.0, key=f"ed_mon_{id_seleccionado}")
+                
+                metodos_pago = ["Efectivo", "Transferencia", "Cheque", "Crédito"]
+                met_actual = fila_sel.get('metodo_pago', 'Efectivo')
+                idx_met = metodos_pago.index(met_actual) if met_actual in metodos_pago else 0
+                edit_pago = st.selectbox("Método de Pago", metodos_pago, index=idx_met, key=f"ed_pag_{id_seleccionado}")
                 
                 opciones_lotes_ed = ["Ninguno"]
                 if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
                     opciones_lotes_ed += list(df_lotes['nombre_lote'].dropna().unique())
                 lote_actual = fila_sel.get('lote_asociado', 'Ninguno')
                 idx_lote = opciones_lotes_ed.index(lote_actual) if lote_actual in opciones_lotes_ed else 0
-                edit_lote = st.selectbox("Editar Lote", opciones_lotes_ed, index=idx_lote, key=f"ed_l_{id_seleccionado}")
+                edit_lote = st.selectbox("Lote Asociado", opciones_lotes_ed, index=idx_lote, key=f"ed_lot_{id_seleccionado}")
                 
-                lista_estados = ["Pagado", "Pendiente"]
-                edit_estado = st.selectbox("Editar Estado", lista_estados, index=lista_estados.index(fila_sel['estado_deuda']) if fila_sel['estado_deuda'] in lista_estados else 0, key=f"ed_est_{id_seleccionado}")
-                edit_venc = st.date_input("Editar Vencimiento", f_venc_orig, key=f"ed_v_{id_seleccionado}").strftime('%Y-%m-%d')
-
-            btn_act, btn_elim = st.columns(2)
-            with btn_act:
-                if st.button("🔄 Guardar Cambios Manuales", key=f"btn_up_fin_{id_seleccionado}", use_container_width=True):
-                    if edit_monto <= 0: st.error("El monto debe ser superior a $0 MXN")
-                    elif not edit_concepto: st.error("El concepto no puede estar vacío")
+                estados = ["Pagado", "Pendiente"]
+                est_actual = fila_sel.get('estado_deuda', 'Pagado')
+                idx_est = estados.index(est_actual) if est_actual in estados else 0
+                edit_estado = st.selectbox("Estado del Pago", estados, index=idx_est, key=f"ed_est_{id_seleccionado}")
+                edit_venc = st.date_input("Fecha Vencimiento", value=f_venc_orig, key=f"ed_venc_{id_seleccionado}").strftime('%Y-%m-%d')
+            
+            btn_col1, btn_col2 = st.columns(2)
+            with btn_col1:
+                if st.button("💾 Actualizar Registro", use_container_width=True, key=f"btn_act_{id_seleccionado}"):
+                    if edit_monto <= 0:
+                        st.error("❌ El monto debe ser mayor a $0.00 MXN.")
+                    elif not edit_concepto:
+                        st.error("❌ El concepto no puede estar vacío.")
                     else:
-                        registro_actualizado = {
-                            "id": str(id_seleccionado), "fecha": edit_fecha, "tipo": edit_tipo,
-                            "categoria": edit_cat, "concepto": edit_concepto, "monto": float(edit_monto),
-                            "metodo_pago": edit_pago, "lote_asociado": edit_lote, "estado_deuda": edit_estado,
-                            "fecha_vencimiento": edit_venc
+                        registro_editado = {
+                            "id": id_seleccionado, "fecha": edit_fecha, "tipo": edit_tipo, "categoria": edit_cat,
+                            "concepto": edit_concepto, "monto": float(edit_monto), "metodo_pago": edit_pago,
+                            "lote_asociado": edit_lote, "estado_deuda": edit_estado, "fecha_vencimiento": edit_venc
                         }
-                        if guardar_registro("finanzas", registro_actualizado, "id"):
-                            st.success("¡Transacción actualizada!")
-                            time.sleep(0.4)
+                        if guardar_registro("finanzas", registro_editado, "id"):
+                            st.success(f"¡Registro {id_seleccionado} actualizado exitosamente!")
+                            time.sleep(1)
                             st.rerun()
-            with btn_elim:
-                if st.button("🗑️ Eliminar permanentemente", key=f"btn_del_fin_{id_seleccionado}", use_container_width=True, type="primary"):
-                    if eliminar_registro("finanzas", "id", id_seleccionado):
-                        st.warning("Registro eliminado exitosamente.")
-                        time.sleep(0.4)
+            
+            with btn_col2:
+                if st.button("🗑️ Eliminar Transacción", use_container_width=True, type="primary", key=f"btn_elim_{id_seleccionado}"):
+                    if eliminar_registro("finanzas", id_seleccionado, "id"):
+                        st.warning(f"Se ha eliminado el registro ID: {id_seleccionado}")
+                        time.sleep(1)
                         st.rerun()
 # MÓDULO 2: EMPLEADOS
 elif modulo_activo == "🤠 Personal / Empleados":
