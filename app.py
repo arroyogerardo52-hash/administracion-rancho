@@ -373,6 +373,18 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
 if modulo_activo == "📊 Dashboard & Finanzas":
     st.header("📊 Balance y Control General Financiero")
 
+    # --- INYECCIÓN DE CSS PARA EVITAR TRUNCAMIENTO EN METRICAS (PUNTOS SUSPENSIVOS) ---
+    st.markdown("""
+        <style>
+        div[data-testid="stMetricValue"] {
+            font-size: calc(1rem + 0.6vw) !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     # --- DEFINICIÓN DE CATEGORÍAS PARA EL ESTADO DE RESULTADOS ---
     cat_ingresos = ["Venta de ganado", "Varios (Ingresos)"]
     cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos)"]
@@ -583,16 +595,28 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 
                 st.write("---")
                 
-                # --- 🐄 KPI GANADERO: DESGLOSE FINANCIERO POR LOTE ---
+                # --- 🐄 KPI GANADERO: DESGLOSE FINANCIERO POR LOTE (CORREGIDO) ---
                 if 'lote_asociado' in df_pagados.columns:
                     st.markdown("### 🐄 Costos y Rentabilidad por Lote Registrado")
-                    df_lotes_pnl = df_pagados[df_pagados['lote_asociado'] != 'Ninguno'].groupby(['lote_asociado', 'tipo'])['monto'].sum().unstack().fillna(0.0)
-                    if 'Ingreso' not in df_lotes_pnl.columns: df_lotes_pnl['Ingreso'] = 0.0
-                    if 'Egreso' not in df_lotes_pnl.columns: df_lotes_pnl['Egreso'] = 0.0
+                    df_lotes_val = df_pagados[df_pagados['lote_asociado'] != 'Ninguno']
                     
-                    df_lotes_pnl['Balance Lote (MXN)'] = df_lotes_pnl['Ingreso'] - df_lotes_pnl['Egreso']
-                    df_lotes_pnl.columns = ['Ingresos Totales', 'Egresos Totales', 'Balance Lote (MXN)']
-                    st.dataframe(df_lotes_pnl.style.format("$ {:,.2f} MXN"), use_container_width=True)
+                    if not df_lotes_val.empty:
+                        df_lotes_pnl = df_lotes_val.groupby(['lote_asociado', 'tipo'])['monto'].sum().unstack().fillna(0.0)
+                        
+                        # Garantizar presencia de ambas columnas
+                        if 'Ingreso' not in df_lotes_pnl.columns: df_lotes_pnl['Ingreso'] = 0.0
+                        if 'Egreso' not in df_lotes_pnl.columns: df_lotes_pnl['Egreso'] = 0.0
+                        
+                        # Cálculo explícito de balance: Ingresos - Egresos
+                        df_lotes_pnl['Balance Lote (MXN)'] = df_lotes_pnl['Ingreso'] - df_lotes_pnl['Egreso']
+                        
+                        # Reordenar y renombrar claramente
+                        df_lotes_pnl = df_lotes_pnl[['Ingreso', 'Egreso', 'Balance Lote (MXN)']]
+                        df_lotes_pnl.columns = ['Ingresos Totales', 'Egresos Totales', 'Balance Lote (MXN)']
+                        
+                        st.dataframe(df_lotes_pnl.style.format("$ {:,.2f} MXN"), use_container_width=True)
+                    else:
+                        st.info("No hay transacciones pagadas vinculadas a un lote específico en este período.")
                 
                 st.markdown("### 📑 Desglose General de Estado de Resultados (MXN)")
                 
