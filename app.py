@@ -375,18 +375,41 @@ if modulo_activo == "📊 Dashboard & Finanzas":
     if not df_finanzas.empty:
         df_finanzas['monto'] = pd.to_numeric(df_finanzas['monto'], errors='coerce').fillna(0.0)
         df_finanzas['fecha'] = pd.to_datetime(df_finanzas['fecha'], errors='coerce')
+        if 'fecha_vencimiento' in df_finanzas.columns:
+            df_finanzas['fecha_vencimiento'] = pd.to_datetime(df_finanzas['fecha_vencimiento'], errors='coerce')
         df_finanzas = df_finanzas.dropna(subset=['fecha'])
         
-        st.subheader("📆 Filtros de Consulta")
-        col_filtro, col_lote_filtro, col_fechas = st.columns([2, 2, 3])
+        # --- 🔔 SISTEMA DE ALERTAS Y RECORDATORIOS DE VENCIMIENTO ---
+        hoy_dt = datetime.today()
+        df_pendientes = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
         
-        hoy = datetime.today()
-        fecha_inicio = hoy.replace(hour=0, minute=0, second=0, microsecond=0)
-        fecha_fin = hoy.replace(hour=23, minute=59, second=59, microsecond=999999)
+        if not df_pendientes.empty and 'fecha_vencimiento' in df_pendientes.columns:
+            df_vencidos = df_pendientes[df_pendientes['fecha_vencimiento'] < hoy_dt]
+            df_por_vencer = df_pendientes[(df_pendientes['fecha_vencimiento'] >= hoy_dt) & (df_pendientes['fecha_vencimiento'] <= hoy_dt + timedelta(days=7))]
+            
+            if not df_vencidos.empty or not df_por_vencer.empty:
+                with st.expander("🔔 **Alertas de Cuentas Pendientes y Vencimientos**", expanded=True):
+                    col_al1, col_al2 = st.columns(2)
+                    with col_al1:
+                        if not df_vencidos.empty:
+                            tot_vencido = df_vencidos['monto'].sum()
+                            st.error(f"⚠️ **{len(df_vencidos)} cuentas vencidas** por un total de **$ {tot_vencido:,.2f} MXN**.")
+                            st.dataframe(df_vencidos[['fecha_vencimiento', 'concepto', 'tipo', 'monto', 'lote_asociado']], use_container_width=True)
+                    with col_al2:
+                        if not df_por_vencer.empty:
+                            tot_por_vencer = df_por_vencer['monto'].sum()
+                            st.warning(f"⏳ **{len(df_por_vencer)} cuentas por vencer** en los próximos 7 días ($ {tot_por_vencer:,.2f} MXN).")
+                            st.dataframe(df_por_vencer[['fecha_vencimiento', 'concepto', 'tipo', 'monto', 'lote_asociado']], use_container_width=True)
+
+        st.subheader("📆 Filtros de Consulta")
+        col_filtro, col_lote_filtro, col_estado_filtro, col_fechas = st.columns([2, 2, 2, 3])
+        
+        fecha_inicio = hoy_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        fecha_fin = hoy_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         with col_filtro:
             periodo = st.selectbox(
-                "Selecciona el período visualizado:",
+                "Período:",
                 ["Todo el Historial", "Esta Semana", "Este Mes", "Este Año", "Rango Personalizado"]
             )
 
@@ -394,45 +417,40 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             opciones_filtro_lote = ["Todos los Lotes"]
             if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
                 opciones_filtro_lote += list(df_lotes['nombre_lote'].dropna().unique())
-            lote_seleccionado = st.selectbox("Filtrar por Lote Asociado:", opciones_filtro_lote)
+            lote_seleccionado = st.selectbox("Lote Asociado:", opciones_filtro_lote)
+
+        with col_estado_filtro:
+            filtro_estado = st.selectbox("Estado de Pago:", ["Todos", "Pagado", "Pendiente"])
 
         with col_fechas:
             if periodo == "Esta Semana":
-                lunes = hoy - timedelta(days=hoy.weekday())
+                lunes = hoy_dt - timedelta(days=hoy_dt.weekday())
                 fecha_inicio = lunes.replace(hour=0, minute=0, second=0, microsecond=0)
                 fecha_fin = (lunes + timedelta(days=6)).replace(hour=23, minute=59, second=59, microsecond=999999)
-                st.info(f"Mostrando desde: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
+                st.info(f"Del: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
                 
             elif periodo == "Este Mes":
-                fecha_inicio = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                next_month = hoy.replace(day=28) + timedelta(days=4)
+                fecha_inicio = hoy_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                next_month = hoy_dt.replace(day=28) + timedelta(days=4)
                 ultimo_dia = next_month - timedelta(days=next_month.day)
                 fecha_fin = ultimo_dia.replace(hour=23, minute=59, second=59, microsecond=999999)
                 st.info(f"Mostrando: **{fecha_inicio.strftime('%B %Y')}**")
                 
             elif periodo == "Este Año":
-                fecha_inicio = hoy.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
-                fecha_fin = hoy.replace(month=12, day=31, hour=23, minute=59, second=59, microsecond=999999)
-                st.info(f"Mostrando el año: **{hoy.year}**")
+                fecha_inicio = hoy_dt.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                fecha_fin = hoy_dt.replace(month=12, day=31, hour=23, minute=59, second=59, microsecond=999999)
+                st.info(f"Año: **{hoy_dt.year}**")
                 
             elif periodo == "Rango Personalizado":
-                fecha_defecto_inicio = (hoy - timedelta(days=30)).date()
-                fecha_defecto_fin = hoy.date()
-                rango_fechas = st.date_input("Selecciona el rango:", [fecha_defecto_inicio, fecha_defecto_fin])
+                fecha_defecto_inicio = (hoy_dt - timedelta(days=30)).date()
+                fecha_defecto_fin = hoy_dt.date()
+                rango_fechas = st.date_input("Rango de fechas:", [fecha_defecto_inicio, fecha_defecto_fin])
                 if isinstance(rango_fechas, (list, tuple)):
                     if len(rango_fechas) == 2:
                         fecha_inicio = datetime.combine(rango_fechas[0], datetime.min.time())
                         fecha_fin = datetime.combine(rango_fechas[1], datetime.max.time())
-                        st.info(f"Rango: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
                     else:
-                        st.warning("⏳ Por favor, selecciona la fecha de fin.")
                         fecha_inicio, fecha_fin = None, None
-                else:
-                    fecha_inicio = datetime.combine(rango_fechas, datetime.min.time())
-                    fecha_fin = datetime.combine(rango_fechas, datetime.max.time())
-                    st.info(f"Rango: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
-            else:
-                st.info("Mostrando la totalidad de los datos registrados.")
 
         df_filtrado = df_finanzas.copy()
         try:
@@ -445,6 +463,9 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
         if lote_seleccionado != "Todos los Lotes" and 'lote_asociado' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['lote_asociado'] == lote_seleccionado]
+
+        if filtro_estado != "Todos":
+            df_filtrado = df_filtrado[df_filtrado['estado_deuda'] == filtro_estado]
 
         ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
         egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
@@ -460,7 +481,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("🟢 Ingresos Reales", f"$ {ingresos:,.2f} MXN")
             m2.metric("🔴 Egresos Reales", f"$ {egresos:,.2f} MXN")
-            m3.metric("💰 Balance Neto", f"$ {balance_neto:,.2f} MXN", delta=f"$ {balance_neto:,.2f} MXN" if balance_neto >= 0 else f"$ {balance_neto:,.2f} MXN", delta_color="normal" if balance_neto >= 0 else "inverse")
+            m3.metric("💰 Balance Neto", f"$ {balance_neto:,.2f} MXN")
             m4.metric("📈 Por Cobrar", f"$ {por_cobrar:,.2f} MXN")
             m5.metric("📉 Por Pagar", f"$ {por_pagar:,.2f} MXN")
             
@@ -542,13 +563,25 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 flujo_caja = tot_ingresos - (tot_costos_directos + tot_gastos_operativos + tot_otros)
                 
                 k1, k2, k3, k4 = st.columns(4)
-                k1.metric("1️⃣ Flujo de Caja Total", f"$ {flujo_caja:,.2f} MXN", help="Efectivo real que quedó en la bolsa")
-                k2.metric("2️⃣ Utilidad Bruta", f"$ {utilidad_bruta:,.2f} MXN", help="Ingresos menos Costos Directos (Ganado, Alimento, Medicina)")
+                k1.metric("1️⃣ Flujo de Caja Total", f"$ {flujo_caja:,.2f} MXN", help="Efectivo real disponible")
+                k2.metric("2️⃣ Utilidad Bruta", f"$ {utilidad_bruta:,.2f} MXN", help="Ingresos menos Costos Directos")
                 k3.metric("3️⃣ Margen Bruto (%)", f"{margen_bruto:.1f}%")
-                k4.metric("4️⃣ Rentabilidad (Margen Neto)", f"{margen_neto:.1f}%", delta=f"$ {utilidad_neta:,.2f} MXN Netos")
+                k4.metric("4️⃣ Rentabilidad (Margen Neto)", f"{margen_neto:.1f}%")
                 
                 st.write("---")
-                st.markdown("### 📑 Desglose de Estado de Resultados (MXN)")
+                
+                # --- 🐄 KPI GANADERO: DESGLOSE FINANCIERO POR LOTE ---
+                if 'lote_asociado' in df_pagados.columns:
+                    st.markdown("### 🐄 Costos y Rentabilidad por Lote Registrado")
+                    df_lotes_pnl = df_pagados[df_pagados['lote_asociado'] != 'Ninguno'].groupby(['lote_asociado', 'tipo'])['monto'].sum().unstack().fillna(0.0)
+                    if 'Ingreso' not in df_lotes_pnl.columns: df_lotes_pnl['Ingreso'] = 0.0
+                    if 'Egreso' not in df_lotes_pnl.columns: df_lotes_pnl['Egreso'] = 0.0
+                    
+                    df_lotes_pnl['Balance Lote (MXN)'] = df_lotes_pnl['Ingreso'] - df_lotes_pnl['Egreso']
+                    df_lotes_pnl.columns = ['Ingresos Totales', 'Egresos Totales', 'Balance Lote (MXN)']
+                    st.dataframe(df_lotes_pnl.style.format("$ {:,.2f} MXN"), use_container_width=True)
+                
+                st.markdown("### 📑 Desglose General de Estado de Resultados (MXN)")
                 
                 html_pnl = f"""
                 <div style="background-color:#1e1e1e; padding:20px; border-radius:10px; color:white; font-family:sans-serif;">
@@ -589,10 +622,9 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
     st.markdown("---")
     
-    # --- FORMULARIO DE REGISTRO MEJORADO CON SELECCIÓN DINÁMICA ---
+    # --- FORMULARIO DE REGISTRO MEJORADO ---
     st.subheader("➕ Registro Financiero Automático")
     
-    # 1. Colocamos la selección del tipo AFUERA del formulario para que sea reactivo al instante
     f_tipo_dinamico = st.radio("¿Qué tipo de transacción vas a registrar?", ["Ingreso", "Egreso"], horizontal=True)
     
     with st.form("form_finanzas", clear_on_submit=True):
@@ -600,7 +632,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         with col1:
             f_fecha = st.date_input("Fecha Transacción", datetime.today()).strftime('%Y-%m-%d')
             
-            # 2. Mostramos las categorías correspondientes según el tipo seleccionado arriba
             if f_tipo_dinamico == "Ingreso":
                 opciones_categorias = cat_ingresos
             else:
