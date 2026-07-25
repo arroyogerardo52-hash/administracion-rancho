@@ -160,6 +160,10 @@ st.markdown("---")
 # ==========================================
 # FUNCIONES AUXILIARES Y DE REPORTES HTML
 # ==========================================
+from datetime import datetime
+import pandas as pd
+import pytz
+
 def colorear_filas_finanzas(row):
     if row['tipo'] == 'Ingreso':
         return ['background-color: rgba(46, 204, 113, 0.15); color: #2ecc71; font-weight: bold;'] * len(row)
@@ -167,8 +171,15 @@ def colorear_filas_finanzas(row):
         return ['background-color: rgba(231, 76, 60, 0.12); color: #e74c3c;'] * len(row)
     return [''] * len(row)
 
+def obtener_fecha_hora_mx():
+    """Obtiene la fecha y hora actual configurada en la zona horaria de México."""
+    zona_mx = pytz.timezone('America/Mexico_City')
+    return datetime.now(zona_mx).strftime('%d/%m/%Y %I:%M %p')
+
 def generar_html_docs(titulo_seccion, columnas_headers, df_datos, mapping_columnas):
-    hoy_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+    # Obtener fecha/hora exacta de México
+    hoy_str = obtener_fecha_hora_mx()
+    
     html = f"""
     <html>
     <head>
@@ -222,7 +233,9 @@ def generar_html_docs(titulo_seccion, columnas_headers, df_datos, mapping_column
     return html
 
 def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net, cob, pag):
-    hoy_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+    # Obtener fecha/hora exacta de México
+    hoy_str = obtener_fecha_hora_mx()
+    
     html = f"""
     <html>
     <head>
