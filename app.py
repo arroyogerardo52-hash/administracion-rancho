@@ -178,12 +178,24 @@ def obtener_fecha_hora_mx():
     zona_mx = pytz.timezone('America/Mexico_City')
     return datetime.now(zona_mx).strftime('%d/%m/%Y %I:%M %p')
 
+def clasificar_categoria(cat):
+    """Clasifica una categoría contable en su respectivo tipo y rubro de costo/gasto."""
+    cat_lower = str(cat).lower()
+    costos_directos = ['ganado', 'alimento', 'medicina', 'veterinario', 'suplemento', 'pauta', 'lote']
+    gastos_operativos = ['nómina', 'nomina', 'sueldo', 'oficina', 'mantenimiento', 'combustibles', 'flete', 'servicios', 'renta']
+    
+    if any(k in cat_lower for k in costos_directos):
+        return ('Egreso', 'Costo Directo')
+    elif any(k in cat_lower for k in gastos_operativos):
+        return ('Egreso', 'Gasto Operativo')
+    else:
+        return ('Egreso', 'Otros')
+
 def generar_html_docs(titulo_seccion, columnas_headers, df_datos, mapping_columnas):
-    # Obtener fecha/hora exacta de México
     hoy_str = obtener_fecha_hora_mx()
     
     html = f"""
-    <html>
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
     <head>
         <meta charset="utf-8">
         <style>
@@ -235,37 +247,55 @@ def generar_html_docs(titulo_seccion, columnas_headers, df_datos, mapping_column
     return html
 
 def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net, cob, pag):
-    # Obtener fecha/hora exacta de México
     hoy_str = obtener_fecha_hora_mx()
     
+    # --- CÁLCULO DINÁMICO DE ESTADO DE RESULTADOS (P&L) ---
+    df_pagados = df_datos[df_datos['estado_deuda'] == 'Pagado'].copy() if not df_datos.empty else pd.DataFrame()
+    
+    tot_ingresos = ing
+    tot_costos_directos = 0.0
+    tot_gastos_operativos = 0.0
+    tot_otros = 0.0
+    
+    if not df_pagados.empty and 'categoria' in df_pagados.columns:
+        df_pagados['Rubro'] = df_pagados['categoria'].apply(lambda x: clasificar_categoria(x)[1])
+        tot_costos_directos = df_pagados[(df_pagados['tipo'] == 'Egreso') & (df_pagados['Rubro'] == 'Costo Directo')]['monto'].sum()
+        tot_gastos_operativos = df_pagados[(df_pagados['tipo'] == 'Egreso') & (df_pagados['Rubro'] == 'Gasto Operativo')]['monto'].sum()
+        tot_otros = df_pagados[(df_pagados['tipo'] == 'Egreso') & (df_pagados['Rubro'] == 'Otros')]['monto'].sum()
+        
+    utilidad_bruta = tot_ingresos - tot_costos_directos
+    utilidad_neta = utilidad_bruta - tot_gastos_operativos - tot_otros
+    margen_bruto = (utilidad_bruta / tot_ingresos * 100) if tot_ingresos > 0 else 0.0
+    margen_neto = (utilidad_neta / tot_ingresos * 100) if tot_ingresos > 0 else 0.0
+
     html = f"""
-    <html>
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
     <head>
         <meta charset="utf-8">
+        <title>Reporte Financiero Rancho AE</title>
         <style>
-            body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #2C3E50; line-height: 1.6; margin: 30px; }}
-            .header-table {{ width: 100%; border: none; margin-bottom: 20px; }}
-            .header-title {{ font-size: 26px; color: #1A365D; font-weight: bold; margin: 0; }}
-            .header-subtitle {{ font-size: 13px; color: #718096; text-transform: uppercase; letter-spacing: 1px; }}
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; color: #2C3E50; margin: 25px; }}
+            .header-title {{ font-size: 24pt; color: #1A365D; font-weight: bold; margin: 0; }}
+            .header-subtitle {{ font-size: 11pt; color: #718096; text-transform: uppercase; font-weight: bold; }}
             .divider {{ height: 3px; background-color: #2B6CB0; margin-top: 5px; margin-bottom: 20px; }}
             
-            .meta-section {{ background-color: #EDF2F7; padding: 15px; border-radius: 5px; margin-bottom: 25px; font-size: 13px; }}
+            .meta-section {{ background-color: #EDF2F7; padding: 12px; border-radius: 5px; margin-bottom: 20px; font-size: 10pt; }}
             .meta-table {{ width: 100%; border-collapse: collapse; }}
-            .meta-table td {{ border: none; padding: 4px 0; color: #4A5568; }}
+            .meta-table td {{ padding: 4px 0; color: #4A5568; border: none; }}
             
-            .kpi-container {{ width: 100%; margin-bottom: 30px; }}
-            .kpi-box {{ width: 18%; display: inline-block; background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 4px solid #4A5568; text-align: center; padding: 12px 5px; margin-right: 1%; border-radius: 4px; }}
-            .kpi-box.ingreso {{ border-top-color: #2ECC71; }}
-            .kpi-box.egreso {{ border-top-color: #E74C3C; }}
-            .kpi-box.balance {{ border-top-color: #2B6CB0; }}
-            .kpi-title {{ font-size: 11px; text-transform: uppercase; color: #718096; font-weight: bold; margin-bottom: 5px; }}
-            .kpi-value {{ font-size: 15px; font-weight: bold; color: #1A365D; }}
+            .kpi-table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; }}
+            .kpi-card {{ background: #F8FAFC; border: 1px solid #CBD5E0; padding: 10px; text-align: center; border-top: 4px solid #2B6CB0; }}
+            .kpi-title {{ font-size: 9pt; text-transform: uppercase; color: #718096; font-weight: bold; }}
+            .kpi-value {{ font-size: 12pt; font-weight: bold; color: #1A365D; margin-top: 4px; }}
             
-            .section-title {{ font-size: 18px; color: #2B6CB0; margin-top: 30px; margin-bottom: 10px; font-weight: bold; border-bottom: 1px solid #E2E8F0; padding-bottom: 5px; }}
+            .section-title {{ font-size: 13pt; color: #1A365D; margin-top: 25px; margin-bottom: 10px; font-weight: bold; border-bottom: 2px solid #E2E8F0; padding-bottom: 4px; }}
             
-            .data-table {{ border-collapse: collapse; width: 100%; margin-top: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }}
-            .data-table th {{ background-color: #1A365D; color: white; padding: 10px 8px; text-align: left; font-size: 11px; font-weight: bold; text-transform: uppercase; border: 1px solid #1A365D; }}
-            .data-table td {{ border: 1px solid #E2E8F0; padding: 8px; font-size: 11px; color: #2D3748; }}
+            .pnl-table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10pt; }}
+            .pnl-table td {{ padding: 8px; border-bottom: 1px solid #E2E8F0; border-top: none; border-left: none; border-right: none; }}
+            
+            .data-table {{ border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 9pt; }}
+            .data-table th {{ background-color: #1A365D; color: white; padding: 8px; text-align: left; font-weight: bold; text-transform: uppercase; border: 1px solid #1A365D; }}
+            .data-table td {{ border: 1px solid #CBD5E0; padding: 6px 8px; color: #2D3748; }}
             .data-table tr:nth-child(even) {{ background-color: #F7FAFC; }}
             
             .text-right {{ text-align: right; }}
@@ -275,16 +305,12 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
         </style>
     </head>
     <body>
-        <table class="header-table">
-            <tr>
-                <td>
-                    <div class="header-title">RANCHO AE</div>
-                    <div class="header-subtitle">Estado Ejecutivo de Transacciones y Control Financiero</div>
-                </td>
-            </tr>
-        </table>
+        <!-- ENCABEZADO INSTITUCIONAL -->
+        <div class="header-title">RANCHO AE</div>
+        <div class="header-subtitle">Informe Ejecutivo de Control Financiero y Estado de Resultados</div>
         <div class="divider"></div>
         
+        <!-- METADATOS DEL REPORTE -->
         <div class="meta-section">
             <table class="meta-table">
                 <tr>
@@ -293,46 +319,89 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
                 </tr>
                 <tr>
                     <td><strong>Fecha de Emisión:</strong></td><td>{hoy_str}</td>
-                    <td><strong>Estatus del Reporte:</strong></td><td>Cierre de Ciclo Automatizado</td>
+                    <td><strong>Estatus Financiero:</strong></td><td>Cierre Operativo Auditado</td>
                 </tr>
             </table>
         </div>
         
-        <div class="section-title">Indicadores de Rendimiento Financiero</div>
-        <div class="kpi-container">
-            <div class="kpi-box ingreso"><div class="kpi-title">Ingresos Reales</div><div class="kpi-value color-ingreso">${ing:,.2f}</div></div>
-            <div class="kpi-box egreso"><div class="kpi-title">Egresos Reales</div><div class="kpi-value color-egreso">${egr:,.2f}</div></div>
-            <div class="kpi-box balance"><div class="kpi-title">Balance Neto</div><div class="kpi-value">${net:,.2f}</div></div>
-            <div class="kpi-box"><div class="kpi-title">Por Cobrar</div><div class="kpi-value" style="color:#2980B9;">${cob:,.2f}</div></div>
-            <div class="kpi-box" style="margin-right:0;"><div class="kpi-title">Por Pagar</div><div class="kpi-value" style="color:#D35400;">${pag:,.2f}</div></div>
-        </div>
+        <!-- RESUMEN DE INDICADORES (KPIs) -->
+        <div class="section-title">1. Resumen de Flujo de Efectivo</div>
+        <table class="kpi-table">
+            <tr>
+                <td class="kpi-card" style="border-top-color: #2ECC71;" width="20%">
+                    <div class="kpi-title">Ingresos Reales</div>
+                    <div class="kpi-value color-ingreso">${ing:,.2f}</div>
+                </td>
+                <td class="kpi-card" style="border-top-color: #E74C3C;" width="20%">
+                    <div class="kpi-title">Egresos Reales</div>
+                    <div class="kpi-value color-egreso">${egr:,.2f}</div>
+                </td>
+                <td class="kpi-card" style="border-top-color: #2B6CB0;" width="20%">
+                    <div class="kpi-title">Balance Neto</div>
+                    <div class="kpi-value">${net:,.2f}</div>
+                </td>
+                <td class="kpi-card" style="border-top-color: #3182CE;" width="20%">
+                    <div class="kpi-title">Por Cobrar</div>
+                    <div class="kpi-value" style="color:#2B6CB0;">${cob:,.2f}</div>
+                </td>
+                <td class="kpi-card" style="border-top-color: #DD6B20;" width="20%">
+                    <div class="kpi-title">Por Pagar</div>
+                    <div class="kpi-value" style="color:#D69E2E;">${pag:,.2f}</div>
+                </td>
+            </tr>
+        </table>
         
-        <div class="section-title">Desglose Analítico de Movimientos del Período</div>
+        <!-- ESTADO DE RESULTADOS (P&L) -->
+        <div class="section-title">2. Estado de Resultados y Rentabilidad (P&L)</div>
+        <table class="pnl-table">
+            <tr style="background-color: #F0FFF4; font-weight: bold;">
+                <td>(+) INGRESOS TOTALES (COBRADOS)</td>
+                <td class="text-right color-ingreso">${tot_ingresos:,.2f} MXN</td>
+            </tr>
+            <tr>
+                <td style="padding-left: 20px;">(-) Costos Directos (Ganado, Alimento, Medicina, Veterinario)</td>
+                <td class="text-right color-egreso">-${tot_costos_directos:,.2f} MXN</td>
+            </tr>
+            <tr style="background-color: #EBF8FF; font-weight: bold;">
+                <td>(=) UTILIDAD BRUTA (Margen Bruto: {margen_bruto:.1f}%)</td>
+                <td class="text-right" style="color: #2B6CB0;">${utilidad_bruta:,.2f} MXN</td>
+            </tr>
+            <tr>
+                <td style="padding-left: 20px;">(-) Gastos Operativos (Nómina, Oficina, Mantenimiento, Combustible)</td>
+                <td class="text-right color-egreso">-${tot_gastos_operativos:,.2f} MXN</td>
+            </tr>
+            <tr>
+                <td style="padding-left: 20px;">(-) Otros Gastos Generalizados</td>
+                <td class="text-right color-egreso">-${tot_otros:,.2f} MXN</td>
+            </tr>
+            <tr style="background-color: #1A365D; color: white; font-weight: bold;">
+                <td style="padding: 10px;">(=) UTILIDAD NETA REAL (Margen Neto: {margen_neto:.1f}%)</td>
+                <td class="text-right" style="padding: 10px; font-size: 11pt;">${utilidad_neta:,.2f} MXN</td>
+            </tr>
+        </table>
+        
+        <!-- DESGLOSE DETALLADO DE TRANSACCIONES -->
+        <div class="section-title">3. Registro Detallado de Transacciones ({len(df_datos)} movimientos)</div>
         <table class="data-table">
             <thead>
                 <tr>
                     <th>Fecha</th>
                     <th>Tipo</th>
                     <th>Categoría</th>
-                    <th>Concepto / Detalle Informativo</th>
+                    <th>Concepto / Descripción</th>
                     <th>Lote</th>
                     <th>Método</th>
                     <th>Estado</th>
-                    <th class="text-right">Monto</th>
+                    <th class="text-right">Monto (MXN)</th>
                 </tr>
             </thead>
             <tbody>
     """
     
     for _, fila in df_datos.iterrows():
-        f_date = fila['fecha']
-        if hasattr(f_date, 'strftime'):
-            f_str = f_date.strftime('%Y-%m-%d')
-        else:
-            f_str = str(f_date)[:10]
-            
-        concepto = fila.get('concepto', 'Sin concepto')
-        lote_asoc = fila.get('lote_asociado', 'Ninguno')
+        f_date = fila.get('fecha', '')
+        f_str = f_date.strftime('%Y-%m-%d') if hasattr(f_date, 'strftime') else str(f_date)[:10]
+        
         tipo_mov = fila.get('tipo', '')
         clase_color = "color-ingreso bold" if tipo_mov == "Ingreso" else "color-egreso"
         
@@ -340,25 +409,26 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
                 <tr>
                     <td>{f_str}</td>
                     <td class="{clase_color}">{tipo_mov}</td>
-                    <td>{fila.get('categoria', 'GENERAL')}</td>
-                    <td>{concepto}</td>
-                    <td>{lote_asoc}</td>
-                    <td>{fila.get('metodo_pago', 'No especificado')}</td>
+                    <td>{fila.get('categoria', 'General')}</td>
+                    <td>{fila.get('concepto', '-')}</td>
+                    <td>{fila.get('lote_asociado', 'Ninguno')}</td>
+                    <td>{fila.get('metodo_pago', '-')}</td>
                     <td>{fila.get('estado_deuda', 'Pagado')}</td>
-                    <td class="text-right bold {clase_color}">${fila['monto']:,.2f}</td>
+                    <td class="text-right bold {clase_color}">${fila.get('monto', 0.0):,.2f}</td>
                 </tr>
         """
         
-    color_balance = '#27AE60' if net >= 0 else '#C0392B'
+    color_bal_final = '#27AE60' if net >= 0 else '#C0392B'
     html += f"""
-                <tr style="background-color: #E2E8F0; font-weight: bold;">
-                    <td colspan="7" class="text-right" style="font-size: 12px; padding: 10px;">BALANCE DEL PERÍODO EXPORTADO:</td>
-                    <td class="text-right" style="font-size: 12px; padding: 10px; color: {color_balance}">${net:,.2f}</td>
+                <tr style="background-color: #EDF2F7; font-weight: bold;">
+                    <td colspan="7" class="text-right" style="padding: 10px;">BALANCE GENERAL DEL PERÍODO EXPORTADO:</td>
+                    <td class="text-right" style="padding: 10px; color: {color_bal_final}; font-size: 11pt;">${net:,.2f} MXN</td>
                 </tr>
             </tbody>
         </table>
         
-        <p style='margin-top:50px; font-size:11px; color:#A0AEC0; text-align: center; border-top: 1px solid #E2E8F0; padding-top: 15px;'>
+        <br><br>
+        <p style='font-size:9pt; color:#A0AEC0; text-align: center; border-top: 1px dashed #CBD5E0; padding-top: 10px;'>
             Este balance ejecutivo constituye un extracto oficial de la contabilidad interna de Rancho AE. Súbase directamente a Google Drive para su archivo permanente o firmas conducentes.
         </p>
     </body>
