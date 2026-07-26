@@ -5,6 +5,72 @@ import io
 import base64
 import time
 
+# -------------------------------------------------------------
+# BANDERAS DE PRIVACIDAD Y SESIÓN
+# -------------------------------------------------------------
+USERS_FILE = "usuarios.json"
+TIEMPO_EXPIRED = 300  # Tiempo en segundos para cerrar sesión (5 min)
+
+# Si el archivo de usuarios no existe, lo crea con tu usuario Administrador
+if not os.path.exists(USERS_FILE):
+    # 👇 AQUÍ CAMBIA TU USUARIO Y CONTRASEÑA INICIAL
+    usuarios_iniciales = {"Gerardo": {"password": "ADMINpg120214", "rol": "admin"}}
+    with open(USERS_FILE, "w") as f:
+        json.dump(usuarios_iniciales, f)
+
+with open(USERS_FILE, "r") as f:
+    usuarios = json.load(f)
+
+# Control de la puerta de entrada
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+
+def cerrar_sesion():
+    st.session_state.autenticado = False
+    st.rerun()
+
+# -------------------------------------------------------------
+# PUERTA DE ENTRADA (PANTALLA DE LOGIN)
+# -------------------------------------------------------------
+if not st.session_state.autenticado:
+    st.title("🔒 Inicia sesión para continuar")
+    
+    usuario_ingresado = st.text_input("Usuario")
+    clave_ingresada = st.text_input("Contraseña", type="password")
+    
+    if st.button("Entrar"):
+        if usuario_ingresado in usuarios and usuarios[usuario_ingresado]["password"] == clave_ingresada:
+            st.session_state.autenticado = True
+            st.session_state.usuario_actual = usuario_ingresado
+            st.session_state.rol = usuarios[usuario_ingresado].get("rol", "user")
+            st.rerun()
+        else:
+            st.error("Usuario o contraseña incorrectos")
+            
+    # IMPORTANTE: Esta línea evita que se vea tu app si no han iniciado sesión
+    st.stop()
+
+# -------------------------------------------------------------
+# BARRA LATERAL (Cerrar sesión y Crear Usuarios)
+# -------------------------------------------------------------
+with st.sidebar:
+    st.write(f"Hola, **{st.session_state.usuario_actual}**")
+    if st.button("🚪 Cerrar Sesión"):
+        cerrar_sesion()
+    
+    # Solo tú (el admin) verás esta opción para crear más usuarios
+    if st.session_state.rol == "admin":
+        st.divider()
+        st.subheader("Crear nuevo acceso")
+        nuevo_u = st.text_input("Nuevo Usuario")
+        nuevo_p = st.text_input("Nueva Contraseña")
+        if st.button("Guardar Usuario"):
+            if nuevo_u and nuevo_p:
+                usuarios[nuevo_u] = {"password": nuevo_p, "rol": "user"}
+                with open(USERS_FILE, "w") as f:
+                    json.dump(usuarios, f)
+                st.success(f"¡Usuario {nuevo_u} creado con éxito!")
+
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA
 # ==========================================
