@@ -56,25 +56,43 @@ if not st.session_state.autenticado:
     st.stop()
 
 # -------------------------------------------------------------
-# BARRA LATERAL (Cerrar sesión y Crear Usuarios)
+# BARRA LATERAL (Cerrar sesión y Administrar Usuarios)
 # -------------------------------------------------------------
 with st.sidebar:
     st.write(f"Hola, **{st.session_state.usuario_actual}**")
     if st.button("🚪 Cerrar Sesión"):
         cerrar_sesion()
     
-    # Solo tú (el admin) verás esta opción para crear más usuarios
+    # SOLO PARA EL ADMINISTRADOR
     if st.session_state.rol == "admin":
         st.divider()
-        st.subheader("Crear nuevo acceso")
-        nuevo_u = st.text_input("Nuevo Usuario")
-        nuevo_p = st.text_input("Nueva Contraseña")
-        if st.button("Guardar Usuario"):
-            if nuevo_u and nuevo_p:
-                usuarios[nuevo_u] = {"password": nuevo_p, "rol": "user"}
-                with open(USERS_FILE, "w") as f:
-                    json.dump(usuarios, f)
-                st.success(f"¡Usuario {nuevo_u} creado con éxito!")
+        st.subheader("🛠️ Gestión de Usuarios")
+        
+        # --- 1. CREAR USUARIO ---
+        with st.expander("➕ Crear nuevo usuario"):
+            nuevo_u = st.text_input("Nuevo Usuario")
+            nuevo_p = st.text_input("Nueva Contraseña")
+            if st.button("Guardar Usuario"):
+                if nuevo_u and nuevo_p:
+                    usuarios[nuevo_u] = {"password": nuevo_p, "rol": "user"}
+                    with open(USERS_FILE, "w") as f:
+                        json.dump(usuarios, f)
+                    st.success(f"¡Usuario '{nuevo_u}' creado!")
+                    st.rerun()
+
+        # --- 2. VER Y ELIMINAR USUARIOS ---
+        with st.expander("🗑️ Ver / Eliminar usuarios"):
+            for usr, datos in list(usuarios.items()):
+                # No mostramos al admin principal para no borrarte a ti mismo por error
+                if usr != "admin":
+                    col1, col2 = st.columns([3, 1])
+                    col1.write(f"👤 `{usr}`")
+                    if col2.button("❌", key=f"del_{usr}"):
+                        del usuarios[usr]  # Lo elimina del diccionario
+                        with open(USERS_FILE, "w") as f:
+                            json.dump(usuarios, f)  # Guarda los cambios en el JSON
+                        st.success(f"Usuario '{usr}' eliminado.")
+                        st.rerun()
 
 
 # ==========================================
