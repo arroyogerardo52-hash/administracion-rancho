@@ -10,8 +10,32 @@ import json
 import os
 import time
 
+import streamlit as st
+import time
+
 # -------------------------------------------------------------
-# PUERTA DE ENTRADA (PANTALLA DE LOGIN CON LIMPIEZA MÓVIL)
+# CONTROL DE SESIÓN Y ACCESOS DESDE STREAMLIT SECRETS
+# -------------------------------------------------------------
+
+# Cargar los usuarios registrados en los Secrets de Streamlit Cloud
+# (Si estás en local y no hay secrets, usa un fallback para que no marque error)
+if "usuarios" in st.secrets:
+    USUARIOS = st.secrets["usuarios"]
+else:
+    # Para cuando pruebes localmente en tu computadora
+    USUARIOS = {"admin": "1234"}
+
+# Inicializar estado de sesión
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+
+def cerrar_sesion():
+    st.session_state.autenticado = False
+    st.session_state.usuario_actual = None
+    st.rerun()
+
+# -------------------------------------------------------------
+# PUERTA DE ENTRADA (PANTALLA DE LOGIN)
 # -------------------------------------------------------------
 if not st.session_state.autenticado:
     st.title("🔒 Acceso Privado")
@@ -20,23 +44,27 @@ if not st.session_state.autenticado:
     clave_ingresada = st.text_input("Contraseña", type="password")
     
     if st.button("Entrar", use_container_width=True):
-        # 1. Limpiamos espacios invisibles antes/después (.strip())
-        # 2. Convertimos el usuario a minúsculas (.lower()) para evitar fallos por mayúsculas del celular
-        usr_limpio = usuario_ingresado.strip().lower()
-        pwd_limpia = clave_ingresada.strip()
-
-        # Comparamos contra la lista de usuarios (convertidos a minúscula para asegurar)
-        # Si usas st.secrets:
-        usuarios_dict = {k.lower(): str(v).strip() for k.item, (k, v) in enumerate(USUARIOS.items())} if isinstance(USUARIOS, dict) else USUARIOS
-
-        if usr_limpio in USUARIOS and str(USUARIOS[usr_limpio]).strip() == pwd_limpia:
+        # Validar si el usuario existe en Secrets y la contraseña coincide
+        if usuario_ingresado in USUARIOS and USUARIOS[usuario_ingresado] == clave_ingresada:
             st.session_state.autenticado = True
-            st.session_state.usuario_actual = usr_limpio
+            st.session_state.usuario_actual = usuario_ingresado
             st.rerun()
         else:
             st.error("Usuario o contraseña incorrectos")
             
-    st.stop()
+    st.stop()  # Bloquea la app si no hay sesión
+
+# -------------------------------------------------------------
+# BARRA LATERAL
+# -------------------------------------------------------------
+with st.sidebar:
+    st.write(f"👤 Bienvenido, **{st.session_state.usuario_actual}**")
+    if st.button("🚪 Cerrar Sesión", use_container_width=True):
+        cerrar_sesion()
+
+# =============================================================
+# DE AQUÍ PARA ABAJO VA TU CÓDIGO ACTUAL (TU APP)
+# =============================================================
 # -------------------------------------------------------------
 # BARRA LATERAL (Cerrar sesión y Administrar Usuarios)
 # -------------------------------------------------------------
