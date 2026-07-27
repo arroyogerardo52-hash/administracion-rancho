@@ -169,33 +169,9 @@ df_proveedores = cargar_tabla("proveedores")
 df_lotes = cargar_tabla("lotes")
 
 # ==========================================
-# BARRA LATERAL: LOGO, NAVEGACIÓN Y RESPALDOS
+# BARRA LATERAL: NAVEGACIÓN Y RESPALDOS
 # ==========================================
-with st.sidebar:
-    st.header("🏢 Imagen Corporativa")
-    
-    logo_file = st.file_uploader(
-        "Sube el Logotipo (PNG/JPG):",
-        type=["png", "jpg", "jpeg"],
-        help="Selecciona una imagen desde tu computadora o celular"
-    )
-    
-    logo_html_src = ""
-    if logo_file is not None:
-        try:
-            bytes_data = logo_file.getvalue()
-            base64_encoded = base64.b64encode(bytes_data).decode("utf-8")
-            mime_type = logo_file.type
-            logo_html_src = f"data:{mime_type};base64,{base64_encoded}"
-            st.image(bytes_data, width=140, caption="Logotipo cargado")
-        except Exception as e:
-            st.error(f"Error al procesar la imagen: {e}")
-    else:
-        logo_html_src = "https://images.unsplash.com/photo-1516467508483-a7212febe31a?q=80&w=200&auto=format&fit=crop"
-        st.info("💡 Usando logo predeterminado temporalmente.")
-    
-    st.markdown("---")
-    
+
     # MENÚ DE NAVEGACIÓN PRINCIPAL
     st.header("🧭 Menú Principal")
     modulo_activo = st.radio(
