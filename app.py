@@ -10,99 +10,73 @@ import json
 import os
 import time
 
-import streamlit as st
-import time
-
 # -------------------------------------------------------------
-# CONTROL DE SESIÓN Y ACCESOS DESDE STREAMLIT SECRETS
+# BANDERAS DE PRIVACIDAD Y SESIÓN
 # -------------------------------------------------------------
+USERS_FILE = "usuarios.json"
+TIEMPO_EXPIRED = 300  # Tiempo en segundos para cerrar sesión (5 min)
 
-# Cargar los usuarios registrados en los Secrets de Streamlit Cloud
-# (Si estás en local y no hay secrets, usa un fallback para que no marque error)
-if "usuarios" in st.secrets:
-    USUARIOS = st.secrets["usuarios"]
-else:
-    # Para cuando pruebes localmente en tu computadora
-    USUARIOS = {"admin": "1234"}
+# Si el archivo de usuarios no existe, lo crea con tu usuario Administrador
+if not os.path.exists(USERS_FILE):
+    # 👇 AQUÍ CAMBIA TU USUARIO Y CONTRASEÑA INICIAL
+    usuarios_iniciales = {"Gerardo": {"password": "ADMINpg120214", "rol": "admin"}}
+    with open(USERS_FILE, "w") as f:
+        json.dump(usuarios_iniciales, f)
 
-# Inicializar estado de sesión
+with open(USERS_FILE, "r") as f:
+    usuarios = json.load(f)
+
+# Control de la puerta de entrada
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
 def cerrar_sesion():
     st.session_state.autenticado = False
-    st.session_state.usuario_actual = None
     st.rerun()
 
 # -------------------------------------------------------------
 # PUERTA DE ENTRADA (PANTALLA DE LOGIN)
 # -------------------------------------------------------------
 if not st.session_state.autenticado:
-    st.title("🔒 Acceso Privado")
+    st.title("🔒 Inicia sesión para continuar")
     
     usuario_ingresado = st.text_input("Usuario")
     clave_ingresada = st.text_input("Contraseña", type="password")
     
-    if st.button("Entrar", use_container_width=True):
-        # Validar si el usuario existe en Secrets y la contraseña coincide
-        if usuario_ingresado in USUARIOS and USUARIOS[usuario_ingresado] == clave_ingresada:
+    if st.button("Entrar"):
+        if usuario_ingresado in usuarios and usuarios[usuario_ingresado]["password"] == clave_ingresada:
             st.session_state.autenticado = True
             st.session_state.usuario_actual = usuario_ingresado
+            st.session_state.rol = usuarios[usuario_ingresado].get("rol", "user")
             st.rerun()
         else:
             st.error("Usuario o contraseña incorrectos")
             
-    st.stop()  # Bloquea la app si no hay sesión
+    # IMPORTANTE: Esta línea evita que se vea tu app si no han iniciado sesión
+    st.stop()
 
 # -------------------------------------------------------------
-# BARRA LATERAL
-# -------------------------------------------------------------
-with st.sidebar:
-    st.write(f"👤 Bienvenido, **{st.session_state.usuario_actual}**")
-    if st.button("🚪 Cerrar Sesión", use_container_width=True):
-        cerrar_sesion()
-
-# =============================================================
-# DE AQUÍ PARA ABAJO VA TU CÓDIGO ACTUAL (TU APP)
-# =============================================================
-# -------------------------------------------------------------
-# BARRA LATERAL (Cerrar sesión y Administrar Usuarios)
+# BARRA LATERAL (Cerrar sesión y Crear Usuarios)
 # -------------------------------------------------------------
 with st.sidebar:
     st.write(f"Hola, **{st.session_state.usuario_actual}**")
     if st.button("🚪 Cerrar Sesión"):
         cerrar_sesion()
     
-    # SOLO PARA EL ADMINISTRADOR
+    # Solo tú (el admin) verás esta opción para crear más usuarios
     if st.session_state.rol == "admin":
         st.divider()
-        st.subheader("🛠️ Gestión de Usuarios")
-        
-        # --- 1. CREAR USUARIO ---
-        with st.expander("➕ Crear nuevo usuario"):
-            nuevo_u = st.text_input("Nuevo Usuario")
-            nuevo_p = st.text_input("Nueva Contraseña")
-            if st.button("Guardar Usuario"):
-                if nuevo_u and nuevo_p:
-                    usuarios[nuevo_u] = {"password": nuevo_p, "rol": "user"}
-                    with open(USERS_FILE, "w") as f:
-                        json.dump(usuarios, f)
-                    st.success(f"¡Usuario '{nuevo_u}' creado!")
-                    st.rerun()
+        st.subheader("Crear nuevo acceso")
+        nuevo_u = st.text_input("Nuevo Usuario")
+        nuevo_p = st.text_input("Nueva Contraseña")
+        if st.button("Guardar Usuario"):
+            if nuevo_u and nuevo_p:
+                usuarios[nuevo_u] = {"password": nuevo_p, "rol": "user"}
+                with open(USERS_FILE, "w") as f:
+                    json.dump(usuarios, f)
+                st.success(f"¡Usuario {nuevo_u} creado con éxito!")
 
-        # --- 2. VER Y ELIMINAR USUARIOS ---
-        with st.expander("🗑️ Ver / Eliminar usuarios"):
-            for usr, datos in list(usuarios.items()):
-                # No mostramos al admin principal para no borrarte a ti mismo por error
-                if usr != "admin":
-                    col1, col2 = st.columns([3, 1])
-                    col1.write(f"👤 `{usr}`")
-                    if col2.button("❌", key=f"del_{usr}"):
-                        del usuarios[usr]  # Lo elimina del diccionario
-                        with open(USERS_FILE, "w") as f:
-                            json.dump(usuarios, f)  # Guarda los cambios en el JSON
-                        st.success(f"Usuario '{usr}' eliminado.")
-                        st.rerun()
+
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA
 # ==========================================
