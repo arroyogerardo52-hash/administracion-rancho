@@ -38,16 +38,24 @@ def cerrar_sesion():
 # PUERTA DE ENTRADA (PANTALLA DE LOGIN)
 # -------------------------------------------------------------
 if not st.session_state.autenticado:
-    st.title("🔒 Inicia sesión para continuar")
+    st.title("🔒 Acceso Privado")
     
     usuario_ingresado = st.text_input("Usuario")
     clave_ingresada = st.text_input("Contraseña", type="password")
     
-    if st.button("Entrar"):
-        if usuario_ingresado in usuarios and usuarios[usuario_ingresado]["password"] == clave_ingresada:
+    if st.button("Entrar", use_container_width=True):
+        # 1. Limpiamos espacios invisibles antes/después (.strip())
+        # 2. Convertimos el usuario a minúsculas (.lower()) para evitar fallos por mayúsculas del celular
+        usr_limpio = usuario_ingresado.strip().lower()
+        pwd_limpia = clave_ingresada.strip()
+
+        # Comparamos contra la lista de usuarios (convertidos a minúscula para asegurar)
+        # Si usas st.secrets:
+        usuarios_dict = {k.lower(): str(v).strip() for k.item, (k, v) in enumerate(USUARIOS.items())} if isinstance(USUARIOS, dict) else USUARIOS
+
+        if usr_limpio in USUARIOS and str(USUARIOS[usr_limpio]).strip() == pwd_limpia:
             st.session_state.autenticado = True
-            st.session_state.usuario_actual = usuario_ingresado
-            st.session_state.rol = usuarios[usuario_ingresado].get("rol", "user")
+            st.session_state.usuario_actual = usr_limpio
             st.rerun()
         else:
             st.error("Usuario o contraseña incorrectos")
