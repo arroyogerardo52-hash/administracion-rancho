@@ -11,31 +11,7 @@ import os
 import time
 
 # -------------------------------------------------------------
-# BANDERAS DE PRIVACIDAD Y SESIÓN
-# -------------------------------------------------------------
-USERS_FILE = "usuarios.json"
-TIEMPO_EXPIRED = 300  # Tiempo en segundos para cerrar sesión (5 min)
-
-# Si el archivo de usuarios no existe, lo crea con tu usuario Administrador
-if not os.path.exists(USERS_FILE):
-    # 👇 AQUÍ CAMBIA TU USUARIO Y CONTRASEÑA INICIAL
-    usuarios_iniciales = {"Gerardo": {"password": "ADMINpg120214", "rol": "admin"}}
-    with open(USERS_FILE, "w") as f:
-        json.dump(usuarios_iniciales, f)
-
-with open(USERS_FILE, "r") as f:
-    usuarios = json.load(f)
-
-# Control de la puerta de entrada
-if "autenticado" not in st.session_state:
-    st.session_state.autenticado = False
-
-def cerrar_sesion():
-    st.session_state.autenticado = False
-    st.rerun()
-
-# -------------------------------------------------------------
-# PUERTA DE ENTRADA (PANTALLA DE LOGIN)
+# PUERTA DE ENTRADA (PANTALLA DE LOGIN CON LIMPIEZA MÓVIL)
 # -------------------------------------------------------------
 if not st.session_state.autenticado:
     st.title("🔒 Acceso Privado")
@@ -60,9 +36,7 @@ if not st.session_state.autenticado:
         else:
             st.error("Usuario o contraseña incorrectos")
             
-    # IMPORTANTE: Esta línea evita que se vea tu app si no han iniciado sesión
     st.stop()
-
 # -------------------------------------------------------------
 # BARRA LATERAL (Cerrar sesión y Administrar Usuarios)
 # -------------------------------------------------------------
