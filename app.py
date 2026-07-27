@@ -56,43 +56,25 @@ if not st.session_state.autenticado:
     st.stop()
 
 # -------------------------------------------------------------
-# BARRA LATERAL (Cerrar sesión y Administrar Usuarios)
+# BARRA LATERAL (Cerrar sesión y Crear Usuarios)
 # -------------------------------------------------------------
 with st.sidebar:
     st.write(f"Hola, **{st.session_state.usuario_actual}**")
     if st.button("🚪 Cerrar Sesión"):
         cerrar_sesion()
     
-    # SOLO PARA EL ADMINISTRADOR
+    # Solo tú (el admin) verás esta opción para crear más usuarios
     if st.session_state.rol == "admin":
         st.divider()
-        st.subheader("🛠️ Gestión de Usuarios")
-        
-        # --- 1. CREAR USUARIO ---
-        with st.expander("➕ Crear nuevo usuario"):
-            nuevo_u = st.text_input("Nuevo Usuario")
-            nuevo_p = st.text_input("Nueva Contraseña")
-            if st.button("Guardar Usuario"):
-                if nuevo_u and nuevo_p:
-                    usuarios[nuevo_u] = {"password": nuevo_p, "rol": "user"}
-                    with open(USERS_FILE, "w") as f:
-                        json.dump(usuarios, f)
-                    st.success(f"¡Usuario '{nuevo_u}' creado!")
-                    st.rerun()
-
-        # --- 2. VER Y ELIMINAR USUARIOS ---
-        with st.expander("🗑️ Ver / Eliminar usuarios"):
-            for usr, datos in list(usuarios.items()):
-                # No mostramos al admin principal para no borrarte a ti mismo por error
-                if usr != "admin":
-                    col1, col2 = st.columns([3, 1])
-                    col1.write(f"👤 `{usr}`")
-                    if col2.button("❌", key=f"del_{usr}"):
-                        del usuarios[usr]  # Lo elimina del diccionario
-                        with open(USERS_FILE, "w") as f:
-                            json.dump(usuarios, f)  # Guarda los cambios en el JSON
-                        st.success(f"Usuario '{usr}' eliminado.")
-                        st.rerun()
+        st.subheader("Crear nuevo acceso")
+        nuevo_u = st.text_input("Nuevo Usuario")
+        nuevo_p = st.text_input("Nueva Contraseña")
+        if st.button("Guardar Usuario"):
+            if nuevo_u and nuevo_p:
+                usuarios[nuevo_u] = {"password": nuevo_p, "rol": "user"}
+                with open(USERS_FILE, "w") as f:
+                    json.dump(usuarios, f)
+                st.success(f"¡Usuario {nuevo_u} creado con éxito!")
 
 
 # ==========================================
@@ -169,9 +151,33 @@ df_proveedores = cargar_tabla("proveedores")
 df_lotes = cargar_tabla("lotes")
 
 # ==========================================
-# BARRA LATERAL: NAVEGACIÓN Y RESPALDOS
+# BARRA LATERAL: LOGO, NAVEGACIÓN Y RESPALDOS
 # ==========================================
-
+with st.sidebar:
+    st.header("🏢 Imagen Corporativa")
+    
+    logo_file = st.file_uploader(
+        "Sube el Logotipo (PNG/JPG):",
+        type=["png", "jpg", "jpeg"],
+        help="Selecciona una imagen desde tu computadora o celular"
+    )
+    
+    logo_html_src = ""
+    if logo_file is not None:
+        try:
+            bytes_data = logo_file.getvalue()
+            base64_encoded = base64.b64encode(bytes_data).decode("utf-8")
+            mime_type = logo_file.type
+            logo_html_src = f"data:{mime_type};base64,{base64_encoded}"
+            st.image(bytes_data, width=140, caption="Logotipo cargado")
+        except Exception as e:
+            st.error(f"Error al procesar la imagen: {e}")
+    else:
+        logo_html_src = "https://images.unsplash.com/photo-1516467508483-a7212febe31a?q=80&w=200&auto=format&fit=crop"
+        st.info("💡 Usando logo predeterminado temporalmente.")
+    
+    st.markdown("---")
+    
     # MENÚ DE NAVEGACIÓN PRINCIPAL
     st.header("🧭 Menú Principal")
     modulo_activo = st.radio(
