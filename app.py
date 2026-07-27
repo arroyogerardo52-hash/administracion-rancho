@@ -67,12 +67,6 @@ with st.sidebar:
     if st.button("🚪 Cerrar Sesión", use_container_width=True):
         cerrar_sesion()
 
-# =============================================================
-# DE AQUÍ PARA ABAJO VA EL CÓDIGO Y TABLAS DE TU APLICACIÓN
-# =============================================================
-st.title("🚀 Mi Aplicación Streamlit")
-st.write("¡Acceso concedido! Aquí va todo el contenido privado de tu app.")
-
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA
 # ==========================================
