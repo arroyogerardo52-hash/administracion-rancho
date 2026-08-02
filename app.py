@@ -1304,93 +1304,88 @@ if modulo_activo == "🤠 Personal / Empleados":
         else:
             st.info("No hay información de empleados registrada.")
 
- # ---------------------------------------------------------
+# ---------------------------------------------------------
     # TAB 3: HISTORIAL DE TRANSACCIONES POR EMPLEADO
     # ---------------------------------------------------------
     with tab_transacciones:
         st.subheader("📊 Transacciones Registradas por Empleado")
 
-        # 1. Detección Inteligente de DataFrames que YA estén cargados en memoria/session_state
-        lista_dfs = []
-        todas_las_fuentes = set(list(st.session_state.keys()) + list(globals().keys()))
-        dfs_encontrados = {}
+        # 1. Obtener la fuente de finanzas cargada desde el Módulo 1
+        df_finanzas_base = globals().get('df_finanzas', st.session_state.get('df_finanzas', pd.DataFrame()))
 
-        for k in todas_las_fuentes:
-            # Excluimos variables internas y buscamos DataFrames válidos
-            if not k.startswith('_'):
-                val = st.session_state.get(k, globals().get(k, None))
-                if isinstance(val, pd.DataFrame) and not val.empty:
-                    # Si contiene columnas asociadas a registro/transacciones o empleados
-                    cols_lower = [str(c).lower() for c in val.columns]
-                    if any(term in k.lower() for term in ['transaccion', 'venta', 'compra', 'gasto', 'movimiento', 'registro', 'nomina']) or \
-                       any(c in cols_lower for c in ['empleado', 'registrado_por', 'usuario', 'atendido_por', 'vendedor']):
-                        dfs_encontrados[k] = val
+        # Fallback: Si df_finanzas está vacío pero existe 'cargar_tabla', intentamos leer 'finanzas'
+        if (df_finanzas_base is None or df_finanzas_base.empty) and 'cargar_tabla' in globals():
+            try:
+                res_fin = cargar_tabla('finanzas')
+                if isinstance(res_fin, pd.DataFrame) and not res_fin.empty:
+                    df_finanzas_base = res_fin
+                    st.session_state['df_finanzas'] = res_fin
+            except Exception:
+                pass
 
-        for nombre_var, df_temp in dfs_encontrados.items():
-            df_copy = df_temp.copy()
-            etiqueta_origen = nombre_var.replace('df_', '').replace('_', ' ').capitalize()
-            if 'Origen' not in df_copy.columns:
-                df_copy['Origen'] = etiqueta_origen
-            lista_dfs.append(df_copy)
+        if isinstance(df_finanzas_base, pd.DataFrame) and not df_finanzas_base.empty:
+            df_tx_base = df_finanzas_base.copy()
 
-        # 2. Renderizado de la información
-        if lista_dfs:
-            df_tx_base = pd.concat(lista_dfs, ignore_index=True)
-            
-            # Buscar la columna que contiene el empleado/usuario
-            columnas_empleado = [
-                'empleado', 'registrado_por', 'usuario', 'atendido_por', 
-                'personal', 'nombre_empleado', 'vendedor', 'cajero', 'usuario_id'
-            ]
-            
-            cols_df_lower = [str(col).lower() for col in df_tx_base.columns]
-            col_emp_tx = next((c for c in columnas_empleado if c in cols_df_lower), None)
-            
+            # 2. Identificar qué columna almacena el empleado responsable
+            # Módulo 1 usa 'empleado_responsable', o 'asociado' para Nómina
+            col_emp_tx = None
+            if 'empleado_responsable' in df_tx_base.columns:
+                col_emp_tx = 'empleado_responsable'
+            elif 'asociado' in df_tx_base.columns:
+                col_emp_tx = 'asociado'
+
             if col_emp_tx:
-                col_emp_tx = next(c for c in df_tx_base.columns if str(c).lower() == col_emp_tx)
+                # Normalizamos texto para evitar inconsistencias de minúsculas/espacios
                 df_tx_base[col_emp_tx] = df_tx_base[col_emp_tx].astype(str).str.strip().str.upper()
 
+            # 3. Construir selector de empleados usando 'df_empleados' del sistema
             col_f1, col_f2 = st.columns([2, 2])
             with col_f1:
                 opciones_empleados = ["TODOS"]
+                
+                # Cargar lista oficial de empleados si existe
                 df_emp_sub = globals().get('df_empleados', st.session_state.get('df_empleados', pd.DataFrame()))
+                if isinstance(df_emp_sub, pd.DataFrame) and not df_emp_sub.empty:
+                    col_e_nombre = 'nombre' if 'nombre' in df_emp_sub.columns else df_emp_sub.columns[0]
+                    opciones_empleados += list(df_emp_sub[col_e_nombre].dropna().astype(str).str.strip().str.upper().unique())
                 
-                if isinstance(df_emp_sub, pd.DataFrame) and not df_emp_sub.empty and 'nombre' in df_emp_sub.columns:
-                    opciones_empleados += list(df_emp_sub['nombre'].dropna().astype(str).str.strip().str.upper().unique())
+                # Agregar también cualquier empleado/responsable encontrado en el historial
                 if col_emp_tx:
-                    opciones_unicos = [e for e in df_tx_base[col_emp_tx].dropna().unique() if e not in opciones_empleados]
-                    opciones_empleados += opciones_unicos
-                
-                filtro_emp_tx = st.selectbox("Filtrar por Empleado:", opciones_empleados)
+                    unicos_tx = [e for e in df_tx_base[col_emp_tx].dropna().unique() if e not in opciones_empleados and e != "NONE" and e != "NAN"]
+                    opciones_empleados += unicos_tx
 
+                filtro_emp_tx = st.selectbox("Filtrar por Empleado Responsable:", opciones_empleados, key="sb_filtro_emp_tx")
+
+            # 4. Filtrado de la tabla de transacciones
             df_tx_display = df_tx_base.copy()
 
             if filtro_emp_tx != "TODOS" and col_emp_tx:
                 df_tx_display = df_tx_display[df_tx_display[col_emp_tx] == filtro_emp_tx]
 
+            # 5. Función de coloreado por empleado (si existe)
             def colorear_filas_por_empleado(row):
                 nombre_emp = row.get(col_emp_tx, '') if col_emp_tx else ''
                 bg_color = obtener_color_empleado(nombre_emp) if 'obtener_color_empleado' in globals() else '#ffffff'
                 return [f'background-color: {bg_color}; color: #000000;'] * len(row)
 
-            if col_emp_tx and not df_tx_display.empty:
+            # Formatear montos si existe la columna
+            if 'monto' in df_tx_display.columns:
+                df_tx_display['monto'] = pd.to_numeric(df_tx_display['monto'], errors='coerce').fillna(0.0)
+
+            # 6. Despliegue de datos
+            if not df_tx_display.empty:
                 try:
                     df_styled = df_tx_display.style.apply(colorear_filas_por_empleado, axis=1)
+                    if 'monto' in df_tx_display.columns:
+                        df_styled = df_styled.format({'monto': '$ {:,.2f} MXN'})
                     st.dataframe(df_styled, use_container_width=True, hide_index=True)
                 except Exception:
                     st.dataframe(df_tx_display, use_container_width=True, hide_index=True)
             else:
-                st.dataframe(df_tx_display, use_container_width=True, hide_index=True)
-                if not col_emp_tx:
-                    st.warning("⚠️ Se encontraron registros pero ninguna columna coincide con un identificador de empleado.")
+                st.info(f"No hay transacciones registradas para el empleado **{filtro_emp_tx}**.")
 
         else:
-            st.info("No hay tablas de movimientos cargadas actualmente en memoria.")
-            
-            with st.expander("🛠️ Diagnóstico: Ver variables disponibles"):
-                st.write("Tablas/DataFrames disponibles actualmente en la sesión:")
-                dfs_disponibles = [k for k, v in st.session_state.items() if isinstance(v, pd.DataFrame)]
-                st.write(dfs_disponibles if dfs_disponibles else "No hay DataFrames en `st.session_state`.")
+            st.info("No se encontraron registros financieros o transacciones cargadas en la tabla 'finanzas'.")
 # MÓDULO 3: CLIENTES
 elif modulo_activo == "🤝 Clientes":
     st.header("🤝 Registro y Catálogo de Clientes")
