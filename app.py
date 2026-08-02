@@ -1008,9 +1008,9 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     if edit_monto <= 0:
                         st.error("❌ El monto debe ser mayor a $0.00 MXN.")
                     elif not edit_concepto:
-                        st.error("❌ El concepto no puede estar vacío.")
+                        st.error("❌ Por favor escribe un Concepto o Descripción.")
                     else:
-                        registro_editado = {
+                        registro_actualizado = {
                             "id": id_seleccionado,
                             "fecha": edit_fecha,
                             "tipo": edit_tipo,
@@ -1024,16 +1024,33 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             "estado_deuda": edit_estado,
                             "fecha_vencimiento": edit_venc
                         }
-                        if guardar_registro("finanzas", registro_editado, "id"):
-                            st.success(f"¡Registro {id_seleccionado} actualizado exitosamente!")
+                        if guardar_registro("finanzas", registro_actualizado, "id"):
+                            st.success(f"¡Transacción {id_seleccionado} actualizada correctamente!")
                             time.sleep(1)
                             st.rerun()
-            
+
             with btn_col2:
-                if st.button("🗑️ Eliminar Transacción", use_container_width=True, type="primary", key=f"btn_elim_{id_seleccionado}"):
-                    if eliminar_registro("finanzas", id_seleccionado, "id"):
-                        st.warning(f"Se ha eliminado el registro ID: {id_seleccionado}")
+                if st.button("🗑️ Eliminar Transacción", use_container_width=True, type="primary", key=f"btn_del_{id_seleccionado}"):
+                    st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = True
+
+            if st.session_state.get(f"confirmar_eliminar_{id_seleccionado}", False):
+                st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar permanentemente la transacción **{id_seleccionado}**?")
+                col_del_si, col_del_no = st.columns(2)
+                with col_del_si:
+                    if st.button("🔴 Sí, Eliminar", use_container_width=True, key=f"confirm_si_{id_seleccionado}"):
+                        if 'eliminar_registro' in globals():
+                            eliminar_registro("finanzas", id_seleccionado, "id")
+                        else:
+                            df_finanzas = df_finanzas[df_finanzas['id'] != id_seleccionado]
+                            if 'guardar_dataframe' in globals():
+                                guardar_dataframe("finanzas", df_finanzas)
+                        st.success(f"Transacción {id_seleccionado} eliminada exitosamente.")
+                        st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
                         time.sleep(1)
+                        st.rerun()
+                with col_del_no:
+                    if st.button("❌ Cancelar", use_container_width=True, key=f"confirm_no_{id_seleccionado}"):
+                        st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
                         st.rerun()
 # MÓDULO 2: EMPLEADOS
 elif modulo_activo == "🤠 Personal / Empleados":
