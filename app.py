@@ -1304,36 +1304,27 @@ if modulo_activo == "🤠 Personal / Empleados":
         else:
             st.info("No hay información de empleados registrada.")
 
-  # ---------------------------------------------------------
+ # ---------------------------------------------------------
     # TAB 3: HISTORIAL DE TRANSACCIONES POR EMPLEADO
     # ---------------------------------------------------------
     with tab_transacciones:
         st.subheader("📊 Transacciones Registradas por Empleado")
 
-        # 1. Intentar cargar explícitamente desde la BD o función de carga si existe
-        fuentes_buscadas = ['transacciones', 'ventas', 'compras', 'gastos', 'movimientos']
-        
-        if 'cargar_tabla' in globals():
-            for f in fuentes_buscadas:
-                var_name = f"df_{f}"
-                if var_name not in st.session_state or st.session_state[var_name] is None or st.session_state[var_name].empty:
-                    try:
-                        res = cargar_tabla(f)
-                        if isinstance(res, pd.DataFrame) and not res.empty:
-                            st.session_state[var_name] = res
-                    except Exception:
-                        pass
-
-        # 2. Detección Inteligente de DataFrames en memoria
+        # 1. Detección Inteligente de DataFrames que YA estén cargados en memoria/session_state
         lista_dfs = []
         todas_las_fuentes = set(list(st.session_state.keys()) + list(globals().keys()))
         dfs_encontrados = {}
 
         for k in todas_las_fuentes:
-            if any(term in k.lower() for term in ['transaccion', 'venta', 'compra', 'gasto', 'movimiento']) and not k.startswith('_'):
+            # Excluimos variables internas y buscamos DataFrames válidos
+            if not k.startswith('_'):
                 val = st.session_state.get(k, globals().get(k, None))
                 if isinstance(val, pd.DataFrame) and not val.empty:
-                    dfs_encontrados[k] = val
+                    # Si contiene columnas asociadas a registro/transacciones o empleados
+                    cols_lower = [str(c).lower() for c in val.columns]
+                    if any(term in k.lower() for term in ['transaccion', 'venta', 'compra', 'gasto', 'movimiento', 'registro', 'nomina']) or \
+                       any(c in cols_lower for c in ['empleado', 'registrado_por', 'usuario', 'atendido_por', 'vendedor']):
+                        dfs_encontrados[k] = val
 
         for nombre_var, df_temp in dfs_encontrados.items():
             df_copy = df_temp.copy()
@@ -1342,7 +1333,7 @@ if modulo_activo == "🤠 Personal / Empleados":
                 df_copy['Origen'] = etiqueta_origen
             lista_dfs.append(df_copy)
 
-        # 3. Renderizado de la información
+        # 2. Renderizado de la información
         if lista_dfs:
             df_tx_base = pd.concat(lista_dfs, ignore_index=True)
             
@@ -1352,13 +1343,9 @@ if modulo_activo == "🤠 Personal / Empleados":
                 'personal', 'nombre_empleado', 'vendedor', 'cajero', 'usuario_id'
             ]
             
-            # Lista de columnas del DataFrame en minúsculas
             cols_df_lower = [str(col).lower() for col in df_tx_base.columns]
-            
-            # Identificar si alguna de las columnas candidatas existe
             col_emp_tx = next((c for c in columnas_empleado if c in cols_df_lower), None)
             
-            # Recuperar el nombre exacto de la columna con su casing original
             if col_emp_tx:
                 col_emp_tx = next(c for c in df_tx_base.columns if str(c).lower() == col_emp_tx)
                 df_tx_base[col_emp_tx] = df_tx_base[col_emp_tx].astype(str).str.strip().str.upper()
@@ -1395,14 +1382,15 @@ if modulo_activo == "🤠 Personal / Empleados":
             else:
                 st.dataframe(df_tx_display, use_container_width=True, hide_index=True)
                 if not col_emp_tx:
-                    st.warning("⚠️ Se encontraron transacciones pero ninguna columna coincide con el nombre de un empleado (ej: 'empleado', 'vendedor', 'registrado_por').")
+                    st.warning("⚠️ Se encontraron registros pero ninguna columna coincide con un identificador de empleado.")
 
         else:
-            st.info("No se encontraron tablas de transacciones activas en memoria.")
+            st.info("No hay tablas de movimientos cargadas actualmente en memoria.")
             
-            with st.expander("🛠️ Diagnóstico de variables en la aplicación"):
-                st.write("Variables cargadas actualmente en `st.session_state`:")
-                st.json(list(st.session_state.keys()))
+            with st.expander("🛠️ Diagnóstico: Ver variables disponibles"):
+                st.write("Tablas/DataFrames disponibles actualmente en la sesión:")
+                dfs_disponibles = [k for k, v in st.session_state.items() if isinstance(v, pd.DataFrame)]
+                st.write(dfs_disponibles if dfs_disponibles else "No hay DataFrames en `st.session_state`.")
 # MÓDULO 3: CLIENTES
 elif modulo_activo == "🤝 Clientes":
     st.header("🤝 Registro y Catálogo de Clientes")
