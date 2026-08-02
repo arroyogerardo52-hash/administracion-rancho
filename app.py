@@ -1304,32 +1304,63 @@ if modulo_activo == "🤠 Personal / Empleados":
         else:
             st.info("No hay información de empleados registrada.")
 
-    # ---------------------------------------------------------
+   # ---------------------------------------------------------
     # TAB 3: HISTORIAL DE TRANSACCIONES POR EMPLEADO
     # ---------------------------------------------------------
     with tab_transacciones:
         st.subheader("📊 Transacciones Registradas por Empleado")
 
-        # Consolida TODAS las fuentes disponibles en lugar de hacer 'break' en la primera
-        lista_dfs = []
-        fuentes_posibles = ['df_transacciones', 'df_ventas', 'df_compras', 'df_gastos']
+        # 1. Intentar cargar explícitamente desde la BD o función de carga si existe
+        fuentes_buscadas = ['transacciones', 'ventas', 'compras', 'gastos', 'movimientos']
         
-        for fuente in fuentes_posibles:
-            df_temp = globals().get(fuente, st.session_state.get(fuente, None))
-            if isinstance(df_temp, pd.DataFrame) and not df_temp.empty:
-                df_copy = df_temp.copy()
-                if 'Origen' not in df_copy.columns:
-                    df_copy['Origen'] = fuente.replace('df_', '').capitalize()
-                lista_dfs.append(df_copy)
+        # Si tienes una función global tipo 'cargar_tabla' o 'obtener_datos', intentamos invocarla
+        if 'cargar_tabla' in globals():
+            for f in fuentes_buscadas:
+                var_name = f"df_{f}"
+                if var_name not in st.session_state or st.session_state[var_name] is None or st.session_state[var_name].empty:
+                    try:
+                        res = cargar_tabla(f)
+                        if isinstance(res, pd.DataFrame) and not res.empty:
+                            st.session_state[var_name] = res
+                    except Exception:
+                        pass
 
+        # 2. Detección Inteligente de DataFrames en memoria
+        lista_dfs = []
+        
+        # A) Buscar en session_state y globals por coincidencia de nombre
+        todas_las_fuentes = set(list(st.session_state.keys()) + list(globals().keys()))
+        dfs_encontrados = {}
+
+        for k in todas_las_fuentes:
+            # Captura variables que contengan 'ventas', 'transacciones', 'gastos', 'compras', 'movimientos', etc.
+            if any(term in k.lower() for term in ['transaccion', 'venta', 'compra', 'gasto', 'movimiento']) and not k.startswith('_'):
+                val = st.session_state.get(k, globals().get(k, None))
+                if isinstance(val, pd.DataFrame) and not val.empty:
+                    dfs_encontrados[k] = val
+
+        # B) Consolidar los DataFrames encontrados
+        for nombre_var, df_temp in dfs_encontrados.items():
+            df_copy = df_temp.copy()
+            etiqueta_origen = nombre_var.replace('df_', '').replace('_', ' ').capitalize()
+            if 'Origen' not in df_copy.columns:
+                df_copy['Origen'] = etiqueta_origen
+            lista_dfs.append(df_copy)
+
+        # 3. Renderizado de la información
         if lista_dfs:
             df_tx_base = pd.concat(lista_dfs, ignore_index=True)
             
-            columnas_empleado = ['empleado', 'registrado_por', 'usuario', 'atendido_por', 'personal', 'nombre_empleado']
-            col_emp_tx = next((c for c in columnas_empleado if c in df_tx_base.columns), None)
+            # Buscar la columna que contiene el empleado/usuario
+            columnas_empleado = [
+                'empleado', 'registrado_por', 'usuario', 'atendido_por', 
+                'personal', 'nombre_empleado', 'vendedor', 'cajero', 'usuario_id'
+            ]
+            col_emp_tx = next((c for c in columnas_empleado if c.lower() in [col.lower() for col.lower() in df_tx_base.columns]), None)
             
-            # Formatear nombres para asegurar coincidencia sin importar mayúsculas/espacios
+            # Normalizar nombre exacto de la columna encontrada
             if col_emp_tx:
+                col_emp_tx = next(c for c in df_tx_base.columns if c.lower() == col_emp_tx.lower())
                 df_tx_base[col_emp_tx] = df_tx_base[col_emp_tx].astype(str).str.strip().str.upper()
 
             col_f1, col_f2 = st.columns([2, 2])
@@ -1339,8 +1370,9 @@ if modulo_activo == "🤠 Personal / Empleados":
                 
                 if isinstance(df_emp_sub, pd.DataFrame) and not df_emp_sub.empty and 'nombre' in df_emp_sub.columns:
                     opciones_empleados += list(df_emp_sub['nombre'].dropna().astype(str).str.strip().str.upper().unique())
-                elif col_emp_tx:
-                    opciones_empleados += list(df_tx_base[col_emp_tx].dropna().unique())
+                if col_emp_tx:
+                    opciones_unicos = [e for e in df_tx_base[col_emp_tx].dropna().unique() if e not in opciones_empleados]
+                    opciones_empleados += opciones_unicos
                 
                 filtro_emp_tx = st.selectbox("Filtrar por Empleado:", opciones_empleados)
 
@@ -1363,9 +1395,15 @@ if modulo_activo == "🤠 Personal / Empleados":
             else:
                 st.dataframe(df_tx_display, use_container_width=True, hide_index=True)
                 if not col_emp_tx:
-                    st.caption("💡 Se encontraron registros de transacciones. Para resaltar con colores únicos por empleado, incluye una columna llamada 'empleado' o 'registrado_por' en tu base de datos.")
+                    st.warning("⚠️ Se encontraron transacciones pero ninguna columna coincide con el nombre de un empleado (ej: 'empleado', 'vendedor', 'registrado_por').")
+
         else:
-            st.info("No hay historial de transacciones cargado o disponible en el sistema.")
+            st.info("No se encontraron tablas de transacciones activas en memoria.")
+            
+            # Panel diagnóstico desplegable para depuración
+            with st.expander("🛠️ Diagnóstico de variables en la aplicación"):
+                st.write("Variables cargadas actualmente en `st.session_state`:")
+                st.json(list(st.session_state.keys()))
 
 # MÓDULO 3: CLIENTES
 elif modulo_activo == "🤝 Clientes":
