@@ -1194,6 +1194,11 @@ if modulo_activo == "🤠 Personal / Empleados":
                         "estatus": e_estatus
                     }
                     
+                    # SANITIZACIÓN AUTOMÁTICA: Si df_empleados ya existe, filtra solo las columnas que Supabase reconoce
+                    if 'df_empleados' in globals() and isinstance(df_empleados, pd.DataFrame) and not df_empleados.empty:
+                        cols_validas = list(df_empleados.columns)
+                        datos_empleado = {k: v for k, v in datos_empleado.items() if k in cols_validas or k == 'nombre'}
+
                     if guardar_registro("empleados", datos_empleado, "nombre"):
                         st.success(f"Empleado {'actualizado' if modo_form == 'Editar Empleado Existente' else 'guardado'} correctamente.")
                         time.sleep(0.4)
@@ -1222,7 +1227,7 @@ if modulo_activo == "🤠 Personal / Empleados":
                         "Listado de Personal", 
                         ["Nombre", "Puesto", "Sueldo", "Fecha Ingreso", "Nómina", "Teléfono", "E-mail", "Estatus"], 
                         df_emp_vista, 
-                        ["nombre", "puesto_funcion", "sueldo", "fecha_ingreso", "periodo_nomina", "telefono", "email", "estatus"]
+                        [c for c in ["nombre", "puesto_funcion", "sueldo", "fecha_ingreso", "periodo_nomina", "telefono", "email", "estatus"] if c in df_emp_vista.columns]
                     )
                     st.download_button(
                         label="📄 Generar Reporte (Docs)",
@@ -1232,7 +1237,6 @@ if modulo_activo == "🤠 Personal / Empleados":
                         use_container_width=True
                     )
 
-            # --- NUEVO: EDITOR DE TABLA DIRECTO EN EL LISTADO ---
             st.markdown("✏️ **Edición Rápida:** Puedes modificar directamente las celdas en la siguiente tabla y guardar cambios:")
             
             df_editado = st.data_editor(
@@ -1247,12 +1251,14 @@ if modulo_activo == "🤠 Personal / Empleados":
                 }
             )
 
-            # Botón para confirmar cambios realizados en el data_editor
             if st.button("💾 Guardar Cambios Realizados en la Tabla", type="primary", use_container_width=True):
                 cambios_guardados = 0
+                cols_validas = list(df_empleados.columns)
                 for index, row in df_editado.iterrows():
                     datos_emp = row.to_dict()
-                    # Aseguramos formato texto/mayúsculas en nombre si fue editado
+                    # Filtrar solo columnas existentes en Supabase
+                    datos_emp = {k: v for k, v in datos_emp.items() if k in cols_validas or k == 'nombre'}
+                        
                     if 'nombre' in datos_emp and pd.notna(datos_emp['nombre']):
                         datos_emp['nombre'] = str(datos_emp['nombre']).strip().upper()
                         if guardar_registro("empleados", datos_emp, "nombre"):
@@ -1262,7 +1268,6 @@ if modulo_activo == "🤠 Personal / Empleados":
                     time.sleep(0.4)
                     st.rerun()
 
-            # Sección de eliminación / inactivación
             st.divider()
             col_del1, col_del2 = st.columns(2)
             
@@ -1280,6 +1285,8 @@ if modulo_activo == "🤠 Personal / Empleados":
                         if st.button("⚠️ Cambiar a Inactivo", use_container_width=True):
                             datos_inactivo = df_empleados[df_empleados['nombre'] == emp_sel].iloc[0].to_dict()
                             datos_inactivo['estatus'] = "Inactivo"
+                            cols_validas = list(df_empleados.columns)
+                            datos_inactivo = {k: v for k, v in datos_inactivo.items() if k in cols_validas or k == 'nombre'}
                             if guardar_registro("empleados", datos_inactivo, "nombre"):
                                 st.warning(f"Empleado {emp_sel} marcado como Inactivo.")
                                 time.sleep(0.4)
@@ -1295,33 +1302,26 @@ if modulo_activo == "🤠 Personal / Empleados":
             st.info("No hay información de empleados registrada.")
 
     # ---------------------------------------------------------
-    # TAB 3: HISTORIAL DE TRANSACCIONES POR EMPLEADO (CORREGIDO)
+    # TAB 3: HISTORIAL DE TRANSACCIONES POR EMPLEADO
     # ---------------------------------------------------------
     with tab_transacciones:
         st.subheader("📊 Transacciones Registradas por Empleado")
 
-        # Búsqueda robusta de transacciones en variables globales o session_state
         df_tx_base = pd.DataFrame()
-
-        # Prioridad de fuentes de datos de transacciones
         fuentes_posibles = ['df_transacciones', 'df_ventas', 'df_compras', 'df_gastos']
         
         for fuente in fuentes_posibles:
-            # 1. Checar en globals()
             if fuente in globals() and isinstance(globals()[fuente], pd.DataFrame) and not globals()[fuente].empty:
                 df_tx_base = globals()[fuente].copy()
                 break
-            # 2. Checar en st.session_state
             elif fuente in st.session_state and isinstance(st.session_state[fuente], pd.DataFrame) and not st.session_state[fuente].empty:
                 df_tx_base = st.session_state[fuente].copy()
                 break
 
         if not df_tx_base.empty:
-            # Identificar la columna que almacena al empleado/usuario
             columnas_empleado = ['empleado', 'registrado_por', 'usuario', 'atendido_por', 'personal', 'nombre_empleado']
             col_emp_tx = next((c for c in columnas_empleado if c in df_tx_base.columns), None)
             
-            # Filtro opcional por empleado
             col_f1, col_f2 = st.columns([2, 2])
             with col_f1:
                 opciones_empleados = ["TODOS"]
@@ -1337,13 +1337,11 @@ if modulo_activo == "🤠 Personal / Empleados":
             if filtro_emp_tx != "TODOS" and col_emp_tx:
                 df_tx_display = df_tx_display[df_tx_display[col_emp_tx] == filtro_emp_tx]
 
-            # Función para colorear las filas según el empleado
             def colorear_filas_por_empleado(row):
                 nombre_emp = row.get(col_emp_tx, '') if col_emp_tx else ''
                 bg_color = obtener_color_empleado(nombre_emp)
                 return [f'background-color: {bg_color}; color: #000000;'] * len(row)
 
-            # Renderizar con estilos de color si existe la columna de asignación
             if col_emp_tx:
                 df_styled = df_tx_display.style.apply(colorear_filas_por_empleado, axis=1)
                 st.dataframe(df_styled, use_container_width=True, hide_index=True)
