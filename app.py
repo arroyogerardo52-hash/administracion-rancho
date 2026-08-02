@@ -1207,7 +1207,7 @@ if modulo_activo == "🤠 Personal / Empleados":
                         st.rerun()
 
     # ---------------------------------------------------------
-    # TAB 2: LISTADO DE PERSONAL CON EDITOR INTERACTIVO
+    # TAB 2: LISTADO DE PERSONAL (SOLO LECTURA / VISTA GENERAL)
     # ---------------------------------------------------------
     with tab_listado:
         col_bus_emp, col_rep_emp = st.columns([3, 1])
@@ -1241,35 +1241,16 @@ if modulo_activo == "🤠 Personal / Empleados":
                         use_container_width=True
                     )
 
-            st.markdown("✏️ **Edición Rápida:** Puedes modificar directamente las celdas en la siguiente tabla y guardar cambios:")
-            
-            df_editado = st.data_editor(
+            st.dataframe(
                 df_emp_vista,
                 use_container_width=True,
                 hide_index=True,
-                key="editor_tabla_empleados",
                 column_config={
-                    "periodo_nomina": st.column_config.SelectboxColumn("Periodo Nómina", options=["Semanal", "Catorcenal", "Quincenal", "Mensual"]),
-                    "estatus": st.column_config.SelectboxColumn("Estatus", options=["Activo", "Inactivo"]),
+                    "periodo_nomina": st.column_config.TextColumn("Periodo Nómina"),
+                    "estatus": st.column_config.TextColumn("Estatus"),
                     "sueldo": st.column_config.NumberColumn("Sueldo ($)", format="$%.2f")
                 }
             )
-
-            if st.button("💾 Guardar Cambios Realizados en la Tabla", type="primary", use_container_width=True):
-                cambios_guardados = 0
-                cols_validas = list(df_emp_list.columns)
-                for index, row in df_editado.iterrows():
-                    datos_emp = row.to_dict()
-                    datos_emp = {k: v for k, v in datos_emp.items() if k in cols_validas or k == 'nombre'}
-                        
-                    if 'nombre' in datos_emp and pd.notna(datos_emp['nombre']):
-                        datos_emp['nombre'] = str(datos_emp['nombre']).strip().upper()
-                        if guardar_registro("empleados", datos_emp, "nombre"):
-                            cambios_guardados += 1
-                if cambios_guardados > 0:
-                    st.success(f"Se actualizaron {cambios_guardados} registros exitosamente.")
-                    time.sleep(0.4)
-                    st.rerun()
 
             st.divider()
             col_del1, col_del2 = st.columns(2)
@@ -1304,7 +1285,7 @@ if modulo_activo == "🤠 Personal / Empleados":
         else:
             st.info("No hay información de empleados registrada.")
 
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
     # TAB 3: HISTORIAL DE TRANSACCIONES POR EMPLEADO
     # ---------------------------------------------------------
     with tab_transacciones:
@@ -1327,7 +1308,6 @@ if modulo_activo == "🤠 Personal / Empleados":
             df_tx_base = df_finanzas_base.copy()
 
             # 2. Identificar qué columna almacena el empleado responsable
-            # Módulo 1 usa 'empleado_responsable', o 'asociado' para Nómina
             col_emp_tx = None
             if 'empleado_responsable' in df_tx_base.columns:
                 col_emp_tx = 'empleado_responsable'
