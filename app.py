@@ -1304,7 +1304,7 @@ if modulo_activo == "🤠 Personal / Empleados":
         else:
             st.info("No hay información de empleados registrada.")
 
-   # ---------------------------------------------------------
+  # ---------------------------------------------------------
     # TAB 3: HISTORIAL DE TRANSACCIONES POR EMPLEADO
     # ---------------------------------------------------------
     with tab_transacciones:
@@ -1313,7 +1313,6 @@ if modulo_activo == "🤠 Personal / Empleados":
         # 1. Intentar cargar explícitamente desde la BD o función de carga si existe
         fuentes_buscadas = ['transacciones', 'ventas', 'compras', 'gastos', 'movimientos']
         
-        # Si tienes una función global tipo 'cargar_tabla' o 'obtener_datos', intentamos invocarla
         if 'cargar_tabla' in globals():
             for f in fuentes_buscadas:
                 var_name = f"df_{f}"
@@ -1327,19 +1326,15 @@ if modulo_activo == "🤠 Personal / Empleados":
 
         # 2. Detección Inteligente de DataFrames en memoria
         lista_dfs = []
-        
-        # A) Buscar en session_state y globals por coincidencia de nombre
         todas_las_fuentes = set(list(st.session_state.keys()) + list(globals().keys()))
         dfs_encontrados = {}
 
         for k in todas_las_fuentes:
-            # Captura variables que contengan 'ventas', 'transacciones', 'gastos', 'compras', 'movimientos', etc.
             if any(term in k.lower() for term in ['transaccion', 'venta', 'compra', 'gasto', 'movimiento']) and not k.startswith('_'):
                 val = st.session_state.get(k, globals().get(k, None))
                 if isinstance(val, pd.DataFrame) and not val.empty:
                     dfs_encontrados[k] = val
 
-        # B) Consolidar los DataFrames encontrados
         for nombre_var, df_temp in dfs_encontrados.items():
             df_copy = df_temp.copy()
             etiqueta_origen = nombre_var.replace('df_', '').replace('_', ' ').capitalize()
@@ -1356,11 +1351,16 @@ if modulo_activo == "🤠 Personal / Empleados":
                 'empleado', 'registrado_por', 'usuario', 'atendido_por', 
                 'personal', 'nombre_empleado', 'vendedor', 'cajero', 'usuario_id'
             ]
-            col_emp_tx = next((c for c in columnas_empleado if c.lower() in [col.lower() for col.lower() in df_tx_base.columns]), None)
             
-            # Normalizar nombre exacto de la columna encontrada
+            # Lista de columnas del DataFrame en minúsculas
+            cols_df_lower = [str(col).lower() for col in df_tx_base.columns]
+            
+            # Identificar si alguna de las columnas candidatas existe
+            col_emp_tx = next((c for c in columnas_empleado if c in cols_df_lower), None)
+            
+            # Recuperar el nombre exacto de la columna con su casing original
             if col_emp_tx:
-                col_emp_tx = next(c for c in df_tx_base.columns if c.lower() == col_emp_tx.lower())
+                col_emp_tx = next(c for c in df_tx_base.columns if str(c).lower() == col_emp_tx)
                 df_tx_base[col_emp_tx] = df_tx_base[col_emp_tx].astype(str).str.strip().str.upper()
 
             col_f1, col_f2 = st.columns([2, 2])
@@ -1400,11 +1400,9 @@ if modulo_activo == "🤠 Personal / Empleados":
         else:
             st.info("No se encontraron tablas de transacciones activas en memoria.")
             
-            # Panel diagnóstico desplegable para depuración
             with st.expander("🛠️ Diagnóstico de variables en la aplicación"):
                 st.write("Variables cargadas actualmente en `st.session_state`:")
                 st.json(list(st.session_state.keys()))
-
 # MÓDULO 3: CLIENTES
 elif modulo_activo == "🤝 Clientes":
     st.header("🤝 Registro y Catálogo de Clientes")
