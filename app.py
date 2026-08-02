@@ -835,7 +835,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             f_venc = st.date_input("Fecha Vencimiento", datetime.today(), key="f_venc_pos").strftime('%Y-%m-%d')
 
         st.markdown("<br>", unsafe_allow_html=True)
-        btn_pre_guardar = st.button("🚀 Continuar y Procesar Transacción", use_container_width=True, type="primary")
+        btn_pre_guardar = st.button("Confirmar", use_container_width=True, type="primary")
 
     # --- VALIDACIÓN INICIAL DE CAMPOS PARA NUEVO REGISTRO ---
     if btn_pre_guardar:
@@ -967,7 +967,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         try: f_venc_orig = pd.to_datetime(fila_sel.get('fecha_vencimiento', datetime.today())).date()
         except: f_venc_orig = datetime.today().date()
             
-        with st.expander("📝 Abrir Editor Manual de la Transacción Seleccionada"):
+        with st.expander("📝 Abrir Editor Manual"):
             tipo_actual_bd = fila_sel.get('tipo', 'Egreso')
             idx_tipo_actual = 0 if tipo_actual_bd == "Ingreso" else 1
             edit_tipo = st.selectbox("Editar Tipo de Transacción", ["Ingreso", "Egreso"], index=idx_tipo_actual, key=f"ed_tipo_{id_seleccionado}")
@@ -1029,7 +1029,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("💾 Guardar Cambios (Proceder)", use_container_width=True, key=f"btn_act_{id_seleccionado}"):
+                if st.button("💾 Guardar Cambios", use_container_width=True, key=f"btn_act_{id_seleccionado}"):
                     if edit_monto <= 0:
                         st.error("❌ El monto debe ser mayor a $0.00 MXN.")
                     elif not edit_concepto:
