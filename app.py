@@ -1090,12 +1090,10 @@ def obtener_color_empleado(nombre):
     """Genera un color pastel consistente basado en el nombre del empleado."""
     if not nombre or pd.isna(nombre):
         return "#ffffff"
-    # Paleta de colores pastel agradables y legibles
     paleta = [
         "#e3f2fd", "#f3e5f5", "#e8f5e9", "#fff3e0", "#fbe9e7", 
         "#e0f7fa", "#f1f8e9", "#fffde7", "#fce4ec", "#efebe9"
     ]
-    # Hash consistente asignado al mismo empleado
     idx = abs(hash(str(nombre))) % len(paleta)
     return paleta[idx]
 
@@ -1104,7 +1102,6 @@ def obtener_color_empleado(nombre):
 if modulo_activo == "🤠 Personal / Empleados":
     st.header("🤠 Administración de Personal y Empleados")
 
-    # Pestañas para organizar la navegación interna del módulo
     tab_registro, tab_listado, tab_transacciones = st.tabs([
         "➕ Registrar / Editar Empleado", 
         "📋 Listado de Personal", 
@@ -1112,7 +1109,7 @@ if modulo_activo == "🤠 Personal / Empleados":
     ])
 
     # ---------------------------------------------------------
-    # TAB 1: REGISTRO Y EDICIÓN DE EMPLEADOS
+    # TAB 1: REGISTRO Y EDICIÓN VÍA FORMULARIO
     # ---------------------------------------------------------
     with tab_registro:
         modo_form = st.radio(
@@ -1121,30 +1118,20 @@ if modulo_activo == "🤠 Personal / Empleados":
             horizontal=True
         )
         
-        # VALORES POR DEFECTO PARA REGISTRO NUEVO
-        e_nombre_val = ""
-        e_puesto_val = ""
-        e_sueldo_val = 0.0
+        e_nombre_val, e_puesto_val, e_sueldo_val = "", "", 0.0
         e_fecha_val = datetime.today()
-        e_periodo_val = "Quincenal"
-        e_direccion_val = ""
-        e_tel_val = ""
-        e_email_val = ""
-        e_estatus_val = "Activo"
-        
+        e_periodo_val, e_direccion_val, e_tel_val, e_email_val, e_estatus_val = "Quincenal", "", "", "", "Activo"
         emp_a_editar = None
 
         if modo_form == "Editar Empleado Existente":
-            if 'df_empleados' in globals() and not df_empleados.empty and 'nombre' in df_empleados.columns:
+            if 'df_empleados' in globals() and isinstance(df_empleados, pd.DataFrame) and not df_empleados.empty and 'nombre' in df_empleados.columns:
                 lista_empleados = [e for e in df_empleados['nombre'].dropna().unique() if str(e).strip()]
                 if lista_empleados:
                     emp_a_editar = st.selectbox("Selecciona Empleado a Editar:", lista_empleados)
                     row_emp = df_empleados[df_empleados['nombre'] == emp_a_editar].iloc[0]
                     
-                    # Cargar valores actuales de forma segura
                     e_nombre_val = str(row_emp.get('nombre', ''))
                     e_puesto_val = str(row_emp.get('puesto_funcion', ''))
-                    
                     try:
                         e_sueldo_val = float(row_emp.get('sueldo', 0.0))
                     except (ValueError, TypeError):
@@ -1166,7 +1153,6 @@ if modulo_activo == "🤠 Personal / Empleados":
             else:
                 st.info("No hay empleados registrados para editar.")
 
-        # Formulario de datos de empleado
         with st.form("form_empleados", clear_on_submit=False):
             st.subheader("Datos del Empleado")
             col1, col2 = st.columns(2)
@@ -1214,14 +1200,14 @@ if modulo_activo == "🤠 Personal / Empleados":
                         st.rerun()
 
     # ---------------------------------------------------------
-    # TAB 2: LISTADO DE PERSONAL Y GESTIÓN
+    # TAB 2: LISTADO DE PERSONAL CON EDITOR INTERACTIVO
     # ---------------------------------------------------------
     with tab_listado:
         col_bus_emp, col_rep_emp = st.columns([3, 1])
         with col_bus_emp:
             buscar_emp = st.text_input("🔍 Buscar Empleado:", key="bus_emp").strip()
 
-        if 'df_empleados' in globals() and not df_empleados.empty:
+        if 'df_empleados' in globals() and isinstance(df_empleados, pd.DataFrame) and not df_empleados.empty:
             df_emp_vista = df_empleados.copy()
 
             if buscar_emp:
@@ -1231,7 +1217,6 @@ if modulo_activo == "🤠 Personal / Empleados":
 
             with col_rep_emp:
                 st.write("")
-                # Validación de la función externa de generación de reportes Word/Doc
                 if 'generar_html_docs' in globals():
                     html_emp = generar_html_docs(
                         "Listado de Personal", 
@@ -1247,8 +1232,35 @@ if modulo_activo == "🤠 Personal / Empleados":
                         use_container_width=True
                     )
 
-            # Tabla interactiva completa
-            st.dataframe(df_emp_vista, use_container_width=True, hide_index=True)
+            # --- NUEVO: EDITOR DE TABLA DIRECTO EN EL LISTADO ---
+            st.markdown("✏️ **Edición Rápida:** Puedes modificar directamente las celdas en la siguiente tabla y guardar cambios:")
+            
+            df_editado = st.data_editor(
+                df_emp_vista,
+                use_container_width=True,
+                hide_index=True,
+                key="editor_tabla_empleados",
+                column_config={
+                    "periodo_nomina": st.column_config.SelectboxColumn("Periodo Nómina", options=["Semanal", "Catorcenal", "Quincenal", "Mensual"]),
+                    "estatus": st.column_config.SelectboxColumn("Estatus", options=["Activo", "Inactivo"]),
+                    "sueldo": st.column_config.NumberColumn("Sueldo ($)", format="$%.2f")
+                }
+            )
+
+            # Botón para confirmar cambios realizados en el data_editor
+            if st.button("💾 Guardar Cambios Realizados en la Tabla", type="primary", use_container_width=True):
+                cambios_guardados = 0
+                for index, row in df_editado.iterrows():
+                    datos_emp = row.to_dict()
+                    # Aseguramos formato texto/mayúsculas en nombre si fue editado
+                    if 'nombre' in datos_emp and pd.notna(datos_emp['nombre']):
+                        datos_emp['nombre'] = str(datos_emp['nombre']).strip().upper()
+                        if guardar_registro("empleados", datos_emp, "nombre"):
+                            cambios_guardados += 1
+                if cambios_guardados > 0:
+                    st.success(f"Se actualizaron {cambios_guardados} registros exitosamente.")
+                    time.sleep(0.4)
+                    st.rerun()
 
             # Sección de eliminación / inactivación
             st.divider()
@@ -1283,43 +1295,61 @@ if modulo_activo == "🤠 Personal / Empleados":
             st.info("No hay información de empleados registrada.")
 
     # ---------------------------------------------------------
-    # TAB 3: TRANSACCIONES Y REGISTROS POR EMPLEADO (CON COLORES)
+    # TAB 3: HISTORIAL DE TRANSACCIONES POR EMPLEADO (CORREGIDO)
     # ---------------------------------------------------------
     with tab_transacciones:
         st.subheader("📊 Transacciones Registradas por Empleado")
 
-        if 'df_transacciones' in globals() and not df_transacciones.empty:
-            
-            # Identificar columna con el nombre del empleado
-            col_emp_tx = next((c for c in ['empleado', 'registrado_por', 'usuario'] if c in df_transacciones.columns), None)
+        # Búsqueda robusta de transacciones en variables globales o session_state
+        df_tx_base = pd.DataFrame()
+
+        # Prioridad de fuentes de datos de transacciones
+        fuentes_posibles = ['df_transacciones', 'df_ventas', 'df_compras', 'df_gastos']
+        
+        for fuente in fuentes_posibles:
+            # 1. Checar en globals()
+            if fuente in globals() and isinstance(globals()[fuente], pd.DataFrame) and not globals()[fuente].empty:
+                df_tx_base = globals()[fuente].copy()
+                break
+            # 2. Checar en st.session_state
+            elif fuente in st.session_state and isinstance(st.session_state[fuente], pd.DataFrame) and not st.session_state[fuente].empty:
+                df_tx_base = st.session_state[fuente].copy()
+                break
+
+        if not df_tx_base.empty:
+            # Identificar la columna que almacena al empleado/usuario
+            columnas_empleado = ['empleado', 'registrado_por', 'usuario', 'atendido_por', 'personal', 'nombre_empleado']
+            col_emp_tx = next((c for c in columnas_empleado if c in df_tx_base.columns), None)
             
             # Filtro opcional por empleado
             col_f1, col_f2 = st.columns([2, 2])
             with col_f1:
                 opciones_empleados = ["TODOS"]
-                if 'df_empleados' in globals() and not df_empleados.empty and 'nombre' in df_empleados.columns:
+                if 'df_empleados' in globals() and isinstance(df_empleados, pd.DataFrame) and not df_empleados.empty and 'nombre' in df_empleados.columns:
                     opciones_empleados += list(df_empleados['nombre'].dropna().unique())
+                elif col_emp_tx:
+                    opciones_empleados += list(df_tx_base[col_emp_tx].dropna().unique())
                 
                 filtro_emp_tx = st.selectbox("Filtrar por Empleado:", opciones_empleados)
 
-            df_tx_display = df_transacciones.copy()
+            df_tx_display = df_tx_base.copy()
 
             if filtro_emp_tx != "TODOS" and col_emp_tx:
                 df_tx_display = df_tx_display[df_tx_display[col_emp_tx] == filtro_emp_tx]
 
-            # Función para aplicar estilos de color por fila
+            # Función para colorear las filas según el empleado
             def colorear_filas_por_empleado(row):
                 nombre_emp = row.get(col_emp_tx, '') if col_emp_tx else ''
                 bg_color = obtener_color_empleado(nombre_emp)
                 return [f'background-color: {bg_color}; color: #000000;'] * len(row)
 
-            # Renderizado con colores o tabla simple
+            # Renderizar con estilos de color si existe la columna de asignación
             if col_emp_tx:
                 df_styled = df_tx_display.style.apply(colorear_filas_por_empleado, axis=1)
                 st.dataframe(df_styled, use_container_width=True, hide_index=True)
             else:
                 st.dataframe(df_tx_display, use_container_width=True, hide_index=True)
-                st.caption("💡 Para aplicar colores distintivos, asegúrate de incorporar la columna 'empleado' o 'registrado_por' en la tabla de transacciones.")
+                st.caption("💡 Se encontraron registros de transacciones. Para resaltar con colores únicos por empleado, incluye una columna llamada 'empleado' o 'registrado_por' en la tabla.")
         else:
             st.info("No hay historial de transacciones cargado o disponible en el sistema.")
 
