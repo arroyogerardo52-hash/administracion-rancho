@@ -792,7 +792,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
     
     f_tipo_dinamico = st.radio("Tipo de Movimiento:", ["Ingreso", "Egreso"], horizontal=True)
     
-    # Renderizado estético y limpio en un contenedor tipo tarjeta
     with st.container():
         col_f1, col_f2, col_f3 = st.columns(3)
         
@@ -813,7 +812,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             
             # --- ASIGNACIÓN DINÁMICA DE TERCEROS (CLIENTE / PROVEEDOR / EMPLEADO NÓMINA) ---
             if f_tipo_dinamico == "Ingreso":
-                f_asociado = st.selectbox("Cliente Asociado", lista_clientes, index=0, key="f_cli_pos")
+                f_asociado = st.selectbox("Cliente / Origen", lista_clientes, index=0, key="f_cli_pos")
                 etiqueta_asociado = "Cliente"
             else:
                 if f_cat == "Nomina":
@@ -823,7 +822,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         f_asociado = st.text_input("Empleado Beneficiario", "Empleado General", key="f_emp_nom_txt")
                     etiqueta_asociado = "Empleado Beneficiario"
                 else:
-                    f_asociado = st.selectbox("Proveedor Asociado", lista_proveedores, index=0, key="f_prov_pos")
+                    f_asociado = st.selectbox("Proveedor / Destino", lista_proveedores, index=0, key="f_prov_pos")
                     etiqueta_asociado = "Proveedor"
 
         with col_f3:
@@ -838,15 +837,15 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         st.markdown("<br>", unsafe_allow_html=True)
         btn_pre_guardar = st.button("🚀 Continuar y Procesar Transacción", use_container_width=True, type="primary")
 
-    # --- VALIDACIÓN INICIAL DE CAMPOS ---
+    # --- VALIDACIÓN INICIAL DE CAMPOS PARA NUEVO REGISTRO ---
     if btn_pre_guardar:
         if f_monto <= 0:
             st.error("❌ El monto debe ser mayor a $0.00 MXN.")
         elif not f_concepto:
             st.error("❌ Por favor escribe un Concepto o Descripción.")
         else:
-            # Guardamos temporalmente en sesión para abrir el modal
             st.session_state["transaccion_pendiente"] = {
+                "id": f"N-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}",
                 "fecha": f_fecha,
                 "tipo": f_tipo_dinamico,
                 "categoria": f_cat,
@@ -857,36 +856,40 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 "etiqueta_asociado": etiqueta_asociado,
                 "lote_asociado": f_lote,
                 "estado_deuda": f_estado,
-                "fecha_vencimiento": f_venc
+                "fecha_vencimiento": f_venc,
+                "es_edicion": False
             }
 
-    # --- VENTANA EMERGENTE (MODAL DE CONFIRMACIÓN DE EMPLEADO) ---
+    # --- VENTANA EMERGENTE (MODAL DE CONFIRMACIÓN DE EMPLEADO QUE PROCESA/EDITA) ---
     if "transaccion_pendiente" in st.session_state:
+        tx = st.session_state["transaccion_pendiente"]
         
-        # Uso de st.dialog si está disponible en la versión de Streamlit, o fallback estructurado
         if hasattr(st, "dialog"):
             @st.dialog("👤 Confirmación de Responsable")
             def modal_confirmacion_empleado():
-                tx = st.session_state["transaccion_pendiente"]
-                st.write("### Resumen del Registro")
-                st.info(f"**Tipo:** {tx['tipo']} | **Monto:** $ {tx['monto']:,.2f} MXN\n\n"
+                accion_txt = "Edición" if tx.get("es_edicion", False) else "Registro"
+                st.write(f"### Resumen de {accion_txt}")
+                st.info(f"**ID:** {tx['id']} | **Tipo:** {tx['tipo']} | **Monto:** $ {tx['monto']:,.2f} MXN\n\n"
                         f"**Concepto:** {tx['concepto']}\n\n"
                         f"**{tx['etiqueta_asociado']}:** {tx['asociado']}")
                 
                 st.markdown("---")
-                st.subheader("¿Qué empleado procesó esta transacción?")
+                st.subheader("¿Qué empleado realiza/autoriza esta acción?")
                 
+                # Pre-seleccionar si ya traía un responsable previamente registrado
+                idx_emp_defecto = 0
+                if tx.get("empleado_responsable") in lista_empleados:
+                    idx_emp_defecto = lista_empleados.index(tx["empleado_responsable"]) + 1
+                    
                 opciones_modal_emp = ["-- Seleccionar Empleado --"] + lista_empleados
-                emp_seleccionado = st.selectbox("Empleado Responsable *", opciones_modal_emp, index=0)
+                emp_seleccionado = st.selectbox("Empleado Responsable *", opciones_modal_emp, index=idx_emp_defecto)
                 
                 c_mod1, c_mod2 = st.columns(2)
                 with c_mod1:
-                    # Deshabilitado si no se ha seleccionado un empleado válido
                     es_invalido = (emp_seleccionado == "-- Seleccionar Empleado --")
                     if st.button("✅ Confirmar y Guardar", disabled=es_invalido, use_container_width=True, type="primary"):
-                        auto_id = f"N-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
-                        nuevo_registro = {
-                            "id": auto_id,
+                        registro_final = {
+                            "id": tx["id"],
                             "fecha": tx["fecha"],
                             "tipo": tx["tipo"],
                             "categoria": tx["categoria"],
@@ -899,8 +902,8 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             "estado_deuda": tx["estado_deuda"],
                             "fecha_vencimiento": tx["fecha_vencimiento"]
                         }
-                        if guardar_registro("finanzas", nuevo_registro, "id"):
-                            st.success(f"¡Transacción guardada exitosamente! Registró: {emp_seleccionado}")
+                        if guardar_registro("finanzas", registro_final, "id"):
+                            st.success(f"¡Transacción procesada exitosamente! Registró/Modificó: {emp_seleccionado}")
                             del st.session_state["transaccion_pendiente"]
                             time.sleep(1)
                             st.rerun()
@@ -912,22 +915,24 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             modal_confirmacion_empleado()
 
         else:
-            # Fallback para versiones previas de Streamlit sin st.dialog
-            with st.expander("👤 **SELECCIONAR EMPLEADO QUE REALIZA LA TRANSACCIÓN**", expanded=True):
-                tx = st.session_state["transaccion_pendiente"]
-                st.info(f"**{tx['tipo']}** de **$ {tx['monto']:,.2f} MXN** - Concepto: *{tx['concepto']}* ({tx['etiqueta_asociado']}: {tx['asociado']})")
+            with st.expander("👤 **SELECCIONAR EMPLEADO RESPONSABLE**", expanded=True):
+                accion_txt = "Edición" if tx.get("es_edicion", False) else "Registro"
+                st.info(f"**{accion_txt} ({tx['id']})**: **{tx['tipo']}** por **$ {tx['monto']:,.2f} MXN** - *{tx['concepto']}* ({tx['etiqueta_asociado']}: {tx['asociado']})")
                 
+                idx_emp_defecto = 0
+                if tx.get("empleado_responsable") in lista_empleados:
+                    idx_emp_defecto = lista_empleados.index(tx["empleado_responsable"]) + 1
+                    
                 opciones_modal_emp = ["-- Seleccionar Empleado --"] + lista_empleados
-                emp_seleccionado = st.selectbox("Selecciona Empleado Responsable *", opciones_modal_emp, index=0, key="exp_emp_sel")
+                emp_seleccionado = st.selectbox("Selecciona Empleado Responsable *", opciones_modal_emp, index=idx_emp_defecto, key="exp_emp_sel")
                 
                 es_invalido = (emp_seleccionado == "-- Seleccionar Empleado --")
                 col_exp1, col_exp2 = st.columns(2)
                 
                 with col_exp1:
-                    if st.button("✅ Confirmar y Guardar Transacción", disabled=es_invalido, use_container_width=True, type="primary", key="btn_conf_exp"):
-                        auto_id = f"N-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
-                        nuevo_registro = {
-                            "id": auto_id,
+                    if st.button("✅ Confirmar y Guardar", disabled=es_invalido, use_container_width=True, type="primary", key="btn_conf_exp"):
+                        registro_final = {
+                            "id": tx["id"],
                             "fecha": tx["fecha"],
                             "tipo": tx["tipo"],
                             "categoria": tx["categoria"],
@@ -940,8 +945,8 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             "estado_deuda": tx["estado_deuda"],
                             "fecha_vencimiento": tx["fecha_vencimiento"]
                         }
-                        if guardar_registro("finanzas", nuevo_registro, "id"):
-                            st.success(f"¡Transacción guardada exitosamente! Registró: {emp_seleccionado}")
+                        if guardar_registro("finanzas", registro_final, "id"):
+                            st.success(f"¡Transacción procesada exitosamente! Registró/Modificó: {emp_seleccionado}")
                             del st.session_state["transaccion_pendiente"]
                             time.sleep(1)
                             st.rerun()
@@ -950,7 +955,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         del st.session_state["transaccion_pendiente"]
                         st.rerun()
 
-    # --- EDICIÓN MANUAL Y ELIMINACIÓN ---
+    # --- EDICIÓN MANUAL Y ELIMINACIÓN DE TRANSACCIONES ---
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
@@ -986,7 +991,27 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 idx_met = metodos_pago.index(met_actual) if met_actual in metodos_pago else 0
                 edit_pago = st.selectbox("Método de Pago", metodos_pago, index=idx_met, key=f"ed_pag_{id_seleccionado}")
                 
-                edit_asociado = st.text_input("Cliente/Proveedor/Beneficiario", value=str(fila_sel.get('asociado', 'N/A')), key=f"ed_aso_{id_seleccionado}")
+                # --- ASOCIACIÓN DINÁMICA DE PROVEEDOR / CLIENTE / OTROS SEGÚN EL TIPO DE TRANSACCIÓN EDITADA ---
+                asociado_previo = str(fila_sel.get('asociado', ''))
+                
+                if edit_tipo == "Ingreso":
+                    lista_opciones_aso = lista_clientes
+                    idx_aso = lista_opciones_aso.index(asociado_previo) if asociado_previo in lista_opciones_aso else 0
+                    edit_asociado = st.selectbox("Cliente / Venta al Público", lista_opciones_aso, index=idx_aso, key=f"ed_aso_{id_seleccionado}")
+                    etiqueta_asociado_ed = "Cliente"
+                else:
+                    if edit_cat == "Nomina":
+                        if lista_empleados:
+                            idx_aso = lista_empleados.index(asociado_previo) if asociado_previo in lista_empleados else 0
+                            edit_asociado = st.selectbox("Empleado Beneficiario (Nómina)", lista_empleados, index=idx_aso, key=f"ed_aso_{id_seleccionado}")
+                        else:
+                            edit_asociado = st.text_input("Empleado Beneficiario", value=asociado_previo or "Empleado General", key=f"ed_aso_txt_{id_seleccionado}")
+                        etiqueta_asociado_ed = "Empleado Beneficiario"
+                    else:
+                        lista_opciones_aso = lista_proveedores
+                        idx_aso = lista_opciones_aso.index(asociado_previo) if asociado_previo in lista_opciones_aso else 0
+                        edit_asociado = st.selectbox("Proveedor / Egreso General", lista_opciones_aso, index=idx_aso, key=f"ed_aso_{id_seleccionado}")
+                        etiqueta_asociado_ed = "Proveedor"
 
             with ec3:
                 opciones_lotes_ed = ["Ninguno"]
@@ -1004,13 +1029,14 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("💾 Actualizar Registro", use_container_width=True, key=f"btn_act_{id_seleccionado}"):
+                if st.button("💾 Guardar Cambios (Proceder)", use_container_width=True, key=f"btn_act_{id_seleccionado}"):
                     if edit_monto <= 0:
                         st.error("❌ El monto debe ser mayor a $0.00 MXN.")
                     elif not edit_concepto:
                         st.error("❌ Por favor escribe un Concepto o Descripción.")
                     else:
-                        registro_actualizado = {
+                        # Se asigna a transaccion_pendiente para disparar el modal de confirmación de empleado
+                        st.session_state["transaccion_pendiente"] = {
                             "id": id_seleccionado,
                             "fecha": edit_fecha,
                             "tipo": edit_tipo,
@@ -1019,15 +1045,14 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             "monto": float(edit_monto),
                             "metodo_pago": edit_pago,
                             "asociado": edit_asociado,
-                            "empleado_responsable": fila_sel.get('empleado_responsable', 'N/A'),
+                            "etiqueta_asociado": etiqueta_asociado_ed,
+                            "empleado_responsable": fila_sel.get('empleado_responsable', ''),
                             "lote_asociado": edit_lote,
                             "estado_deuda": edit_estado,
-                            "fecha_vencimiento": edit_venc
+                            "fecha_vencimiento": edit_venc,
+                            "es_edicion": True
                         }
-                        if guardar_registro("finanzas", registro_actualizado, "id"):
-                            st.success(f"¡Transacción {id_seleccionado} actualizada correctamente!")
-                            time.sleep(1)
-                            st.rerun()
+                        st.rerun()
 
             with btn_col2:
                 if st.button("🗑️ Eliminar Transacción", use_container_width=True, type="primary", key=f"btn_del_{id_seleccionado}"):
