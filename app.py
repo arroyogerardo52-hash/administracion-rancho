@@ -1123,12 +1123,15 @@ if modulo_activo == "🤠 Personal / Empleados":
         e_periodo_val, e_direccion_val, e_tel_val, e_email_val, e_estatus_val = "Quincenal", "", "", "", "Activo"
         emp_a_editar = None
 
+        # Obtener DataFrame de empleados de globals o session_state
+        df_emp_ref = globals().get('df_empleados', st.session_state.get('df_empleados', pd.DataFrame()))
+
         if modo_form == "Editar Empleado Existente":
-            if 'df_empleados' in globals() and isinstance(df_empleados, pd.DataFrame) and not df_empleados.empty and 'nombre' in df_empleados.columns:
-                lista_empleados = [e for e in df_empleados['nombre'].dropna().unique() if str(e).strip()]
+            if isinstance(df_emp_ref, pd.DataFrame) and not df_emp_ref.empty and 'nombre' in df_emp_ref.columns:
+                lista_empleados = [e for e in df_emp_ref['nombre'].dropna().unique() if str(e).strip()]
                 if lista_empleados:
                     emp_a_editar = st.selectbox("Selecciona Empleado a Editar:", lista_empleados)
-                    row_emp = df_empleados[df_empleados['nombre'] == emp_a_editar].iloc[0]
+                    row_emp = df_emp_ref[df_emp_ref['nombre'] == emp_a_editar].iloc[0]
                     
                     e_nombre_val = str(row_emp.get('nombre', ''))
                     e_puesto_val = str(row_emp.get('puesto_funcion', ''))
@@ -1194,9 +1197,8 @@ if modulo_activo == "🤠 Personal / Empleados":
                         "estatus": e_estatus
                     }
                     
-                    # SANITIZACIÓN AUTOMÁTICA: Si df_empleados ya existe, filtra solo las columnas que Supabase reconoce
-                    if 'df_empleados' in globals() and isinstance(df_empleados, pd.DataFrame) and not df_empleados.empty:
-                        cols_validas = list(df_empleados.columns)
+                    if isinstance(df_emp_ref, pd.DataFrame) and not df_emp_ref.empty:
+                        cols_validas = list(df_emp_ref.columns)
                         datos_empleado = {k: v for k, v in datos_empleado.items() if k in cols_validas or k == 'nombre'}
 
                     if guardar_registro("empleados", datos_empleado, "nombre"):
@@ -1212,8 +1214,10 @@ if modulo_activo == "🤠 Personal / Empleados":
         with col_bus_emp:
             buscar_emp = st.text_input("🔍 Buscar Empleado:", key="bus_emp").strip()
 
-        if 'df_empleados' in globals() and isinstance(df_empleados, pd.DataFrame) and not df_empleados.empty:
-            df_emp_vista = df_empleados.copy()
+        df_emp_list = globals().get('df_empleados', st.session_state.get('df_empleados', pd.DataFrame()))
+
+        if isinstance(df_emp_list, pd.DataFrame) and not df_emp_list.empty:
+            df_emp_vista = df_emp_list.copy()
 
             if buscar_emp:
                 df_emp_vista = df_emp_vista[
@@ -1253,10 +1257,9 @@ if modulo_activo == "🤠 Personal / Empleados":
 
             if st.button("💾 Guardar Cambios Realizados en la Tabla", type="primary", use_container_width=True):
                 cambios_guardados = 0
-                cols_validas = list(df_empleados.columns)
+                cols_validas = list(df_emp_list.columns)
                 for index, row in df_editado.iterrows():
                     datos_emp = row.to_dict()
-                    # Filtrar solo columnas existentes en Supabase
                     datos_emp = {k: v for k, v in datos_emp.items() if k in cols_validas or k == 'nombre'}
                         
                     if 'nombre' in datos_emp and pd.notna(datos_emp['nombre']):
@@ -1271,7 +1274,7 @@ if modulo_activo == "🤠 Personal / Empleados":
             st.divider()
             col_del1, col_del2 = st.columns(2)
             
-            lista_emp_elim = [e for e in df_empleados['nombre'].dropna().unique() if str(e).strip()] if 'nombre' in df_empleados.columns else []
+            lista_emp_elim = [e for e in df_emp_list['nombre'].dropna().unique() if str(e).strip()] if 'nombre' in df_emp_list.columns else []
 
             if lista_emp_elim:
                 with col_del1:
@@ -1283,9 +1286,9 @@ if modulo_activo == "🤠 Personal / Empleados":
                     col_btn1, col_btn2 = st.columns(2)
                     with col_btn1:
                         if st.button("⚠️ Cambiar a Inactivo", use_container_width=True):
-                            datos_inactivo = df_empleados[df_empleados['nombre'] == emp_sel].iloc[0].to_dict()
+                            datos_inactivo = df_emp_list[df_emp_list['nombre'] == emp_sel].iloc[0].to_dict()
                             datos_inactivo['estatus'] = "Inactivo"
-                            cols_validas = list(df_empleados.columns)
+                            cols_validas = list(df_emp_list.columns)
                             datos_inactivo = {k: v for k, v in datos_inactivo.items() if k in cols_validas or k == 'nombre'}
                             if guardar_registro("empleados", datos_inactivo, "nombre"):
                                 st.warning(f"Empleado {emp_sel} marcado como Inactivo.")
@@ -1307,26 +1310,35 @@ if modulo_activo == "🤠 Personal / Empleados":
     with tab_transacciones:
         st.subheader("📊 Transacciones Registradas por Empleado")
 
-        df_tx_base = pd.DataFrame()
+        # Consolida TODAS las fuentes disponibles en lugar de hacer 'break' en la primera
+        lista_dfs = []
         fuentes_posibles = ['df_transacciones', 'df_ventas', 'df_compras', 'df_gastos']
         
         for fuente in fuentes_posibles:
-            if fuente in globals() and isinstance(globals()[fuente], pd.DataFrame) and not globals()[fuente].empty:
-                df_tx_base = globals()[fuente].copy()
-                break
-            elif fuente in st.session_state and isinstance(st.session_state[fuente], pd.DataFrame) and not st.session_state[fuente].empty:
-                df_tx_base = st.session_state[fuente].copy()
-                break
+            df_temp = globals().get(fuente, st.session_state.get(fuente, None))
+            if isinstance(df_temp, pd.DataFrame) and not df_temp.empty:
+                df_copy = df_temp.copy()
+                if 'Origen' not in df_copy.columns:
+                    df_copy['Origen'] = fuente.replace('df_', '').capitalize()
+                lista_dfs.append(df_copy)
 
-        if not df_tx_base.empty:
+        if lista_dfs:
+            df_tx_base = pd.concat(lista_dfs, ignore_index=True)
+            
             columnas_empleado = ['empleado', 'registrado_por', 'usuario', 'atendido_por', 'personal', 'nombre_empleado']
             col_emp_tx = next((c for c in columnas_empleado if c in df_tx_base.columns), None)
             
+            # Formatear nombres para asegurar coincidencia sin importar mayúsculas/espacios
+            if col_emp_tx:
+                df_tx_base[col_emp_tx] = df_tx_base[col_emp_tx].astype(str).str.strip().str.upper()
+
             col_f1, col_f2 = st.columns([2, 2])
             with col_f1:
                 opciones_empleados = ["TODOS"]
-                if 'df_empleados' in globals() and isinstance(df_empleados, pd.DataFrame) and not df_empleados.empty and 'nombre' in df_empleados.columns:
-                    opciones_empleados += list(df_empleados['nombre'].dropna().unique())
+                df_emp_sub = globals().get('df_empleados', st.session_state.get('df_empleados', pd.DataFrame()))
+                
+                if isinstance(df_emp_sub, pd.DataFrame) and not df_emp_sub.empty and 'nombre' in df_emp_sub.columns:
+                    opciones_empleados += list(df_emp_sub['nombre'].dropna().astype(str).str.strip().str.upper().unique())
                 elif col_emp_tx:
                     opciones_empleados += list(df_tx_base[col_emp_tx].dropna().unique())
                 
@@ -1339,15 +1351,19 @@ if modulo_activo == "🤠 Personal / Empleados":
 
             def colorear_filas_por_empleado(row):
                 nombre_emp = row.get(col_emp_tx, '') if col_emp_tx else ''
-                bg_color = obtener_color_empleado(nombre_emp)
+                bg_color = obtener_color_empleado(nombre_emp) if 'obtener_color_empleado' in globals() else '#ffffff'
                 return [f'background-color: {bg_color}; color: #000000;'] * len(row)
 
-            if col_emp_tx:
-                df_styled = df_tx_display.style.apply(colorear_filas_por_empleado, axis=1)
-                st.dataframe(df_styled, use_container_width=True, hide_index=True)
+            if col_emp_tx and not df_tx_display.empty:
+                try:
+                    df_styled = df_tx_display.style.apply(colorear_filas_por_empleado, axis=1)
+                    st.dataframe(df_styled, use_container_width=True, hide_index=True)
+                except Exception:
+                    st.dataframe(df_tx_display, use_container_width=True, hide_index=True)
             else:
                 st.dataframe(df_tx_display, use_container_width=True, hide_index=True)
-                st.caption("💡 Se encontraron registros de transacciones. Para resaltar con colores únicos por empleado, incluye una columna llamada 'empleado' o 'registrado_por' en la tabla.")
+                if not col_emp_tx:
+                    st.caption("💡 Se encontraron registros de transacciones. Para resaltar con colores únicos por empleado, incluye una columna llamada 'empleado' o 'registrado_por' en tu base de datos.")
         else:
             st.info("No hay historial de transacciones cargado o disponible en el sistema.")
 
