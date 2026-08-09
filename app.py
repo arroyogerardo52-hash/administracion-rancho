@@ -1522,58 +1522,84 @@ if modulo_activo == "🤝 Clientes":
 elif modulo_activo == "🚜 Proveedores":
     st.header("🚜 Gestión y Catálogo de Proveedores")
     
-    # Aseguramos que el DataFrame tenga las columnas mínimas para evitar errores visuales
-    cols_requeridas = ["nombre_proveedor", "categoria", "telefono", "correo", "dias_credito", "datos_bancarios", "estatus"]
+    # Columnas estandarizadas en la base de datos
+    cols_requeridas = ["nombre_proveedor", "insumo_principal", "telefono", "correo", "direccion", "dias_credito", "datos_bancarios", "estatus"]
+    
     if df_proveedores.empty:
         df_prov_base = pd.DataFrame(columns=cols_requeridas)
     else:
         df_prov_base = df_proveedores.copy()
+        # Asegurar que existan todas las columnas
         for col in cols_requeridas:
             if col not in df_prov_base.columns:
-                df_prov_base[col] = "" if col != "estatus" else "ACTIVO"
+                df_prov_base[col] = "ACTIVO" if col == "estatus" else ""
 
-    tab_formulario, tab_catalogo = st.tabs(["➕ Alta / Edición de Proveedor", "📋 Catálogo y Directorio"])
+    tab_formulario, tab_catalogo = st.tabs(["📝 Formulario de Registro / Edición", "📋 Directorio y Catálogo"])
 
     # ---------------------------------------------------------
-    # TAB 1: FORMULARIO DE ALTA Y EDICIÓN (PUNTOS 1, 2 Y 4)
+    # TAB 1: FORMULARIO DE ALTA Y EDICIÓN CLARO Y VISIBLE
     # ---------------------------------------------------------
     with tab_formulario:
-        st.subheader("📝 Registro y Modificación")
+        st.subheader("Acción a realizar")
         
-        # Selección de Modo: Crear Nuevo o Editar Existente
-        opciones_modo = ["➕ CREAR NUEVO PROVEEDOR"]
-        if not df_prov_base.empty and "nombre_proveedor" in df_prov_base.columns:
-            opciones_modo += sorted([p for p in df_prov_base["nombre_proveedor"].dropna().unique() if str(p).strip()])
-            
-        prov_seleccionado = st.selectbox("Selecciona una opción para capturar o editar:", opciones_modo)
-        es_edicion = prov_seleccionado != "➕ CREAR NUEVO PROVEEDOR"
-
-        # Cargar datos por defecto si estamos en modo Edición
+        # Switch claro para elegir entre Crear o Editar
+        accion_form = st.radio(
+            "Selecciona una opción:",
+            ["➕ Registrar Nuevo Proveedor", "✏️ Modificar Proveedor Existente"],
+            horizontal=True
+        )
+        
+        es_edicion = accion_form == "✏️ Modificar Proveedor Existente"
+        prov_a_editar = None
         datos_previos = {}
-        if es_edicion:
-            registro = df_prov_base[df_prov_base["nombre_proveedor"] == prov_seleccionado]
-            if not registro.empty:
-                datos_previos = registro.iloc[0].to_dict()
 
+        if es_edicion:
+            lista_provs = sorted([p for p in df_prov_base["nombre_proveedor"].dropna().unique() if str(p).strip()])
+            if lista_provs:
+                prov_a_editar = st.selectbox("🔍 Selecciona el proveedor que deseas modificar:", lista_provs)
+                registro = df_prov_base[df_prov_base["nombre_proveedor"] == prov_a_editar]
+                if not registro.empty:
+                    datos_previos = registro.iloc[0].to_dict()
+            else:
+                st.warning("⚠️ No hay proveedores registrados para modificar.")
+
+        st.markdown("---")
+        
+        # Formulario
         with st.form("form_proveedores", clear_on_submit=False):
+            st.markdown(f"### {'✏️ Modificando: ' + str(prov_a_editar) if es_edicion else '➕ Captura de Nuevo Proveedor'}")
+            
             col_f1, col_f2 = st.columns(2)
             
             with col_f1:
                 p_nombre = st.text_input(
                     "Nombre del Proveedor / Razón Social *",
                     value=datos_previos.get("nombre_proveedor", ""),
-                    disabled=es_edicion # Evita modificar la llave primaria si tu función guarda por nombre
+                    disabled=es_edicion,
+                    help="El nombre no se puede modificar si estás editando (es el identificador)."
                 ).strip().upper()
                 
-                categorias_preset = ["ALIMENTO / NUTRICIÓN", "SALUD / VETERINARIA", "COMBUSTIBLE / DIÉSEL", "MAQUINARIA / REFACCIONES", "SERVICIOS", "OTRO"]
-                cat_prev = datos_previos.get("categoria", "ALIMENTO / NUTRICIÓN")
-                idx_cat = categorias_preset.index(cat_prev) if cat_prev in categorias_preset else 0
+                p_insumo = st.text_input(
+                    "Insumo Principal / Giro * (Ej: ALIMENTO, MEDICINAS, DIÉSEL)",
+                    value=str(datos_previos.get("insumo_principal", ""))
+                ).strip().upper()
                 
-                p_categoria = st.selectbox("Categoría / Giro Principal", categorias_preset, index=idx_cat)
-                p_telefono = st.text_input("Teléfono de Contacto", value=str(datos_previos.get("telefono", ""))).strip()
-                p_correo = st.text_input("Correo Electrónico", value=str(datos_previos.get("correo", ""))).strip()
+                p_telefono = st.text_input(
+                    "Teléfono de Contacto",
+                    value=str(datos_previos.get("telefono", ""))
+                ).strip()
+                
+                p_correo = st.text_input(
+                    "Correo Electrónico",
+                    value=str(datos_previos.get("correo", ""))
+                ).strip()
 
             with col_f2:
+                p_direccion = st.text_input(
+                    "Dirección / Ubicación",
+                    value=str(datos_previos.get("direccion", ""))
+                ).strip().upper()
+                
                 p_dias_credito = st.number_input(
                     "Días de Crédito (0 = Contado)",
                     min_value=0,
@@ -1582,110 +1608,109 @@ elif modulo_activo == "🚜 Proveedores":
                 )
                 
                 estatus_opciones = ["ACTIVO", "INACTIVO"]
-                est_prev = datos_previos.get("estatus", "ACTIVO")
+                est_prev = str(datos_previos.get("estatus", "ACTIVO")).upper()
                 idx_est = estatus_opciones.index(est_prev) if est_prev in estatus_opciones else 0
-                p_estatus = st.selectbox("Estatus del Proveedor", estatus_opciones, index=idx_est)
+                p_estatus = st.selectbox("Estatus", estatus_opciones, index=idx_est)
                 
                 p_datos_bancarios = st.text_area(
                     "Datos de Pago / Cuenta CLABE / Banco",
                     value=str(datos_previos.get("datos_bancarios", "")),
-                    height=100
+                    height=68
                 ).strip().upper()
 
             submit_label = "🔄 Actualizar Proveedor" if es_edicion else "💾 Guardar Proveedor"
             submit_prov = st.form_submit_button(submit_label, use_container_width=True)
 
             if submit_prov:
-                if not p_nombre:
+                nombre_final = prov_a_editar if es_edicion else p_nombre
+                
+                if not nombre_final:
                     st.error("❌ El nombre del proveedor es obligatorio.")
+                elif not p_insumo:
+                    st.error("❌ El insumo principal o giro es obligatorio.")
                 else:
                     datos_proveedor = {
-                        "nombre_proveedor": p_nombre,
-                        "categoria": p_categoria,
+                        "nombre_proveedor": nombre_final,
+                        "insumo_principal": p_insumo,
                         "telefono": p_telefono,
                         "correo": p_correo,
+                        "direccion": p_direccion,
                         "dias_credito": p_dias_credito,
                         "datos_bancarios": p_datos_bancarios,
                         "estatus": p_estatus
                     }
                     
                     if guardar_registro("proveedores", datos_proveedor, "nombre_proveedor"):
-                        st.success(f"Proveedor '{p_nombre}' {'actualizado' if es_edicion else 'guardado'} correctamente.")
+                        st.success(f"Proveedor '{nombre_final}' {'actualizado' if es_edicion else 'guardado'} correctamente.")
                         time.sleep(0.4)
                         st.rerun()
 
     # ---------------------------------------------------------
-    # TAB 2: CATÁLOGO Y CONSULTA (PUNTO 3)
+    # TAB 2: DIRECTORIO Y CATÁLOGO
     # ---------------------------------------------------------
     with tab_catalogo:
         st.subheader("📋 Directorio de Proveedores")
         
-        col_bus_prov, col_filtro_cat, col_rep_prov = st.columns([2, 1.5, 1.5])
+        col_bus, col_rep = st.columns([3, 1.5])
         
-        with col_bus_prov:
-            buscar_prov = st.text_input("🔍 Buscar por Nombre / Datos:", key="bus_prov").strip()
-            
-        with col_filtro_cat:
-            cat_filtro = st.selectbox("Filtrar por Giro:", ["TODOS"] + list(df_prov_base["categoria"].unique()) if "categoria" in df_prov_base.columns else ["TODOS"])
+        with col_bus:
+            buscar_prov = st.text_input("🔍 Buscar por Nombre, Insumo, Dirección o Teléfono:", key="bus_prov").strip()
 
         df_prov_vista = df_prov_base.copy()
 
-        # Aplicar Filtros
+        # Aplicar Búsqueda
         if not df_prov_vista.empty:
-            if cat_filtro != "TODOS":
-                df_prov_vista = df_prov_vista[df_prov_vista["categoria"] == cat_filtro]
-                
             if buscar_prov:
                 df_prov_vista = df_prov_vista[
                     df_prov_vista.astype(str).apply(lambda x: x.str.contains(buscar_prov, case=False)).any(axis=1)
                 ]
 
             # Botón de Descarga
-            with col_rep_prov:
+            with col_rep:
                 st.write("")
-                cols_html_headers = ["Nombre Proveedor", "Categoría", "Teléfono", "Correo", "Días Crédito", "Estatus"]
-                cols_df_keys = ["nombre_proveedor", "categoria", "telefono", "correo", "dias_credito", "estatus"]
+                cols_html_headers = ["Nombre Proveedor", "Insumo Principal", "Teléfono", "Correo", "Dirección", "Días Crédito", "Estatus"]
+                cols_df_keys = ["nombre_proveedor", "insumo_principal", "telefono", "correo", "direccion", "dias_credito", "estatus"]
                 
-                # Filtrar solo columnas existentes para el reporte
                 cols_existentes_keys = [c for c in cols_df_keys if c in df_prov_vista.columns]
                 cols_existentes_headers = [cols_html_headers[i] for i, c in enumerate(cols_df_keys) if c in df_prov_vista.columns]
 
                 html_prov = generar_html_docs("Registro de Proveedores", cols_existentes_headers, df_prov_vista, cols_existentes_keys)
                 st.download_button(
-                    label="📄 Reporte (Docs)",
+                    label="📄 Exportar Reporte (Docs)",
                     data=html_prov,
                     file_name=f"Reporte_Proveedores_{datetime.now().strftime('%Y%m%d')}.doc",
                     mime="application/msword",
                     use_container_width=True
                 )
 
-            # Mostrar Tabla de Proveedores
+            # Tabla de Proveedores
             st.dataframe(
                 df_prov_vista,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
                     "nombre_proveedor": "Proveedor / Razón Social",
-                    "categoria": "Giro / Categoría",
+                    "insumo_principal": "Insumo Principal / Giro",
                     "telefono": "Teléfono",
                     "correo": "Correo Electrónico",
+                    "direccion": "Dirección",
                     "dias_credito": st.column_config.NumberColumn("Días Crédito", format="%d días"),
                     "datos_bancarios": "Datos de Pago",
                     "estatus": "Estatus"
                 }
             )
 
-            # Zona de Eliminación / Baja
+            # Sección de Eliminación
             st.markdown("---")
-            with st.expander("🗑️ Opciones de Eliminación Definitiva"):
+            with st.expander("🗑️ Eliminar Registro de Proveedor"):
                 col_del1, col_del2 = st.columns([3, 1])
                 with col_del1:
                     prov_sel_del = st.selectbox("Selecciona Proveedor a Eliminar:", df_prov_base['nombre_proveedor'].unique(), key="sb_del_prov")
                 with col_del2:
                     st.write("")
-                    if st.button("🗑️ Eliminar Registro", type="primary", use_container_width=True):
+                    if st.button("🗑️ Eliminar Definitivamente", type="primary", use_container_width=True):
                         if eliminar_registro("proveedores", "nombre_proveedor", prov_sel_del):
-                            st.success(f"Proveedor '{prov_sel_del}' eliminado.")
+                            st.success(f"Proveedor '{prov_sel_del}' eliminado correctamente.")
                             time.sleep(0.4)
                             st.rerun()
         else:
