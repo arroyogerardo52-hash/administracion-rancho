@@ -7,6 +7,28 @@ import time
 import json
 import os
 
+# =========================================================
+# 1. FUNCIONES DE CONEXIÓN A SUPABASE Y NAVEGACIÓN
+# =========================================================
+# Asegúrate de tener aquí tus funciones habituales:
+# - cargar_tabla(nombre_tabla)
+# - guardar_registro(tabla, datos, id_col)
+# - eliminar_registro(tabla, col_id, val_id)
+# - generar_html_docs(...)
+
+# =========================================================
+# 2. CARGA DE TABLAS DESDE SUPABASE
+# =========================================================
+df_proveedores = cargar_tabla("proveedores")
+df_ordenes_compra = cargar_tabla("ordenes_compra")
+df_detalle_orden_compra = cargar_tabla("detalle_orden_compra")
+
+# =========================================================
+# 3. BARRA LATERAL Y NAVEGACIÓN
+# =========================================================
+modulo_activo = st.sidebar.selectbox(
+    "Selecciona un Módulo:",
+    ["🚜 Proveedores", "📦 Órdenes de Compra"]
 # -------------------------------------------------------------
 # 1. BANDERAS DE PRIVACIDAD Y CARGA DE USUARIOS
 # -------------------------------------------------------------
@@ -1733,7 +1755,217 @@ elif modulo_activo == "🚜 Proveedores":
                             st.rerun()
         else:
             st.info("No hay proveedores registrados aún o no coinciden con la búsqueda.")
-# MÓDULO 5: CONTROL DE LOTES
+# MÓDULO 5: ÓRDENES DE COMPRA
+elif modulo_activo == "📦 Órdenes de Compra":
+    st.header("📦 Gestión de Órdenes de Compra")
+    
+    # ---------------------------------------------------------
+    # CARGA Y PREPARACIÓN DE DATOS
+    # ---------------------------------------------------------
+    # Filtrar solo proveedores activos de tu catálogo
+    provs_activos = []
+    if not df_proveedores.empty and "nombre_proveedor" in df_proveedores.columns:
+        if "estatus" in df_proveedores.columns:
+            df_activos = df_proveedores[df_proveedores["estatus"] == "ACTIVO"]
+        else:
+            df_activos = df_proveedores.copy()
+        provs_activos = sorted([p for p in df_activos["nombre_proveedor"].dropna().unique() if str(p).strip()])
+
+    tab_nueva_oc, tab_historial_oc, tab_detalle_oc = st.tabs([
+        "➕ Crear Orden de Compra", 
+        "📋 Historial y Control", 
+        "🔍 Detalle de Orden"
+    ])
+
+    # ---------------------------------------------------------
+    # TAB 1: CREAR NUEVA ÓRDEN DE COMPRA
+    # ---------------------------------------------------------
+    with tab_nueva_oc:
+        st.subheader("📝 Captura de Pedido")
+        
+        if not provs_activos:
+            st.warning("⚠️ No hay proveedores ACTIVOS disponibles. Registra o activa al menos un proveedor antes de crear una orden.")
+        else:
+            # Generación de Folio Automático basado en la fecha y hora
+            folio_sugerido = f"OC-{datetime.now().strftime('%Y%m%d-%H%M')}"
+            
+            col_oc1, col_oc2, col_oc3 = st.columns(3)
+            with col_oc1:
+                oc_folio = st.text_input("Folio de Orden", value=folio_sugerido, disabled=True)
+                oc_proveedor = st.selectbox("Selecciona Proveedor *", provs_activos)
+                
+            with col_oc2:
+                oc_fecha_emision = st.date_input("Fecha de Emisión", value=datetime.today())
+                oc_fecha_entrega = st.date_input("Fecha Estimada de Entrega", value=datetime.today() + timedelta(days=3))
+                
+            with col_oc3:
+                # Obtener días de crédito por defecto del proveedor seleccionado
+                dias_cred_def = 0
+                if "dias_credito" in df_proveedores.columns:
+                    reg_p = df_proveedores[df_proveedores["nombre_proveedor"] == oc_proveedor]
+                    if not reg_p.empty:
+                        dias_cred_def = reg_p.iloc[0].get("dias_credito", 0)
+                        
+                oc_condiciones = st.text_input("Condiciones de Pago", value=f"Crédito {dias_cred_def} días" if int(dias_cred_def) > 0 else "Contado")
+                oc_observaciones = st.text_input("Observaciones / Lugar de entrega", value="ENTREGA EN RANCHO")
+
+            st.markdown("---")
+            st.markdown("### 🛒 Insumos y Productos Solicitados")
+            st.caption("Agrega los productos en la tabla. Las cantidades y precios calcularán el total automáticamente.")
+
+            # Tabla interactiva para captura de renglones de insumos
+            df_items_def = pd.DataFrame([
+                {"concepto": "ALIMENTO ENGORDA (BULTO 40KG)", "cantidad": 10.0, "unidad_medida": "BULTO", "precio_unitario": 350.0},
+            ])
+
+            df_editor = st.data_editor(
+                df_items_def,
+                num_rows="dynamic",
+                use_container_width=True,
+                column_config={
+                    "concepto": st.column_config.TextColumn("Concepto / Insumo *", required=True),
+                    "cantidad": st.column_config.NumberColumn("Cantidad *", min_value=0.01, format="%.2f", required=True),
+                    "unidad_medida": st.column_config.SelectboxColumn("Unidad", options=["BULTO", "KG", "TONELADA", "DOSIS", "FRASCO", "LITRO", "PIEZA", "VIAJE"], required=True),
+                    "precio_unitario": st.column_config.NumberColumn("Precio Unitario ($) *", min_value=0.0, format="$%.2f", required=True),
+                },
+                key="editor_orden_compra"
+            )
+
+            # Cálculo en tiempo real
+            if not df_editor.empty and "cantidad" in df_editor.columns and "precio_unitario" in df_editor.columns:
+                df_editor_calc = df_editor.dropna(subset=["concepto"]).copy()
+                df_editor_calc["subtotal"] = df_editor_calc["cantidad"] * df_editor_calc["precio_unitario"]
+                total_calculado = df_editor_calc["subtotal"].sum()
+            else:
+                total_calculado = 0.0
+
+            col_tot1, col_tot2 = st.columns([2, 1])
+            with col_tot2:
+                st.metric(label="💰 MOTO TOTAL DE LA ÓRDEN", value=f"${total_calculado:,.2f}")
+
+            if st.button("💾 Guardar y Generar Órden de Compra", type="primary", use_container_width=True):
+                df_valido = df_editor.dropna(subset=["concepto"]) if not df_editor.empty else pd.DataFrame()
+                
+                if df_valido.empty:
+                    st.error("❌ Debes agregar al menos un insumo a la orden de compra.")
+                elif total_calculado <= 0:
+                    st.error("❌ El monto total de la orden debe ser mayor a $0.00.")
+                else:
+                    # 1. Guardar Registro Encabezado
+                    datos_encabezado = {
+                        "folio": oc_folio,
+                        "nombre_proveedor": oc_proveedor,
+                        "fecha_emision": str(oc_fecha_emision),
+                        "fecha_entrega": str(oc_fecha_entrega),
+                        "estatus": "PENDIENTE",
+                        "monto_total": float(total_calculado),
+                        "condiciones_pago": oc_condiciones,
+                        "observaciones": oc_observaciones
+                    }
+                    
+                    if guardar_registro("ordenes_compra", datos_encabezado, "folio"):
+                        # 2. Guardar Detalle de Insumos
+                        exito_detalle = True
+                        for _, row in df_valido.iterrows():
+                            datos_renglon = {
+                                "folio_orden": oc_folio,
+                                "concepto": str(row["concepto"]).upper().strip(),
+                                "cantidad": float(row["cantidad"]),
+                                "unidad_medida": str(row["unidad_medida"]).upper(),
+                                "precio_unitario": float(row["precio_unitario"])
+                            }
+                            if not guardar_registro("detalle_orden_compra", datos_renglon):
+                                exito_detalle = False
+                        
+                        if exito_detalle:
+                            st.success(f"✅ Órden de compra '{oc_folio}' guardada exitosamente.")
+                            time.sleep(0.5)
+                            st.rerun()
+
+    # ---------------------------------------------------------
+    # TAB 2: HISTORIAL Y CONTROL DE ESTATUS
+    # ---------------------------------------------------------
+    with tab_historial_oc:
+        st.subheader("📋 Historial de Órdenes de Compra")
+        
+        # Carga dinámica si la tabla existe en df_ordenes_compra
+        df_oc_base = df_ordenes_compra.copy() if 'df_ordenes_compra' in locals() and not df_ordenes_compra.empty else pd.DataFrame()
+
+        if not df_oc_base.empty:
+            col_f_est, col_f_prov = st.columns(2)
+            with col_f_est:
+                filtro_estatus = st.selectbox("Filtrar por Estatus:", ["TODOS", "PENDIENTE", "RECIBIDO", "CANCELADO"])
+            with col_f_prov:
+                filtro_prov = st.selectbox("Filtrar por Proveedor:", ["TODOS"] + list(df_oc_base["nombre_proveedor"].unique()))
+
+            df_oc_filtrado = df_oc_base.copy()
+            if filtro_estatus != "TODOS":
+                df_oc_filtrado = df_oc_filtrado[df_oc_filtrado["estatus"] == filtro_estatus]
+            if filtro_prov != "TODOS":
+                df_oc_filtrado = df_oc_filtrado[df_oc_filtrado["nombre_proveedor"] == filtro_prov]
+
+            st.dataframe(
+                df_oc_filtrado,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "folio": "Folio OC",
+                    "nombre_proveedor": "Proveedor",
+                    "fecha_emision": "Emisión",
+                    "fecha_entrega": "Entrega Est.",
+                    "estatus": "Estatus",
+                    "monto_total": st.column_config.NumberColumn("Monto Total", format="$%.2f"),
+                    "condiciones_pago": "Pago",
+                    "observaciones": "Observaciones"
+                }
+            )
+
+            # Acción rápida para cambiar estatus (Recepción)
+            st.markdown("---")
+            st.subheader("📥 Recepción de Mercancía")
+            col_rec1, col_rec2 = st.columns([3, 1])
+            with col_rec1:
+                ordenes_pendientes = df_oc_base[df_oc_base["estatus"] == "PENDIENTE"]["folio"].unique()
+                folio_a_recibir = st.selectbox("Selecciona Folio Pendiente por Recibir:", ordenes_pendientes if len(ordenes_pendientes) > 0 else ["Sin órdenes pendientes"])
+            with col_rec2:
+                st.write("")
+                if st.button("✅ Marcar como RECIBIDO", use_container_width=True, disabled=len(ordenes_pendientes) == 0):
+                    datos_upd = {"folio": folio_a_recibir, "estatus": "RECIBIDO"}
+                    if guardar_registro("ordenes_compra", datos_upd, "folio"):
+                        st.success(f"Orden '{folio_a_recibir}' actualizada a RECIBIDO.")
+                        time.sleep(0.4)
+                        st.rerun()
+        else:
+            st.info("No hay órdenes de compra registradas todavía.")
+
+    # ---------------------------------------------------------
+    # TAB 3: DETALLE COMPLETO Y REPORTE
+    # ---------------------------------------------------------
+    with tab_detalle_oc:
+        st.subheader("🔍 Desglose de Insumos por Folio")
+        if 'df_ordenes_compra' in locals() and not df_ordenes_compra.empty:
+            folio_sel = st.selectbox("Selecciona el Folio a consultar:", df_ordenes_compra["folio"].unique())
+            
+            # Consultar o filtrar detalle si df_detalle_orden_compra existe
+            if 'df_detalle_orden_compra' in locals() and not df_detalle_orden_compra.empty:
+                df_det_folio = df_detalle_orden_compra[df_detalle_orden_compra["folio_orden"] == folio_sel]
+                st.dataframe(
+                    df_det_folio[["concepto", "cantidad", "unidad_medida", "precio_unitario", "subtotal"]],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "concepto": "Insumo / Producto",
+                        "cantidad": "Cantidad",
+                        "unidad_medida": "Unidad",
+                        "precio_unitario": st.column_config.NumberColumn("Precio Unitario", format="$%.2f"),
+                        "subtotal": st.column_config.NumberColumn("Subtotal", format="$%.2f")
+                    }
+                )
+            else:
+                st.info("Carga la tabla 'detalle_orden_compra' al inicio de tu app para ver el desglose en esta pestaña.")
+        else:
+            st.info("No hay folios disponibles para consultar.")
+# MÓDULO 6: CONTROL DE LOTES
 elif modulo_activo == "🐂 Control de Lotes":
     st.header("🐂 Control de Lotes de Ganado")
     with st.form("form_lotes", clear_on_submit=True):
