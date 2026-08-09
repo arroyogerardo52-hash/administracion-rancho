@@ -1058,25 +1058,30 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 if st.button("🗑️ Eliminar Transacción", use_container_width=True, type="primary", key=f"btn_del_{id_seleccionado}"):
                     st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = True
 
-            if st.session_state.get(f"confirmar_eliminar_{id_seleccionado}", False):
-                st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar permanentemente la transacción **{id_seleccionado}**?")
-                col_del_si, col_del_no = st.columns(2)
-                with col_del_si:
-                    if st.button("🔴 Sí, Eliminar", use_container_width=True, key=f"confirm_si_{id_seleccionado}"):
-                        if 'eliminar_registro' in globals():
-                            eliminar_registro("finanzas", id_seleccionado, "id")
-                        else:
-                            df_finanzas = df_finanzas[df_finanzas['id'] != id_seleccionado]
-                            if 'guardar_dataframe' in globals():
-                                guardar_dataframe("finanzas", df_finanzas)
-                        st.success(f"Transacción {id_seleccionado} eliminada exitosamente.")
-                        st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
-                        time.sleep(1)
-                        st.rerun()
-                with col_del_no:
-                    if st.button("❌ Cancelar", use_container_width=True, key=f"confirm_no_{id_seleccionado}"):
-                        st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
-                        st.rerun()
+           # --- CÓDIGO CORREGIDO ---
+if st.session_state.get(f"confirmar_eliminar_{id_seleccionado}", False):
+    st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar permanentemente la transacción **{id_seleccionado}**?")
+    col_del_si, col_del_no = st.columns(2)
+    
+    with col_del_si:
+        if st.button("🔴 Sí, Eliminar", use_container_width=True, key=f"confirm_si_{id_seleccionado}"):
+            if 'eliminar_registro' in globals():
+                # CORRECCIÓN AQUÍ: Primero el nombre de la columna ("id"), luego el valor (id_seleccionado)
+                eliminar_registro("finanzas", "id", id_seleccionado)
+            else:
+                df_finanzas = df_finanzas[df_finanzas['id'] != id_seleccionado]
+                if 'guardar_dataframe' in globals():
+                    guardar_dataframe("finanzas", df_finanzas)
+                    
+            st.success(f"Transacción {id_seleccionado} eliminada exitosamente.")
+            st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
+            time.sleep(1)
+            st.rerun()
+            
+    with col_del_no:
+        if st.button("❌ Cancelar", use_container_width=True, key=f"confirm_no_{id_seleccionado}"):
+            st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
+            st.rerun()
 import streamlit as st
 import pandas as pd
 import numpy as np
