@@ -1529,7 +1529,7 @@ elif modulo_activo == "🚜 Proveedores":
         df_prov_base = pd.DataFrame(columns=cols_requeridas)
     else:
         df_prov_base = df_proveedores.copy()
-        # Asegurar que existan todas las columnas
+        # Asegurar que existan todas las columnas clave
         for col in cols_requeridas:
             if col not in df_prov_base.columns:
                 df_prov_base[col] = "ACTIVO" if col == "estatus" else ""
@@ -1584,20 +1584,25 @@ elif modulo_activo == "🚜 Proveedores":
                     value=str(datos_previos.get("insumo_principal", ""))
                 ).strip().upper()
                 
+                # Carga teléfono o recupera de 'contacto' si venía de versión vieja
+                tel_default = datos_previos.get("telefono", "")
+                if not tel_default or str(tel_default).strip() in ["", "None", "nan"]:
+                    tel_default = datos_previos.get("contacto", "")
+                
                 p_telefono = st.text_input(
                     "Teléfono de Contacto",
-                    value=str(datos_previos.get("telefono", ""))
+                    value=str(tel_default if str(tel_default) != "None" else "")
                 ).strip()
                 
                 p_correo = st.text_input(
                     "Correo Electrónico",
-                    value=str(datos_previos.get("correo", ""))
+                    value=str(datos_previos.get("correo", "") if str(datos_previos.get("correo", "")) != "None" else "")
                 ).strip()
 
             with col_f2:
                 p_direccion = st.text_input(
                     "Dirección / Ubicación",
-                    value=str(datos_previos.get("direccion", ""))
+                    value=str(datos_previos.get("direccion", "") if str(datos_previos.get("direccion", "")) != "None" else "")
                 ).strip().upper()
                 
                 p_dias_credito = st.number_input(
@@ -1614,7 +1619,7 @@ elif modulo_activo == "🚜 Proveedores":
                 
                 p_datos_bancarios = st.text_area(
                     "Datos de Pago / Cuenta CLABE / Banco",
-                    value=str(datos_previos.get("datos_bancarios", "")),
+                    value=str(datos_previos.get("datos_bancarios", "") if str(datos_previos.get("datos_bancarios", "")) != "None" else ""),
                     height=68
                 ).strip().upper()
 
@@ -1646,7 +1651,7 @@ elif modulo_activo == "🚜 Proveedores":
                         st.rerun()
 
     # ---------------------------------------------------------
-    # TAB 2: DIRECTORIO Y CATÁLOGO
+    # TAB 2: DIRECTORIO Y CATÁLOGO (LIMPIO Y UNIFICADO)
     # ---------------------------------------------------------
     with tab_catalogo:
         st.subheader("📋 Directorio de Proveedores")
@@ -1656,10 +1661,23 @@ elif modulo_activo == "🚜 Proveedores":
         with col_bus:
             buscar_prov = st.text_input("🔍 Buscar por Nombre, Insumo, Dirección o Teléfono:", key="bus_prov").strip()
 
-        df_prov_vista = df_prov_base.copy()
+        if not df_prov_base.empty:
+            df_prov_vista = df_prov_base.copy()
 
-        # Aplicar Búsqueda
-        if not df_prov_vista.empty:
+            # 1. Migración en vista: Unificar 'contacto' antiguo dentro de 'telefono'
+            if 'contacto' in df_prov_vista.columns:
+                df_prov_vista['telefono'] = df_prov_vista['telefono'].replace(['', 'None', 'nan', None], pd.NA)
+                df_prov_vista['telefono'] = df_prov_vista['telefono'].fillna(df_prov_vista['contacto'])
+
+            # 2. Reemplazar valores nulos/vacíos/None por '-' para vista profesional
+            df_prov_vista = df_prov_vista.fillna('-').replace(['', 'None', 'none', 'nan', 'NaN'], '-')
+
+            # 3. Filtrar explícitamente solo las columnas deseadas (Oculta la columna 'contacto' repetida)
+            cols_deseadas = ["nombre_proveedor", "insumo_principal", "telefono", "correo", "direccion", "dias_credito", "datos_bancarios", "estatus"]
+            cols_existentes = [c for c in cols_deseadas if c in df_prov_vista.columns]
+            df_prov_vista = df_prov_vista[cols_existentes]
+
+            # 4. Aplicar Búsqueda
             if buscar_prov:
                 df_prov_vista = df_prov_vista[
                     df_prov_vista.astype(str).apply(lambda x: x.str.contains(buscar_prov, case=False)).any(axis=1)
@@ -1668,8 +1686,8 @@ elif modulo_activo == "🚜 Proveedores":
             # Botón de Descarga
             with col_rep:
                 st.write("")
-                cols_html_headers = ["Nombre Proveedor", "Insumo Principal", "Teléfono", "Correo", "Dirección", "Días Crédito", "Estatus"]
-                cols_df_keys = ["nombre_proveedor", "insumo_principal", "telefono", "correo", "direccion", "dias_credito", "estatus"]
+                cols_html_headers = ["Nombre Proveedor", "Insumo Principal", "Teléfono", "Correo", "Dirección", "Días Crédito", "Datos Pago", "Estatus"]
+                cols_df_keys = ["nombre_proveedor", "insumo_principal", "telefono", "correo", "direccion", "dias_credito", "datos_bancarios", "estatus"]
                 
                 cols_existentes_keys = [c for c in cols_df_keys if c in df_prov_vista.columns]
                 cols_existentes_headers = [cols_html_headers[i] for i, c in enumerate(cols_df_keys) if c in df_prov_vista.columns]
@@ -1683,7 +1701,7 @@ elif modulo_activo == "🚜 Proveedores":
                     use_container_width=True
                 )
 
-            # Tabla de Proveedores
+            # Tabla de Proveedores limpia
             st.dataframe(
                 df_prov_vista,
                 use_container_width=True,
@@ -1700,8 +1718,8 @@ elif modulo_activo == "🚜 Proveedores":
                 }
             )
 
-            # Sección de Eliminación
-            st.markdown("---")
+            # Sección de Eliminación con espacio para evitar traslapes visuales
+            st.markdown("<br>", unsafe_allow_html=True)
             with st.expander("🗑️ Eliminar Registro de Proveedor"):
                 col_del1, col_del2 = st.columns([3, 1])
                 with col_del1:
