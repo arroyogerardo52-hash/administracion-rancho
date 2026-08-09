@@ -7,21 +7,26 @@ import time
 import json
 import os
 
-# =========================================================
-# 1. FUNCIONES DE CONEXIÓN A SUPABASE Y NAVEGACIÓN
-# =========================================================
-# Asegúrate de tener aquí tus funciones habituales:
-# - cargar_tabla(nombre_tabla)
-# - guardar_registro(tabla, datos, id_col)
-# - eliminar_registro(tabla, col_id, val_id)
-# - generar_html_docs(...)
+# 2. DEFINICIÓN DE FUNCIONES SUPABASE (Deben estar AQUÍ, antes de llamarlas)
+# Revisa cómo se llama tu función en tu código original. Si es cargar_tabla, asegura su def aquí:
+@st.cache_data(ttl=60)
+def cargar_tabla(nombre_tabla):
+    try:
+        respuesta = supabase.table(nombre_tabla).select("*").execute()
+        return pd.DataFrame(respuesta.data)
+    except Exception as e:
+        st.error(f"Error al cargar la tabla {nombre_tabla}: {e}")
+        return pd.DataFrame()
 
-# Carga de tablas
+# (Aquí van también tus otras funciones como guardar_registro, eliminar_registro, etc.)
+
+
+# 3. CARGA DE DATOS (AQUÍ ya se pueden llamar sin error)
 df_proveedores = cargar_tabla("proveedores")
 df_ordenes_compra = cargar_tabla("ordenes_compra")
 df_detalle_orden_compra = cargar_tabla("detalle_orden_compra")
 
-# Menú lateral de navegación
+# 4. MENÚ Y MÓDULOS
 modulo_activo = st.sidebar.selectbox(
     "Selecciona un Módulo:",
     ["🚜 Proveedores", "📦 Órdenes de Compra"]
