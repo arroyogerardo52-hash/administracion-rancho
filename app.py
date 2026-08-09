@@ -6,9 +6,19 @@ import base64
 import time
 import json
 import os
+from supabase import create_client, Client
 
-# 2. DEFINICIÓN DE FUNCIONES SUPABASE (Deben estar AQUÍ, antes de llamarlas)
-# Revisa cómo se llama tu función en tu código original. Si es cargar_tabla, asegura su def aquí:
+# =========================================================
+# 1. CONEXIÓN E INICIALIZACIÓN DE SUPABASE
+# =========================================================
+# Reemplaza estas líneas con la forma en que conectas tus credenciales/secrets
+url: str = st.secrets["SUPABASE_URL"]
+key: str = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(url, key)
+
+# =========================================================
+# 2. FUNCIONES DE BASE DE DATOS
+# =========================================================
 @st.cache_data(ttl=60)
 def cargar_tabla(nombre_tabla):
     try:
@@ -18,19 +28,12 @@ def cargar_tabla(nombre_tabla):
         st.error(f"Error al cargar la tabla {nombre_tabla}: {e}")
         return pd.DataFrame()
 
-# (Aquí van también tus otras funciones como guardar_registro, eliminar_registro, etc.)
-
-
-# 3. CARGA DE DATOS (AQUÍ ya se pueden llamar sin error)
+# =========================================================
+# 3. CARGA DE DATOS (AQUÍ YA NO DARÁ ERROR)
+# =========================================================
 df_proveedores = cargar_tabla("proveedores")
 df_ordenes_compra = cargar_tabla("ordenes_compra")
 df_detalle_orden_compra = cargar_tabla("detalle_orden_compra")
-
-# 4. MENÚ Y MÓDULOS
-modulo_activo = st.sidebar.selectbox(
-    "Selecciona un Módulo:",
-    ["🚜 Proveedores", "📦 Órdenes de Compra"]
-)
 # -------------------------------------------------------------
 # 1. BANDERAS DE PRIVACIDAD Y CARGA DE USUARIOS
 # -------------------------------------------------------------
