@@ -16,19 +16,16 @@ import os
 # - eliminar_registro(tabla, col_id, val_id)
 # - generar_html_docs(...)
 
-# =========================================================
-# 2. CARGA DE TABLAS DESDE SUPABASE
-# =========================================================
+# Carga de tablas
 df_proveedores = cargar_tabla("proveedores")
 df_ordenes_compra = cargar_tabla("ordenes_compra")
 df_detalle_orden_compra = cargar_tabla("detalle_orden_compra")
 
-# =========================================================
-# 3. BARRA LATERAL Y NAVEGACIÓN
-# =========================================================
+# Menú lateral de navegación
 modulo_activo = st.sidebar.selectbox(
     "Selecciona un Módulo:",
     ["🚜 Proveedores", "📦 Órdenes de Compra"]
+)
 # -------------------------------------------------------------
 # 1. BANDERAS DE PRIVACIDAD Y CARGA DE USUARIOS
 # -------------------------------------------------------------
