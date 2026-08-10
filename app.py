@@ -470,10 +470,6 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
     return html
 
 # ==========================================
-# RENDERIZADO CONDICIONAL DE MÓDULOS
-# ==========================================
-
-# ==========================================
 # MÓDULO 1: DASHBOARD Y FINANZAS
 # ==========================================
 if modulo_activo == "📊 Dashboard & Finanzas":
