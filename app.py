@@ -470,11 +470,16 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
     return html
 
 # ==========================================
-# 8. MÓDULO 1: DASHBOARD Y FINANZAS
+# RENDERIZADO CONDICIONAL DE MÓDULOS
+# ==========================================
+
+# ==========================================
+# MÓDULO 1: DASHBOARD Y FINANZAS
 # ==========================================
 if modulo_activo == "📊 Dashboard & Finanzas":
     st.header("📊 Balance y Control General Financiero")
-    
+
+    # --- INYECCIÓN DE CSS PARA EVITAR TRUNCAMIENTO EN METRICAS (PUNTOS SUSPENSIVOS) ---
     st.markdown("""
         <style>
         div[data-testid="stMetricValue"] {
@@ -483,30 +488,45 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             overflow: hidden !important;
             text-overflow: ellipsis !important;
         }
+        .stCardPos {
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            margin-bottom: 10px;
+        }
         </style>
     """, unsafe_allow_html=True)
-    
-    cat_ingresos = ["Venta de ganado", "Préstamo Recibido", "Varios (Ingresos)"]
+
+    # --- DEFINICIÓN DE CATEGORÍAS PARA EL ESTADO DE RESULTADOS ---
+    cat_ingresos = ["Venta de ganado", "Varios (Ingresos)"]
     cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)"]
-    cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Pago de Préstamo", "Préstamo Otorgado", "Varios (Gastos operativos)"]
+    cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Varios (Gastos operativos)"]
     todas_las_categorias = cat_ingresos + cat_costos_directos + cat_gastos_operativos
-    
+
+    # --- EXTRACCIÓN DE LISTAS PARA SELECTBOXES (CON FALLBACKS DE SEGURIDAD) ---
     lista_clientes = ["Público en general"]
-    if not df_clientes.empty:
+    if 'df_clientes' in locals() and not df_clientes.empty:
         col_c = 'nombre' if 'nombre' in df_clientes.columns else df_clientes.columns[0]
         lista_clientes += [c for c in df_clientes[col_c].dropna().unique() if c != "Público en general"]
-        
+
     lista_proveedores = ["Egreso general"]
-    if not df_proveedores.empty:
+    if 'df_proveedores' in locals() and not df_proveedores.empty:
         col_p = 'nombre' if 'nombre' in df_proveedores.columns else df_proveedores.columns[0]
         lista_proveedores += [p for p in df_proveedores[col_p].dropna().unique() if p != "Egreso general"]
-        
+
     lista_empleados = []
-    if not df_empleados.empty:
+    if 'df_empleados' in locals() and not df_empleados.empty:
         col_e = 'nombre' if 'nombre' in df_empleados.columns else df_empleados.columns[0]
         lista_empleados = list(df_empleados[col_e].dropna().unique())
     else:
         lista_empleados = ["Empleado General / Caja"]
+
+    def clasificar_categoria(cat):
+        if cat in cat_ingresos: return "Ingreso", "Ingreso"
+        elif cat in cat_costos_directos: return "Egreso", "Costo Directo"
+        elif cat in cat_gastos_operativos: return "Egreso", "Gasto Operativo"
+        else: return "Egreso", "Otros" # Por seguridad en registros viejos
 
     if not df_finanzas.empty:
         df_finanzas['monto'] = pd.to_numeric(df_finanzas['monto'], errors='coerce').fillna(0.0)
@@ -515,7 +535,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             df_finanzas['fecha_vencimiento'] = pd.to_datetime(df_finanzas['fecha_vencimiento'], errors='coerce')
         df_finanzas = df_finanzas.dropna(subset=['fecha'])
         
-        # --- ALERTAS DE VENCIMIENTO ---
+        # --- 🔔 SISTEMA DE ALERTAS Y RECORDATORIOS DE VENCIMIENTO ---
         hoy_dt = datetime.today()
         df_pendientes = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
         
@@ -542,38 +562,51 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         
         fecha_inicio = hoy_dt.replace(hour=0, minute=0, second=0, microsecond=0)
         fecha_fin = hoy_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+
         with col_filtro:
-            periodo = st.selectbox("Período:", ["Todo el Historial", "Esta Semana", "Este Mes", "Este Año", "Rango Personalizado"])
+            periodo = st.selectbox(
+                "Período:",
+                ["Todo el Historial", "Esta Semana", "Este Mes", "Este Año", "Rango Personalizado"]
+            )
+
         with col_lote_filtro:
             opciones_filtro_lote = ["Todos los Lotes"]
             if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
                 opciones_filtro_lote += list(df_lotes['nombre_lote'].dropna().unique())
             lote_seleccionado = st.selectbox("Lote Asociado:", opciones_filtro_lote)
+
         with col_estado_filtro:
             filtro_estado = st.selectbox("Estado de Pago:", ["Todos", "Pagado", "Pendiente"])
+
         with col_fechas:
             if periodo == "Esta Semana":
                 lunes = hoy_dt - timedelta(days=hoy_dt.weekday())
                 fecha_inicio = lunes.replace(hour=0, minute=0, second=0, microsecond=0)
                 fecha_fin = (lunes + timedelta(days=6)).replace(hour=23, minute=59, second=59, microsecond=999999)
                 st.info(f"Del: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
+                
             elif periodo == "Este Mes":
                 fecha_inicio = hoy_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 next_month = hoy_dt.replace(day=28) + timedelta(days=4)
                 ultimo_dia = next_month - timedelta(days=next_month.day)
                 fecha_fin = ultimo_dia.replace(hour=23, minute=59, second=59, microsecond=999999)
                 st.info(f"Mostrando: **{fecha_inicio.strftime('%B %Y')}**")
+                
             elif periodo == "Este Año":
                 fecha_inicio = hoy_dt.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
                 fecha_fin = hoy_dt.replace(month=12, day=31, hour=23, minute=59, second=59, microsecond=999999)
                 st.info(f"Año: **{hoy_dt.year}**")
+                
             elif periodo == "Rango Personalizado":
                 fecha_defecto_inicio = (hoy_dt - timedelta(days=30)).date()
                 fecha_defecto_fin = hoy_dt.date()
                 rango_fechas = st.date_input("Rango de fechas:", [fecha_defecto_inicio, fecha_defecto_fin])
-                if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
-                    fecha_inicio = datetime.combine(rango_fechas[0], datetime.min.time())
-                    fecha_fin = datetime.combine(rango_fechas[1], datetime.max.time())
+                if isinstance(rango_fechas, (list, tuple)):
+                    if len(rango_fechas) == 2:
+                        fecha_inicio = datetime.combine(rango_fechas[0], datetime.min.time())
+                        fecha_fin = datetime.combine(rango_fechas[1], datetime.max.time())
+                    else:
+                        fecha_inicio, fecha_fin = None, None
 
         df_filtrado = df_finanzas.copy()
         try:
@@ -583,8 +616,10 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
         if periodo != "Todo el Historial" and fecha_inicio is not None and fecha_fin is not None:
             df_filtrado = df_filtrado[(df_filtrado['fecha'] >= pd.to_datetime(fecha_inicio)) & (df_filtrado['fecha'] <= pd.to_datetime(fecha_fin))]
+
         if lote_seleccionado != "Todos los Lotes" and 'lote_asociado' in df_filtrado.columns:
             df_filtrado = df_filtrado[df_filtrado['lote_asociado'] == lote_seleccionado]
+
         if filtro_estado != "Todos":
             df_filtrado = df_filtrado[df_filtrado['estado_deuda'] == filtro_estado]
 
@@ -595,13 +630,8 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         por_cobrar = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
         por_pagar = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
         
-        # --- PESTAÑAS DEL MÓDULO ---
-        tab_resumen, tab_graficas, tab_rentabilidad, tab_abonos_prestamos = st.tabs([
-            "📋 Resumen Numérico", 
-            "📈 Análisis Gráfico", 
-            "📊 Estados Financieros y Rentabilidad",
-            "💵 Abonos y Préstamos"
-        ])
+        # --- CREACIÓN DE PESTAÑAS ---
+        tab_resumen, tab_graficas, tab_rentabilidad = st.tabs(["📋 Resumen Numérico", "📈 Análisis Gráfico", "📊 Estados Financieros y Rentabilidad"])
         
         with tab_resumen:
             m1, m2, m3, m4, m5 = st.columns(5)
@@ -657,7 +687,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     col_cat = 'categoria' if 'categoria' in df_filtrado.columns else 'tipo'
                     df_cat = df_filtrado.groupby([col_cat, 'tipo'])['monto'].sum().unstack().fillna(0.0)
                     st.bar_chart(df_cat, use_container_width=True)
-                
                 st.write("### 📈 Tendencia Financiera Histórica (MXN)")
                 df_linea = df_filtrado.copy()
                 df_linea['Fecha'] = df_linea['fecha'].dt.date
@@ -668,7 +697,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             else:
                 st.info("No hay datos para graficar.")
 
-     
         with tab_rentabilidad:
             st.subheader("📊 Estado de Resultados (P&L) y Rentabilidad")
             st.markdown("Cálculos expresados en **Pesos Mexicanos (MXN)** basados **exclusivamente en transacciones pagadas/cobradas** dentro del período.")
@@ -758,190 +786,9 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         st.warning("No se encontraron registros financieros para procesar en el sistema.")
 
     st.markdown("---")
-
-
-      # ==========================================
-# NUEVA PESTAÑA: ABONOS Y PRÉSTAMOS
-# ==========================================
-with tab_abonos_prestamos:
-    st.subheader("🤝 Gestión de Abonos a Pendientes y Préstamos")
     
-    sub_tab_abonos, sub_tab_prestamos = st.tabs([
-        "💰 Registrar Abono a Cuenta Pendiente", 
-        "🏦 Control de Préstamos"
-    ])
-    
-    # Validar variable lista_empleados si no está definida globalmente
-    if 'lista_empleados' not in locals():
-        if 'df_empleados' in locals() and not df_empleados.empty and 'nombre' in df_empleados.columns:
-            lista_empleados = df_empleados['nombre'].tolist()
-        else:
-            lista_empleados = ["Administrador General"]
-
-    # --- SUB-TAB 1: ABONOS A PENDIENTES ---
-    with sub_tab_abonos:
-        st.markdown("#### Registrar Abono a Cuenta por Cobrar o por Pagar")
-        
-        df_cuentas_pendientes = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy() if not df_finanzas.empty else pd.DataFrame()
-        
-        if not df_cuentas_pendientes.empty:
-            df_cuentas_pendientes['info_cuenta'] = df_cuentas_pendientes.apply(
-                lambda r: f"[{r['id']}] {r['tipo']} - {r['concepto']} (Pendiente: ${float(r['monto']):,.2f} MXN | Tercero: {r.get('asociado', 'N/A')})", 
-                axis=1
-            )
-            
-            cuenta_sel = st.selectbox(
-                "Selecciona la cuenta pendiente a abonar:", 
-                df_cuentas_pendientes['info_cuenta'].tolist(),
-                key="sel_cuenta_abono"
-            )
-            
-            id_cuenta = cuenta_sel.split("]")[0].replace("[", "").strip()
-            fila_cuenta = df_cuentas_pendientes[df_cuentas_pendientes['id'] == id_cuenta].iloc[0]
-            
-            monto_pendiente_actual = float(fila_cuenta['monto'])
-            st.info(f"📌 **Cuenta seleccionada:** {fila_cuenta['concepto']} | **Monto Restante:** $ {monto_pendiente_actual:,.2f} MXN")
-            
-            col_ab1, col_ab2, col_ab3 = st.columns(3)
-            with col_ab1:
-                monto_abono = st.number_input(
-                    "Monto del Abono ($ MXN)", 
-                    min_value=0.01, 
-                    max_value=max(0.01, monto_pendiente_actual), 
-                    value=float(min(100.0, monto_pendiente_actual)),
-                    step=50.0,
-                    key="input_monto_abono"
-                )
-            with col_ab2:
-                metodo_abono = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque"], key="metodo_pago_abono")
-            with col_ab3:
-                resp_abono = st.selectbox("Empleado Responsable", lista_empleados, key="emp_abono")
-                
-            if st.button("✅ Registrar Abono", type="primary", use_container_width=True, key="btn_guardar_abono"):
-                # 1. Crear transacción de flujo de efectivo pagado
-                id_abono = f"AB-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
-                registro_abono = {
-                    "id": id_abono,
-                    "fecha": datetime.now().strftime('%Y-%m-%d'),
-                    "tipo": fila_cuenta['tipo'],
-                    "categoria": fila_cuenta['categoria'],
-                    "concepto": f"Abono a ID [{fila_cuenta['id']}]: {fila_cuenta['concepto']}",
-                    "monto": float(monto_abono),
-                    "metodo_pago": metodo_abono,
-                    "asociado": fila_cuenta.get('asociado', ''),
-                    "empleado_responsable": resp_abono,
-                    "lote_asociado": fila_cuenta.get('lote_asociado', 'Ninguno'),
-                    "estado_deuda": "Pagado",
-                    "fecha_vencimiento": datetime.now().strftime('%Y-%m-%d')
-                }
-                
-# ==========================================
-# NUEVA PESTAÑA: ABONOS Y PRÉSTAMOS
-# ==========================================
-with tab_abonos_prestamos:
-    st.subheader("🤝 Gestión de Abonos a Pendientes y Préstamos")
-    
-    sub_tab_abonos, sub_tab_prestamos = st.tabs([
-        "💰 Registrar Abono a Cuenta Pendiente", 
-        "🏦 Control de Préstamos"
-    ])
-    
-    # Validar variable lista_empleados
-    if 'lista_empleados' not in locals():
-        if 'df_empleados' in locals() and not df_empleados.empty and 'nombre' in df_empleados.columns:
-            lista_empleados = df_empleados['nombre'].tolist()
-        else:
-            lista_empleados = ["Administrador General"]
-
-    # --- SUB-TAB 1: ABONOS A PENDIENTES ---
-    with sub_tab_abonos:
-        st.markdown("#### Registrar Abono a Cuenta por Cobrar o por Pagar")
-        
-        df_cuentas_pendientes = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy() if not df_finanzas.empty else pd.DataFrame()
-        
-        if not df_cuentas_pendientes.empty:
-            df_cuentas_pendientes['info_cuenta'] = df_cuentas_pendientes.apply(
-                lambda r: f"[{r['id']}] {r['tipo']} - {r['concepto']} (Pendiente: ${float(r['monto']):,.2f} MXN | Tercero: {r.get('asociado', 'N/A')})", 
-                axis=1
-            )
-            
-            cuenta_sel = st.selectbox(
-                "Selecciona la cuenta pendiente a abonar:", 
-                df_cuentas_pendientes['info_cuenta'].tolist(),
-                key="sel_cuenta_abono"
-            )
-            
-            id_cuenta = cuenta_sel.split("]")[0].replace("[", "").strip()
-            fila_cuenta = df_cuentas_pendientes[df_cuentas_pendientes['id'] == id_cuenta].iloc[0]
-            
-            monto_pendiente_actual = float(fila_cuenta['monto'])
-            st.info(f"📌 **Cuenta seleccionada:** {fila_cuenta['concepto']} | **Monto Restante:** $ {monto_pendiente_actual:,.2f} MXN")
-            
-            col_ab1, col_ab2, col_ab3 = st.columns(3)
-            with col_ab1:
-                monto_abono = st.number_input(
-                    "Monto del Abono ($ MXN)", 
-                    min_value=0.01, 
-                    max_value=max(0.01, monto_pendiente_actual), 
-                    value=float(min(100.0, monto_pendiente_actual)),
-                    step=50.0,
-                    key="input_monto_abono"
-                )
-            with col_ab2:
-                metodo_abono = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque"], key="metodo_pago_abono")
-            with col_ab3:
-                resp_abono = st.selectbox("Empleado Responsable", lista_empleados, key="emp_abono")
-                
-            if st.button("✅ Registrar Abono", type="primary", use_container_width=True, key="btn_guardar_abono"):
-                id_abono = f"AB-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
-                registro_abono = {
-                    "id": id_abono,
-                    "fecha": datetime.now().strftime('%Y-%m-%d'),
-                    "tipo": fila_cuenta['tipo'],
-                    "categoria": fila_cuenta['categoria'],
-                    "concepto": f"Abono a ID [{fila_cuenta['id']}]: {fila_cuenta['concepto']}",
-                    "monto": float(monto_abono),
-                    "metodo_pago": metodo_abono,
-                    "asociado": fila_cuenta.get('asociado', ''),
-                    "empleado_responsable": resp_abono,
-                    "lote_asociado": fila_cuenta.get('lote_asociado', 'Ninguno'),
-                    "estado_deuda": "Pagado",
-                    "fecha_vencimiento": datetime.now().strftime('%Y-%m-%d')
-                }
-                
-                nuevo_saldo_pendiente = monto_pendiente_actual - monto_abono
-                nuevo_estado = "Pagado" if nuevo_saldo_pendiente <= 0 else "Pendiente"
-                
-                registro_actualizado = {
-                    "id": fila_cuenta['id'],
-                    "fecha": str(fila_cuenta['fecha'])[:10],
-                    "tipo": fila_cuenta['tipo'],
-                    "categoria": fila_cuenta['categoria'],
-                    "concepto": fila_cuenta['concepto'],
-                    "monto": float(max(0.0, nuevo_saldo_pendiente)),
-                    "metodo_pago": fila_cuenta.get('metodo_pago', 'Efectivo'),
-                    "asociado": fila_cuenta.get('asociado', ''),
-                    "empleado_responsable": resp_abono,
-                    "lote_asociado": fila_cuenta.get('lote_asociado', 'Ninguno'),
-                    "estado_deuda": nuevo_estado,
-                    "fecha_vencimiento": str(fila_cuenta.get('fecha_vencimiento', datetime.now()))[:10]
-                }
-                
-                if guardar_registro("finanzas", registro_abono, "id") and guardar_registro("finanzas", registro_actualizado, "id"):
-                    st.success(f"¡Abono de $ {monto_abono:,.2f} MXN aplicado exitosamente!")
-                    time.sleep(1)
-                    st.rerun()
-        else:
-            st.info("No hay cuentas con pagos pendientes registradas por cobrar o por pagar.")
-
-    # --- SUB-TAB 2: CONTROL DE PRÉSTAMOS ---
-    with sub_tab_prestamos:
-        st.markdown("#### Control de Préstamos Otorgados / Recibidos")
-        st.info("Esta sección permite el registro y seguimiento de préstamos de capital.")
-    # ==========================================
-    # FORMULARIO DE CAPTURA Y REGISTRO FINANCIERO
-    # ==========================================
-    st.subheader("💳 Captura y Registro Financiero General")
+    # --- FORMULARIO DE REGISTRO REESTRUCTURADO Y OPTIMIZADO ---
+    st.subheader("💳 Captura y Registro Financiero")
     
     f_tipo_dinamico = st.radio("Tipo de Movimiento:", ["Ingreso", "Egreso"], horizontal=True)
     
@@ -950,14 +797,20 @@ with tab_abonos_prestamos:
         
         with col_f1:
             f_fecha = st.date_input("Fecha Transacción", datetime.today(), key="f_fec_pos").strftime('%Y-%m-%d')
-            opciones_categorias = cat_ingresos if f_tipo_dinamico == "Ingreso" else cat_costos_directos + cat_gastos_operativos
+            
+            if f_tipo_dinamico == "Ingreso":
+                opciones_categorias = cat_ingresos
+            else:
+                opciones_categorias = cat_costos_directos + cat_gastos_operativos
+                
             f_cat = st.selectbox("Categoría", opciones_categorias, key="f_cat_pos")
             f_concepto = st.text_input("Concepto / Descripción", key="f_con_pos").strip()
-            
+
         with col_f2:
             f_monto = st.number_input("Monto Total ($ MXN)", min_value=0.0, step=50.0, key="f_mon_pos")
             f_pago = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque", "Crédito"], key="f_pag_pos")
             
+            # --- ASIGNACIÓN DINÁMICA DE TERCEROS (CLIENTE / PROVEEDOR / EMPLEADO NÓMINA) ---
             if f_tipo_dinamico == "Ingreso":
                 f_asociado = st.selectbox("Cliente / Origen", lista_clientes, index=0, key="f_cli_pos")
                 etiqueta_asociado = "Cliente"
@@ -971,18 +824,20 @@ with tab_abonos_prestamos:
                 else:
                     f_asociado = st.selectbox("Proveedor / Destino", lista_proveedores, index=0, key="f_prov_pos")
                     etiqueta_asociado = "Proveedor"
-                    
+
         with col_f3:
             opciones_lotes = ["Ninguno"]
             if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
                 opciones_lotes += list(df_lotes['nombre_lote'].dropna().unique())
             f_lote = st.selectbox("Lote Asociado", opciones_lotes, key="f_lot_pos")
+            
             f_estado = st.selectbox("Estado del Pago", ["Pagado", "Pendiente"], key="f_est_pos")
             f_venc = st.date_input("Fecha Vencimiento", datetime.today(), key="f_venc_pos").strftime('%Y-%m-%d')
-            
-        st.markdown("<br>", unsafe_allow_html=True)
-        btn_pre_guardar = st.button("Confirmar Registro", use_container_width=True, type="primary")
 
+        st.markdown("<br>", unsafe_allow_html=True)
+        btn_pre_guardar = st.button("Confirmar", use_container_width=True, type="primary")
+
+    # --- VALIDACIÓN INICIAL DE CAMPOS PARA NUEVO REGISTRO ---
     if btn_pre_guardar:
         if f_monto <= 0:
             st.error("❌ El monto debe ser mayor a $0.00 MXN.")
@@ -1005,7 +860,7 @@ with tab_abonos_prestamos:
                 "es_edicion": False
             }
 
-    # --- MODAL/EXPANDER DE CONFIRMACIÓN DE EMPLEADO RESPONSABLE ---
+    # --- VENTANA EMERGENTE (MODAL DE CONFIRMACIÓN DE EMPLEADO QUE PROCESA/EDITA) ---
     if "transaccion_pendiente" in st.session_state:
         tx = st.session_state["transaccion_pendiente"]
         
@@ -1021,6 +876,7 @@ with tab_abonos_prestamos:
                 st.markdown("---")
                 st.subheader("¿Qué empleado realiza/autoriza esta acción?")
                 
+                # Pre-seleccionar si ya traía un responsable previamente registrado
                 idx_emp_defecto = 0
                 if tx.get("empleado_responsable") in lista_empleados:
                     idx_emp_defecto = lista_empleados.index(tx["empleado_responsable"]) + 1
@@ -1047,7 +903,7 @@ with tab_abonos_prestamos:
                             "fecha_vencimiento": tx["fecha_vencimiento"]
                         }
                         if guardar_registro("finanzas", registro_final, "id"):
-                            st.success(f"¡Transacción procesada exitosamente! Responsable: {emp_seleccionado}")
+                            st.success(f"¡Transacción procesada exitosamente! Registró/Modificó: {emp_seleccionado}")
                             del st.session_state["transaccion_pendiente"]
                             time.sleep(1)
                             st.rerun()
@@ -1055,7 +911,9 @@ with tab_abonos_prestamos:
                     if st.button("❌ Cancelar", use_container_width=True):
                         del st.session_state["transaccion_pendiente"]
                         st.rerun()
+
             modal_confirmacion_empleado()
+
         else:
             with st.expander("👤 **SELECCIONAR EMPLEADO RESPONSABLE**", expanded=True):
                 accion_txt = "Edición" if tx.get("es_edicion", False) else "Registro"
@@ -1088,7 +946,7 @@ with tab_abonos_prestamos:
                             "fecha_vencimiento": tx["fecha_vencimiento"]
                         }
                         if guardar_registro("finanzas", registro_final, "id"):
-                            st.success(f"¡Transacción procesada exitosamente! Responsable: {emp_seleccionado}")
+                            st.success(f"¡Transacción procesada exitosamente! Registró/Modificó: {emp_seleccionado}")
                             del st.session_state["transaccion_pendiente"]
                             time.sleep(1)
                             st.rerun()
@@ -1097,7 +955,7 @@ with tab_abonos_prestamos:
                         del st.session_state["transaccion_pendiente"]
                         st.rerun()
 
-    # --- EDICIÓN Y ELIMINACIÓN DE TRANSACCIONES ---
+    # --- EDICIÓN MANUAL Y ELIMINACIÓN DE TRANSACCIONES ---
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
@@ -1117,20 +975,25 @@ with tab_abonos_prestamos:
             ec1, ec2, ec3 = st.columns(3)
             with ec1:
                 edit_fecha = st.date_input("Fecha Transacción", value=fecha_orig, key=f"ed_fec_{id_seleccionado}").strftime('%Y-%m-%d')
+                
                 cats_posibles = cat_ingresos if edit_tipo == "Ingreso" else cat_costos_directos + cat_gastos_operativos
                 cat_actual = fila_sel.get('categoria', '')
                 idx_cat = cats_posibles.index(cat_actual) if cat_actual in cats_posibles else 0
                 edit_cat = st.selectbox("Categoría", cats_posibles, index=idx_cat, key=f"ed_cat_{id_seleccionado}")
+                
                 edit_concepto = st.text_input("Concepto / Descripción", value=str(fila_sel.get('concepto', '')), key=f"ed_con_{id_seleccionado}").strip()
             
             with ec2:
                 edit_monto = st.number_input("Monto ($ MXN)", value=float(fila_sel.get('monto', 0.0)), min_value=0.0, step=50.0, key=f"ed_mon_{id_seleccionado}")
+                
                 metodos_pago = ["Efectivo", "Transferencia", "Cheque", "Crédito"]
                 met_actual = fila_sel.get('metodo_pago', 'Efectivo')
                 idx_met = metodos_pago.index(met_actual) if met_actual in metodos_pago else 0
                 edit_pago = st.selectbox("Método de Pago", metodos_pago, index=idx_met, key=f"ed_pag_{id_seleccionado}")
                 
+                # --- ASOCIACIÓN DINÁMICA DE PROVEEDOR / CLIENTE / OTROS SEGÚN EL TIPO DE TRANSACCIÓN EDITADA ---
                 asociado_previo = str(fila_sel.get('asociado', ''))
+                
                 if edit_tipo == "Ingreso":
                     lista_opciones_aso = lista_clientes
                     idx_aso = lista_opciones_aso.index(asociado_previo) if asociado_previo in lista_opciones_aso else 0
@@ -1149,6 +1012,7 @@ with tab_abonos_prestamos:
                         idx_aso = lista_opciones_aso.index(asociado_previo) if asociado_previo in lista_opciones_aso else 0
                         edit_asociado = st.selectbox("Proveedor / Egreso General", lista_opciones_aso, index=idx_aso, key=f"ed_aso_{id_seleccionado}")
                         etiqueta_asociado_ed = "Proveedor"
+
             with ec3:
                 opciones_lotes_ed = ["Ninguno"]
                 if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
@@ -1171,6 +1035,7 @@ with tab_abonos_prestamos:
                     elif not edit_concepto:
                         st.error("❌ Por favor escribe un Concepto o Descripción.")
                     else:
+                        # Se asigna a transaccion_pendiente para disparar el modal de confirmación de empleado
                         st.session_state["transaccion_pendiente"] = {
                             "id": id_seleccionado,
                             "fecha": edit_fecha,
@@ -1188,23 +1053,26 @@ with tab_abonos_prestamos:
                             "es_edicion": True
                         }
                         st.rerun()
+
             with btn_col2:
                 if st.button("🗑️ Eliminar Transacción", use_container_width=True, type="primary", key=f"btn_del_{id_seleccionado}"):
                     st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = True
 
-            # Bloque de confirmación de eliminación correctamente indentado dentro del expander
             if st.session_state.get(f"confirmar_eliminar_{id_seleccionado}", False):
                 st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar permanentemente la transacción **{id_seleccionado}**?")
                 col_del_si, col_del_no = st.columns(2)
-                
                 with col_del_si:
                     if st.button("🔴 Sí, Eliminar", use_container_width=True, key=f"confirm_si_{id_seleccionado}"):
-                        eliminar_registro("finanzas", "id", id_seleccionado)
+                        if 'eliminar_registro' in globals():
+                            eliminar_registro("finanzas", id_seleccionado, "id")
+                        else:
+                            df_finanzas = df_finanzas[df_finanzas['id'] != id_seleccionado]
+                            if 'guardar_dataframe' in globals():
+                                guardar_dataframe("finanzas", df_finanzas)
                         st.success(f"Transacción {id_seleccionado} eliminada exitosamente.")
                         st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
                         time.sleep(1)
                         st.rerun()
-                        
                 with col_del_no:
                     if st.button("❌ Cancelar", use_container_width=True, key=f"confirm_no_{id_seleccionado}"):
                         st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
