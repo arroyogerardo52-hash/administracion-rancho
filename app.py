@@ -668,8 +668,11 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             else:
                 st.info("No hay datos para graficar.")
 
+     
         with tab_rentabilidad:
             st.subheader("📊 Estado de Resultados (P&L) y Rentabilidad")
+            st.markdown("Cálculos expresados en **Pesos Mexicanos (MXN)** basados **exclusivamente en transacciones pagadas/cobradas** dentro del período.")
+            
             df_pagados = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].copy()
             if not df_pagados.empty:
                 df_pagados['Rubro'] = df_pagados['categoria'].apply(lambda x: clasificar_categoria(x)[1])
@@ -681,17 +684,81 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 
                 utilidad_bruta = tot_ingresos - tot_costos_directos
                 margen_bruto = (utilidad_bruta / tot_ingresos * 100) if tot_ingresos > 0 else 0.0
+                
                 utilidad_neta = utilidad_bruta - tot_gastos_operativos - tot_otros
                 margen_neto = (utilidad_neta / tot_ingresos * 100) if tot_ingresos > 0 else 0.0
+                
                 flujo_caja = tot_ingresos - (tot_costos_directos + tot_gastos_operativos + tot_otros)
                 
                 k1, k2, k3, k4 = st.columns(4)
-                k1.metric("1️⃣ Flujo de Caja Total", f"$ {flujo_caja:,.2f} MXN")
-                k2.metric("2️⃣ Utilidad Bruta", f"$ {utilidad_bruta:,.2f} MXN")
+                k1.metric("1️⃣ Flujo de Caja Total", f"$ {flujo_caja:,.2f} MXN", help="Efectivo real disponible")
+                k2.metric("2️⃣ Utilidad Bruta", f"$ {utilidad_bruta:,.2f} MXN", help="Ingresos menos Costos Directos")
                 k3.metric("3️⃣ Margen Bruto (%)", f"{margen_bruto:.1f}%")
                 k4.metric("4️⃣ Rentabilidad (Margen Neto)", f"{margen_neto:.1f}%")
+                
+                st.write("---")
+                
+                if 'lote_asociado' in df_pagados.columns:
+                    st.markdown("### 🐄 Costos y Rentabilidad por Lote Registrado")
+                    df_lotes_val = df_pagados[df_pagados['lote_asociado'] != 'Ninguno']
+                    
+                    if not df_lotes_val.empty:
+                        df_lotes_pnl = df_lotes_val.groupby(['lote_asociado', 'tipo'])['monto'].sum().unstack().fillna(0.0)
+                        
+                        if 'Ingreso' not in df_lotes_pnl.columns: df_lotes_pnl['Ingreso'] = 0.0
+                        if 'Egreso' not in df_lotes_pnl.columns: df_lotes_pnl['Egreso'] = 0.0
+                        
+                        df_lotes_pnl['Balance Lote (MXN)'] = df_lotes_pnl['Ingreso'] - df_lotes_pnl['Egreso']
+                        
+                        df_lotes_pnl = df_lotes_pnl[['Ingreso', 'Egreso', 'Balance Lote (MXN)']]
+                        df_lotes_pnl.columns = ['Ingresos Totales', 'Egresos Totales', 'Balance Lote (MXN)']
+                        
+                        st.dataframe(df_lotes_pnl.style.format("$ {:,.2f} MXN"), use_container_width=True)
+                    else:
+                        st.info("No hay transacciones pagadas vinculadas a un lote específico en este período.")
+                
+                st.markdown("### 📑 Desglose General de Estado de Resultados (MXN)")
+                
+                color_neta = '#4CAF50' if utilidad_neta >= 0 else '#f44336'
+                html_pnl = f"""
+                <div style="background-color:#1e1e1e; padding:20px; border-radius:10px; color:white; font-family:sans-serif;">
+                    <table style="width:100%; border-collapse:collapse; font-size:16px;">
+                        <tr style="border-bottom: 2px solid #4CAF50;">
+                            <td style="padding:10px; font-weight:bold;">(+) INGRESOS TOTALES</td>
+                            <td style="padding:10px; text-align:right; font-weight:bold; color:#4CAF50;">$ {tot_ingresos:,.2f} MXN</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #555;">
+                            <td style="padding:10px; padding-left:30px;">(-) Costos Directos (Ganado, Alimento, Salud)</td>
+                            <td style="padding:10px; text-align:right; color:#ff9800;">-$ {tot_costos_directos:,.2f} MXN</td>
+                        </tr>
+                        <tr style="border-bottom: 2px solid #2196F3; background-color:#2a2a2a;">
+                            <td style="padding:10px; font-weight:bold;">(=) UTILIDAD BRUTA</td>
+                            <td style="padding:10px; text-align:right; font-weight:bold; color:#2196F3;">$ {utilidad_bruta:,.2f} MXN</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #555;">
+                            <td style="padding:10px; padding-left:30px;">(-) Gastos Operativos (Nómina, Oficina, Mantenimiento)</td>
+                            <td style="padding:10px; text-align:right; color:#f44336;">-$ {tot_gastos_operativos:,.2f} MXN</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #555;">
+                            <td style="padding:10px; padding-left:30px;">(-) Otros Gastos No Clasificados</td>
+                            <td style="padding:10px; text-align:right; color:#f44336;">-$ {tot_otros:,.2f} MXN</td>
+                        </tr>
+                        <tr style="background-color:#000000;">
+                            <td style="padding:15px; font-weight:bold; font-size:18px;">(=) UTILIDAD NETA (Ganancia Real)</td>
+                            <td style="padding:15px; text-align:right; font-weight:bold; font-size:18px; color:{color_neta};">$ {utilidad_neta:,.2f} MXN</td>
+                        </tr>
+                    </table>
+                </div>
+                """
+                st.markdown(html_pnl, unsafe_allow_html=True)
             else:
-                st.info("No hay transacciones pagadas registradas en este período.")
+                st.info("No hay transacciones pagadas registradas en este período para calcular la rentabilidad.")
+
+    else:
+        st.warning("No se encontraron registros financieros para procesar en el sistema.")
+
+    st.markdown("---")
+
 
         # ==========================================
         # NUEVA PESTAÑA: ABONOS Y PRÉSTAMOS
