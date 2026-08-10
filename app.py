@@ -835,7 +835,80 @@ with tab_abonos_prestamos:
                     "fecha_vencimiento": datetime.now().strftime('%Y-%m-%d')
                 }
                 
-                # 2. Actualizar la cuenta pendiente original
+# ==========================================
+# NUEVA PESTAÑA: ABONOS Y PRÉSTAMOS
+# ==========================================
+with tab_abonos_prestamos:
+    st.subheader("🤝 Gestión de Abonos a Pendientes y Préstamos")
+    
+    sub_tab_abonos, sub_tab_prestamos = st.tabs([
+        "💰 Registrar Abono a Cuenta Pendiente", 
+        "🏦 Control de Préstamos"
+    ])
+    
+    # Validar variable lista_empleados
+    if 'lista_empleados' not in locals():
+        if 'df_empleados' in locals() and not df_empleados.empty and 'nombre' in df_empleados.columns:
+            lista_empleados = df_empleados['nombre'].tolist()
+        else:
+            lista_empleados = ["Administrador General"]
+
+    # --- SUB-TAB 1: ABONOS A PENDIENTES ---
+    with sub_tab_abonos:
+        st.markdown("#### Registrar Abono a Cuenta por Cobrar o por Pagar")
+        
+        df_cuentas_pendientes = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy() if not df_finanzas.empty else pd.DataFrame()
+        
+        if not df_cuentas_pendientes.empty:
+            df_cuentas_pendientes['info_cuenta'] = df_cuentas_pendientes.apply(
+                lambda r: f"[{r['id']}] {r['tipo']} - {r['concepto']} (Pendiente: ${float(r['monto']):,.2f} MXN | Tercero: {r.get('asociado', 'N/A')})", 
+                axis=1
+            )
+            
+            cuenta_sel = st.selectbox(
+                "Selecciona la cuenta pendiente a abonar:", 
+                df_cuentas_pendientes['info_cuenta'].tolist(),
+                key="sel_cuenta_abono"
+            )
+            
+            id_cuenta = cuenta_sel.split("]")[0].replace("[", "").strip()
+            fila_cuenta = df_cuentas_pendientes[df_cuentas_pendientes['id'] == id_cuenta].iloc[0]
+            
+            monto_pendiente_actual = float(fila_cuenta['monto'])
+            st.info(f"📌 **Cuenta seleccionada:** {fila_cuenta['concepto']} | **Monto Restante:** $ {monto_pendiente_actual:,.2f} MXN")
+            
+            col_ab1, col_ab2, col_ab3 = st.columns(3)
+            with col_ab1:
+                monto_abono = st.number_input(
+                    "Monto del Abono ($ MXN)", 
+                    min_value=0.01, 
+                    max_value=max(0.01, monto_pendiente_actual), 
+                    value=float(min(100.0, monto_pendiente_actual)),
+                    step=50.0,
+                    key="input_monto_abono"
+                )
+            with col_ab2:
+                metodo_abono = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque"], key="metodo_pago_abono")
+            with col_ab3:
+                resp_abono = st.selectbox("Empleado Responsable", lista_empleados, key="emp_abono")
+                
+            if st.button("✅ Registrar Abono", type="primary", use_container_width=True, key="btn_guardar_abono"):
+                id_abono = f"AB-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
+                registro_abono = {
+                    "id": id_abono,
+                    "fecha": datetime.now().strftime('%Y-%m-%d'),
+                    "tipo": fila_cuenta['tipo'],
+                    "categoria": fila_cuenta['categoria'],
+                    "concepto": f"Abono a ID [{fila_cuenta['id']}]: {fila_cuenta['concepto']}",
+                    "monto": float(monto_abono),
+                    "metodo_pago": metodo_abono,
+                    "asociado": fila_cuenta.get('asociado', ''),
+                    "empleado_responsable": resp_abono,
+                    "lote_asociado": fila_cuenta.get('lote_asociado', 'Ninguno'),
+                    "estado_deuda": "Pagado",
+                    "fecha_vencimiento": datetime.now().strftime('%Y-%m-%d')
+                }
+                
                 nuevo_saldo_pendiente = monto_pendiente_actual - monto_abono
                 nuevo_estado = "Pagado" if nuevo_saldo_pendiente <= 0 else "Pendiente"
                 
@@ -865,71 +938,6 @@ with tab_abonos_prestamos:
     with sub_tab_prestamos:
         st.markdown("#### Control de Préstamos Otorgados / Recibidos")
         st.info("Esta sección permite el registro y seguimiento de préstamos de capital.")
-
-            # --- SUB-TAB 2: CONTROL DE PRÉSTAMOS ---
-            with sub_tab_prestamos:
-                st.markdown("#### Registrar Nuevo Préstamo (Solicitado u Otorgado)")
-                
-                col_pr1, col_pr2, col_pr3 = st.columns(3)
-                with col_pr1:
-                    tipo_prestamo = st.selectbox("Tipo de Préstamo", ["Préstamo Recibido (Entrada de Dinero)", "Préstamo Otorgado (Salida de Dinero)"])
-                    monto_prestamo = st.number_input("Monto del Préstamo ($ MXN)", min_value=1.0, step=100.0, key="m_prestamo")
-                with col_pr2:
-                    prestamista_deudor = st.text_input("Acreedor / Deudor (Nombre del Tercero o Financiera)", key="tercero_prestamo").strip()
-                    metodo_p_prestamo = st.selectbox("Método de Transferencia", ["Transferencia", "Efectivo", "Cheque"], key="met_prestamo")
-                with col_pr3:
-                    fecha_venc_prestamo = st.date_input("Fecha Estimada de Pago / Vencimiento", datetime.today() + timedelta(days=30), key="venc_prestamo")
-                    resp_prestamo = st.selectbox("Empleado Responsable", lista_empleados, key="emp_prestamo")
-
-                if st.button("📝 Registrar Préstamo", type="primary", use_container_width=True, key="btn_reg_prestamo"):
-                    if not prestamista_deudor:
-                        st.error("❌ Escribe el nombre del Acreedor o Deudor.")
-                    else:
-                        es_recibido = "Recibido" in tipo_prestamo
-                        tipo_mov = "Ingreso" if es_recibido else "Egreso"
-                        cat_mov = "Préstamo Recibido" if es_recibido else "Préstamo Otorgado"
-                        
-                        id_p = f"PR-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
-                        registro_p = {
-                            "id": id_p,
-                            "fecha": datetime.now().strftime('%Y-%m-%d'),
-                            "tipo": tipo_mov,
-                            "categoria": cat_mov,
-                            "concepto": f"Préstamo: {prestamista_deudor}",
-                            "monto": float(monto_prestamo),
-                            "metodo_pago": metodo_p_prestamo,
-                            "asociado": prestamista_deudor,
-                            "empleado_responsable": resp_prestamo,
-                            "lote_asociado": "Ninguno",
-                            "estado_deuda": "Pendiente",
-                            "fecha_vencimiento": fecha_venc_prestamo.strftime('%Y-%m-%d')
-                        }
-                        
-                        if guardar_registro("finanzas", registro_p, "id"):
-                            st.success(f"¡Préstamo registrado exitosamente con ID {id_p}!")
-                            time.sleep(1)
-                            st.rerun()
-
-                st.markdown("---")
-                st.markdown("#### 📋 Préstamos Activos y Pendientes")
-                
-                df_prestamos_activos = df_finanzas[
-                    (df_finanzas['categoria'].str.contains("Préstamo", case=False, na=False)) & 
-                    (df_finanzas['estado_deuda'] == 'Pendiente')
-                ]
-                
-                if not df_prestamos_activos.empty:
-                    df_pr_show = df_prestamos_activos[['id', 'fecha', 'categoria', 'asociado', 'concepto', 'monto', 'fecha_vencimiento']].copy()
-                    df_pr_show['fecha'] = pd.to_datetime(df_pr_show['fecha']).dt.strftime('%Y-%m-%d')
-                    st.dataframe(df_pr_show.style.format({'monto': '$ {:,.2f} MXN'}), use_container_width=True)
-                else:
-                    st.info("No hay préstamos pendientes activos.")
-
-    else:
-        st.warning("No se encontraron registros financieros para procesar.")
-
-    st.markdown("---")
-    
     # ==========================================
     # FORMULARIO DE CAPTURA Y REGISTRO FINANCIERO
     # ==========================================
