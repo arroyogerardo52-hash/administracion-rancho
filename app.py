@@ -475,7 +475,7 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
 if modulo_activo == "📊 Dashboard & Finanzas":
     st.header("📊 Balance y Control General Financiero")
 
-    # --- INYECCIÓN DE CSS PARA EVITAR TRUNCAMIENTO EN METRICAS (PUNTOS SUSPENSIVOS) ---
+    # --- INYECCIÓN DE CSS PARA EVITAR TRUNCAMIENTO EN METRICAS ---
     st.markdown("""
         <style>
         div[data-testid="stMetricValue"] {
@@ -495,21 +495,21 @@ if modulo_activo == "📊 Dashboard & Finanzas":
     """, unsafe_allow_html=True)
 
     # --- DEFINICIÓN DE CATEGORÍAS PARA EL ESTADO DE RESULTADOS ---
-    cat_ingresos = ["Venta de ganado", "Varios (Ingresos)"]
+    cat_ingresos = ["Venta de ganado", "Varios (Ingresos)", "Préstamo / Crédito recibido"]
     cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)"]
-    cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Varios (Gastos operativos)"]
+    cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Pago / Abono Préstamo", "Varios (Gastos operativos)"]
     todas_las_categorias = cat_ingresos + cat_costos_directos + cat_gastos_operativos
 
-    # --- EXTRACCIÓN DE LISTAS PARA SELECTBOXES (CON FALLBACKS DE SEGURIDAD) ---
+    # --- EXTRACCIÓN DE LISTAS PARA SELECTBOXES ---
     lista_clientes = ["Público en general"]
     if 'df_clientes' in locals() and not df_clientes.empty:
         col_c = 'nombre' if 'nombre' in df_clientes.columns else df_clientes.columns[0]
         lista_clientes += [c for c in df_clientes[col_c].dropna().unique() if c != "Público en general"]
 
-    lista_proveedores = ["Egreso general"]
+    lista_proveedores = ["Egreso general", "Institución Financiera / Banco"]
     if 'df_proveedores' in locals() and not df_proveedores.empty:
         col_p = 'nombre' if 'nombre' in df_proveedores.columns else df_proveedores.columns[0]
-        lista_proveedores += [p for p in df_proveedores[col_p].dropna().unique() if p != "Egreso general"]
+        lista_proveedores += [p for p in df_proveedores[col_p].dropna().unique() if p not in lista_proveedores]
 
     lista_empleados = []
     if 'df_empleados' in locals() and not df_empleados.empty:
@@ -522,36 +522,43 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         if cat in cat_ingresos: return "Ingreso", "Ingreso"
         elif cat in cat_costos_directos: return "Egreso", "Costo Directo"
         elif cat in cat_gastos_operativos: return "Egreso", "Gasto Operativo"
-        else: return "Egreso", "Otros" # Por seguridad en registros viejos
+        else: return "Egreso", "Otros"
+
+    # Inicializar columnas opcionales si no existen en el DataFrame
+    for col in ['abono_acumulado', 'id_origen_abono']:
+        if not df_finanzas.empty and col not in df_finanzas.columns:
+            df_finanzas[col] = 0.0 if col == 'abono_acumulado' else ""
 
     if not df_finanzas.empty:
         df_finanzas['monto'] = pd.to_numeric(df_finanzas['monto'], errors='coerce').fillna(0.0)
+        df_finanzas['abono_acumulado'] = pd.to_numeric(df_finanzas.get('abono_acumulado', 0.0), errors='coerce').fillna(0.0)
         df_finanzas['fecha'] = pd.to_datetime(df_finanzas['fecha'], errors='coerce')
         if 'fecha_vencimiento' in df_finanzas.columns:
             df_finanzas['fecha_vencimiento'] = pd.to_datetime(df_finanzas['fecha_vencimiento'], errors='coerce')
         df_finanzas = df_finanzas.dropna(subset=['fecha'])
         
-        # --- 🔔 SISTEMA DE ALERTAS Y RECORDATORIOS DE VENCIMIENTO ---
+        # --- 🔔 SISTEMA DE ALERTAS Y RECORDATORIOS DE VENCIMIENTO Y ABONOS ---
         hoy_dt = datetime.today()
         df_pendientes = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
         
-        if not df_pendientes.empty and 'fecha_vencimiento' in df_pendientes.columns:
-            df_vencidos = df_pendientes[df_pendientes['fecha_vencimiento'] < hoy_dt]
-            df_por_vencer = df_pendientes[(df_pendientes['fecha_vencimiento'] >= hoy_dt) & (df_pendientes['fecha_vencimiento'] <= hoy_dt + timedelta(days=7))]
+        if not df_pendientes.empty:
+            df_pendientes['saldo_pendiente'] = df_pendientes['monto'] - df_pendientes['abono_acumulado']
+            df_vencidos = df_pendientes[df_pendientes['fecha_vencimiento'] < hoy_dt] if 'fecha_vencimiento' in df_pendientes.columns else pd.DataFrame()
+            df_por_vencer = df_pendientes[(df_pendientes['fecha_vencimiento'] >= hoy_dt) & (df_pendientes['fecha_vencimiento'] <= hoy_dt + timedelta(days=7))] if 'fecha_vencimiento' in df_pendientes.columns else pd.DataFrame()
             
             if not df_vencidos.empty or not df_por_vencer.empty:
                 with st.expander("🔔 **Alertas de Cuentas Pendientes y Vencimientos**", expanded=True):
                     col_al1, col_al2 = st.columns(2)
                     with col_al1:
                         if not df_vencidos.empty:
-                            tot_vencido = df_vencidos['monto'].sum()
-                            st.error(f"⚠️ **{len(df_vencidos)} cuentas vencidas** por un total de **$ {tot_vencido:,.2f} MXN**.")
-                            st.dataframe(df_vencidos[['fecha_vencimiento', 'concepto', 'tipo', 'monto', 'lote_asociado']], use_container_width=True)
+                            tot_vencido = df_vencidos['saldo_pendiente'].sum()
+                            st.error(f"⚠️ **{len(df_vencidos)} cuentas vencidas** (Saldo por liquidar: **$ {tot_vencido:,.2f} MXN**).")
+                            st.dataframe(df_vencidos[['id', 'fecha_vencimiento', 'concepto', 'tipo', 'monto', 'abono_acumulado', 'saldo_pendiente']], use_container_width=True)
                     with col_al2:
                         if not df_por_vencer.empty:
-                            tot_por_vencer = df_por_vencer['monto'].sum()
-                            st.warning(f"⏳ **{len(df_por_vencer)} cuentas por vencer** en los próximos 7 días ($ {tot_por_vencer:,.2f} MXN).")
-                            st.dataframe(df_por_vencer[['fecha_vencimiento', 'concepto', 'tipo', 'monto', 'lote_asociado']], use_container_width=True)
+                            tot_por_vencer = df_por_vencer['saldo_pendiente'].sum()
+                            st.warning(f"⏳ **{len(df_por_vencer)} cuentas por vencer** en 7 días (Saldo: **$ {tot_por_vencer:,.2f} MXN**).")
+                            st.dataframe(df_por_vencer[['id', 'fecha_vencimiento', 'concepto', 'tipo', 'monto', 'abono_acumulado', 'saldo_pendiente']], use_container_width=True)
 
         st.subheader("📆 Filtros de Consulta")
         col_filtro, col_lote_filtro, col_estado_filtro, col_fechas = st.columns([2, 2, 2, 3])
@@ -560,10 +567,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         fecha_fin = hoy_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         with col_filtro:
-            periodo = st.selectbox(
-                "Período:",
-                ["Todo el Historial", "Esta Semana", "Este Mes", "Este Año", "Rango Personalizado"]
-            )
+            periodo = st.selectbox("Período:", ["Todo el Historial", "Esta Semana", "Este Mes", "Este Año", "Rango Personalizado"])
 
         with col_lote_filtro:
             opciones_filtro_lote = ["Todos los Lotes"]
@@ -580,29 +584,23 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 fecha_inicio = lunes.replace(hour=0, minute=0, second=0, microsecond=0)
                 fecha_fin = (lunes + timedelta(days=6)).replace(hour=23, minute=59, second=59, microsecond=999999)
                 st.info(f"Del: **{fecha_inicio.strftime('%d/%m/%Y')}** al **{fecha_fin.strftime('%d/%m/%Y')}**")
-                
             elif periodo == "Este Mes":
                 fecha_inicio = hoy_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 next_month = hoy_dt.replace(day=28) + timedelta(days=4)
                 ultimo_dia = next_month - timedelta(days=next_month.day)
                 fecha_fin = ultimo_dia.replace(hour=23, minute=59, second=59, microsecond=999999)
                 st.info(f"Mostrando: **{fecha_inicio.strftime('%B %Y')}**")
-                
             elif periodo == "Este Año":
                 fecha_inicio = hoy_dt.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
                 fecha_fin = hoy_dt.replace(month=12, day=31, hour=23, minute=59, second=59, microsecond=999999)
                 st.info(f"Año: **{hoy_dt.year}**")
-                
             elif periodo == "Rango Personalizado":
                 fecha_defecto_inicio = (hoy_dt - timedelta(days=30)).date()
                 fecha_defecto_fin = hoy_dt.date()
                 rango_fechas = st.date_input("Rango de fechas:", [fecha_defecto_inicio, fecha_defecto_fin])
-                if isinstance(rango_fechas, (list, tuple)):
-                    if len(rango_fechas) == 2:
-                        fecha_inicio = datetime.combine(rango_fechas[0], datetime.min.time())
-                        fecha_fin = datetime.combine(rango_fechas[1], datetime.max.time())
-                    else:
-                        fecha_inicio, fecha_fin = None, None
+                if isinstance(rango_fechas, (list, tuple)) and len(rango_fechas) == 2:
+                    fecha_inicio = datetime.combine(rango_fechas[0], datetime.min.time())
+                    fecha_fin = datetime.combine(rango_fechas[1], datetime.max.time())
 
         df_filtrado = df_finanzas.copy()
         try:
@@ -623,26 +621,32 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
         balance_neto = ingresos - egresos
         
-        por_cobrar = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
-        por_pagar = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]['monto'].sum()
-        
+        # Cálculo de saldos netos por cobrar/pagar restando los abonos parciales recibidos o realizados
+        df_pend_ing = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]
+        por_cobrar = (df_pend_ing['monto'] - df_pend_ing['abono_acumulado']).sum() if not df_pend_ing.empty else 0.0
+
+        df_pend_egr = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]
+        por_pagar = (df_pend_egr['monto'] - df_pend_egr['abono_acumulado']).sum() if not df_pend_egr.empty else 0.0
+
         # --- CREACIÓN DE PESTAÑAS ---
-        tab_resumen, tab_graficas, tab_rentabilidad = st.tabs(["📋 Resumen Numérico", "📈 Análisis Gráfico", "📊 Estados Financieros y Rentabilidad"])
+        tab_resumen, tab_abonos, tab_graficas, tab_rentabilidad = st.tabs([
+            "📋 Resumen Numérico", "💵 Gestión de Abonos y Créditos", "📈 Análisis Gráfico", "📊 Estados Financieros"
+        ])
         
         with tab_resumen:
             m1, m2, m3, m4, m5 = st.columns(5)
             m1.metric("🟢 Ingresos Reales", f"$ {ingresos:,.2f} MXN")
             m2.metric("🔴 Egresos Reales", f"$ {egresos:,.2f} MXN")
             m3.metric("💰 Balance Neto", f"$ {balance_neto:,.2f} MXN")
-            m4.metric("📈 Por Cobrar", f"$ {por_cobrar:,.2f} MXN")
-            m5.metric("📉 Por Pagar", f"$ {por_pagar:,.2f} MXN")
+            m4.metric("📈 Por Cobrar (Restante)", f"$ {por_cobrar:,.2f} MXN")
+            m5.metric("📉 Por Pagar (Restante)", f"$ {por_pagar:,.2f} MXN")
             
             st.write("---")
             col_tit_trans, col_btn_rep_filtrado = st.columns([3, 1])
             with col_tit_trans:
                 st.subheader("📋 Transacciones del Período Seleccionado")
             with col_btn_rep_filtrado:
-                if not df_filtrado.empty:
+                if not df_filtrado.empty and 'generar_reporte_finanzas_profesional' in globals():
                     html_profesional_finanzas = generar_reporte_finanzas_profesional(
                         df_filtrado, periodo, lote_seleccionado, ingresos, egresos, balance_neto, por_cobrar, por_pagar
                     )
@@ -662,12 +666,97 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 
             if not df_bal_vista.empty:
                 df_bal_vista['fecha'] = df_bal_vista['fecha'].dt.strftime('%Y-%m-%d')
-                df_bal_estilizado = (df_bal_vista.style
-                                     .apply(colorear_filas_finanzas, axis=1)
-                                     .format({'monto': '$ {:,.2f} MXN'}))
-                st.dataframe(df_bal_estilizado, use_container_width=True)
+                if 'colorear_filas_finanzas' in globals():
+                    df_bal_estilizado = df_bal_vista.style.apply(colorear_filas_finanzas, axis=1).format({'monto': '$ {:,.2f} MXN', 'abono_acumulado': '$ {:,.2f} MXN'})
+                    st.dataframe(df_bal_estilizado, use_container_width=True)
+                else:
+                    st.dataframe(df_bal_vista, use_container_width=True)
             else:
                 st.info("No hay registros que coincidan con la búsqueda.")
+
+        # --- PESTAÑA: GESTIÓN DE ABONOS A CUENTAS PENDIENTES Y PRÉSTAMOS ---
+        with tab_abonos:
+            st.subheader("💵 Realizar Abonos a Cuentas Pendientes y Préstamos")
+            st.markdown("Selecciona una cuenta con saldo pendiente para abonar a la deuda o liquidarla por completo.")
+
+            df_cuentas_abono = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
+            if not df_cuentas_abono.empty:
+                df_cuentas_abono['saldo_restante'] = df_cuentas_abono['monto'] - df_cuentas_abono['abono_acumulado']
+                df_cuentas_abono = df_cuentas_abono[df_cuentas_abono['saldo_restante'] > 0]
+
+            if not df_cuentas_abono.empty:
+                # Formato visual para identificar rápidamente la cuenta
+                df_cuentas_abono['opcion_texto'] = df_cuentas_abono.apply(
+                    lambda x: f"[{x['id']}] {x['tipo'].upper()} | {x['concepto']} | Total: ${x['monto']:,.2f} | Resta: ${x['saldo_restante']:,.2f} MXN", axis=1
+                )
+                
+                asig_sel_texto = st.selectbox("Selecciona la transacción o préstamo a abonar:", df_cuentas_abono['opcion_texto'].tolist(), key="sel_abono_cuenta")
+                id_abono_sel = asig_sel_texto.split("]")[0].replace("[", "").strip()
+                fila_abono = df_cuentas_abono[df_cuentas_abono['id'] == id_abono_sel].iloc[0]
+
+                saldo_actual_pendiente = float(fila_abono['saldo_restante'])
+
+                col_ab1, col_ab2, col_ab3 = st.columns(3)
+                with col_ab1:
+                    st.info(f"**Monto Original:** $ {fila_abono['monto']:,.2f} MXN")
+                    st.warning(f"**Abonado Previamente:** $ {fila_abono['abono_acumulado']:,.2f} MXN")
+                    st.error(f"**Saldo Pendiente Actual:** $ {saldo_actual_pendiente:,.2f} MXN")
+
+                with col_ab2:
+                    monto_abono = st.number_input("Monto del Abono ($ MXN)", min_value=0.01, max_value=saldo_actual_pendiente, value=saldo_actual_pendiente, step=50.0, key="monto_abono_usr")
+                    metodo_pago_abono = st.selectbox("Método de Pago del Abono", ["Efectivo", "Transferencia", "Cheque"], key="met_pago_abono")
+
+                with col_ab3:
+                    fecha_abono = st.date_input("Fecha del Abono", datetime.today(), key="fec_abono_usr").strftime('%Y-%m-%d')
+                    concepto_abono = st.text_input("Nota / Concepto del Abono", value=f"Abono a {fila_abono['concepto']}", key="con_abono_usr")
+
+                if st.button("💳 Registrar Abono", use_container_width=True, type="primary"):
+                    nuevo_abono_acumulado = float(fila_abono['abono_acumulado']) + float(monto_abono)
+                    nuevo_estado = "Pagado" if nuevo_abono_acumulado >= float(fila_abono['monto']) else "Pendiente"
+                    
+                    # 1. Actualizar la transacción padre con el abono acumulado
+                    registro_padre_actualizado = {
+                        "id": fila_abono['id'],
+                        "fecha": fila_abono['fecha'].strftime('%Y-%m-%d') if hasattr(fila_abono['fecha'], 'strftime') else str(fila_abono['fecha']),
+                        "tipo": fila_abono['tipo'],
+                        "categoria": fila_abono['categoria'],
+                        "concepto": fila_abono['concepto'],
+                        "monto": float(fila_abono['monto']),
+                        "abono_acumulado": nuevo_abono_acumulado,
+                        "metodo_pago": fila_abono.get('metodo_pago', 'Efectivo'),
+                        "asociado": fila_abono.get('asociado', ''),
+                        "empleado_responsable": fila_abono.get('empleado_responsable', ''),
+                        "lote_asociado": fila_abono.get('lote_asociado', 'Ninguno'),
+                        "estado_deuda": nuevo_estado,
+                        "fecha_vencimiento": fila_abono['fecha_vencimiento'].strftime('%Y-%m-%d') if hasattr(fila_abono['fecha_vencimiento'], 'strftime') else str(fila_abono.get('fecha_vencimiento', ''))
+                    }
+
+                    # 2. Generar movimiento en el historial por el abono pagado
+                    tipo_movimiento_abono = "Egreso" if fila_abono['tipo'] == "Egreso" else "Ingreso"
+                    categoria_abono = "Pago / Abono Préstamo" if "Préstamo" in str(fila_abono['categoria']) else fila_abono['categoria']
+                    
+                    registro_hijo_abono = {
+                        "id": f"AB-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}",
+                        "fecha": fecha_abono,
+                        "tipo": tipo_movimiento_abono,
+                        "categoria": categoria_abono,
+                        "concepto": f"[ABONO PARCIAL] {concepto_abono} (Ref: {fila_abono['id']})",
+                        "monto": float(monto_abono),
+                        "abono_acumulado": float(monto_abono),
+                        "metodo_pago": metodo_pago_abono,
+                        "asociado": fila_abono.get('asociado', ''),
+                        "empleado_responsable": fila_abono.get('empleado_responsable', ''),
+                        "lote_asociado": fila_abono.get('lote_asociado', 'Ninguno'),
+                        "estado_deuda": "Pagado",
+                        "id_origen_abono": fila_abono['id']
+                    }
+
+                    if guardar_registro("finanzas", registro_padre_actualizado, "id") and guardar_registro("finanzas", registro_hijo_abono, "id"):
+                        st.success(f"¡Abono de $ {monto_abono:,.2f} MXN registrado correctamente!")
+                        time.sleep(1)
+                        st.rerun()
+            else:
+                st.info("🎉 No hay cuentas ni préstamos con saldo pendiente registrado actualmente.")
 
         with tab_graficas:
             st.subheader("📊 Visualización de Rendimiento")
@@ -728,21 +817,16 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     
                     if not df_lotes_val.empty:
                         df_lotes_pnl = df_lotes_val.groupby(['lote_asociado', 'tipo'])['monto'].sum().unstack().fillna(0.0)
-                        
                         if 'Ingreso' not in df_lotes_pnl.columns: df_lotes_pnl['Ingreso'] = 0.0
                         if 'Egreso' not in df_lotes_pnl.columns: df_lotes_pnl['Egreso'] = 0.0
-                        
                         df_lotes_pnl['Balance Lote (MXN)'] = df_lotes_pnl['Ingreso'] - df_lotes_pnl['Egreso']
-                        
                         df_lotes_pnl = df_lotes_pnl[['Ingreso', 'Egreso', 'Balance Lote (MXN)']]
                         df_lotes_pnl.columns = ['Ingresos Totales', 'Egresos Totales', 'Balance Lote (MXN)']
-                        
                         st.dataframe(df_lotes_pnl.style.format("$ {:,.2f} MXN"), use_container_width=True)
                     else:
                         st.info("No hay transacciones pagadas vinculadas a un lote específico en este período.")
                 
                 st.markdown("### 📑 Desglose General de Estado de Resultados (MXN)")
-                
                 color_neta = '#4CAF50' if utilidad_neta >= 0 else '#f44336'
                 html_pnl = f"""
                 <div style="background-color:#1e1e1e; padding:20px; border-radius:10px; color:white; font-family:sans-serif;">
@@ -784,7 +868,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
     st.markdown("---")
     
     # --- FORMULARIO DE REGISTRO REESTRUCTURADO Y OPTIMIZADO ---
-    st.subheader("💳 Captura y Registro Financiero")
+    st.subheader("💳 Captura y Registro Financiero / Préstamos")
     
     f_tipo_dinamico = st.radio("Tipo de Movimiento:", ["Ingreso", "Egreso"], horizontal=True)
     
@@ -806,10 +890,13 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             f_monto = st.number_input("Monto Total ($ MXN)", min_value=0.0, step=50.0, key="f_mon_pos")
             f_pago = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque", "Crédito"], key="f_pag_pos")
             
-            # --- ASIGNACIÓN DINÁMICA DE TERCEROS (CLIENTE / PROVEEDOR / EMPLEADO NÓMINA) ---
             if f_tipo_dinamico == "Ingreso":
-                f_asociado = st.selectbox("Cliente / Origen", lista_clientes, index=0, key="f_cli_pos")
-                etiqueta_asociado = "Cliente"
+                if f_cat == "Préstamo / Crédito recibido":
+                    f_asociado = st.selectbox("Institución / Prestamista", lista_proveedores, index=0, key="f_pres_prov_pos")
+                    etiqueta_asociado = "Institución / Prestamista"
+                else:
+                    f_asociado = st.selectbox("Cliente / Origen", lista_clientes, index=0, key="f_cli_pos")
+                    etiqueta_asociado = "Cliente"
             else:
                 if f_cat == "Nomina":
                     if lista_empleados:
@@ -827,7 +914,9 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 opciones_lotes += list(df_lotes['nombre_lote'].dropna().unique())
             f_lote = st.selectbox("Lote Asociado", opciones_lotes, key="f_lot_pos")
             
-            f_estado = st.selectbox("Estado del Pago", ["Pagado", "Pendiente"], key="f_est_pos")
+            # Si se registra un préstamo recibido, por defecto se marca como Pendiente para poder liquidarlo con abonos
+            idx_est_defecto = 1 if f_cat == "Préstamo / Crédito recibido" else 0
+            f_estado = st.selectbox("Estado del Pago", ["Pagado", "Pendiente"], index=idx_est_defecto, key="f_est_pos")
             f_venc = st.date_input("Fecha Vencimiento", datetime.today(), key="f_venc_pos").strftime('%Y-%m-%d')
 
         st.markdown("<br>", unsafe_allow_html=True)
@@ -847,6 +936,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 "categoria": f_cat,
                 "concepto": f_concepto,
                 "monto": float(f_monto),
+                "abono_acumulado": 0.0,
                 "metodo_pago": f_pago,
                 "asociado": f_asociado,
                 "etiqueta_asociado": etiqueta_asociado,
@@ -872,7 +962,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 st.markdown("---")
                 st.subheader("¿Qué empleado realiza/autoriza esta acción?")
                 
-                # Pre-seleccionar si ya traía un responsable previamente registrado
                 idx_emp_defecto = 0
                 if tx.get("empleado_responsable") in lista_empleados:
                     idx_emp_defecto = lista_empleados.index(tx["empleado_responsable"]) + 1
@@ -891,6 +980,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             "categoria": tx["categoria"],
                             "concepto": tx["concepto"],
                             "monto": tx["monto"],
+                            "abono_acumulado": tx.get("abono_acumulado", 0.0),
                             "metodo_pago": tx["metodo_pago"],
                             "asociado": tx["asociado"],
                             "empleado_responsable": emp_seleccionado,
@@ -934,6 +1024,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             "categoria": tx["categoria"],
                             "concepto": tx["concepto"],
                             "monto": tx["monto"],
+                            "abono_acumulado": tx.get("abono_acumulado", 0.0),
                             "metodo_pago": tx["metodo_pago"],
                             "asociado": tx["asociado"],
                             "empleado_responsable": emp_seleccionado,
@@ -987,7 +1078,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 idx_met = metodos_pago.index(met_actual) if met_actual in metodos_pago else 0
                 edit_pago = st.selectbox("Método de Pago", metodos_pago, index=idx_met, key=f"ed_pag_{id_seleccionado}")
                 
-                # --- ASOCIACIÓN DINÁMICA DE PROVEEDOR / CLIENTE / OTROS SEGÚN EL TIPO DE TRANSACCIÓN EDITADA ---
                 asociado_previo = str(fila_sel.get('asociado', ''))
                 
                 if edit_tipo == "Ingreso":
@@ -1031,7 +1121,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     elif not edit_concepto:
                         st.error("❌ Por favor escribe un Concepto o Descripción.")
                     else:
-                        # Se asigna a transaccion_pendiente para disparar el modal de confirmación de empleado
                         st.session_state["transaccion_pendiente"] = {
                             "id": id_seleccionado,
                             "fecha": edit_fecha,
@@ -1039,6 +1128,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             "categoria": edit_cat,
                             "concepto": edit_concepto,
                             "monto": float(edit_monto),
+                            "abono_acumulado": float(fila_sel.get('abono_acumulado', 0.0)),
                             "metodo_pago": edit_pago,
                             "asociado": edit_asociado,
                             "etiqueta_asociado": etiqueta_asociado_ed,
