@@ -760,94 +760,111 @@ if modulo_activo == "📊 Dashboard & Finanzas":
     st.markdown("---")
 
 
-        # ==========================================
-        # NUEVA PESTAÑA: ABONOS Y PRÉSTAMOS
-        # ==========================================
-        with tab_abonos_prestamos:
-            st.subheader("🤝 Gestión de Abonos a Pendientes y Préstamos")
+      # ==========================================
+# NUEVA PESTAÑA: ABONOS Y PRÉSTAMOS
+# ==========================================
+with tab_abonos_prestamos:
+    st.subheader("🤝 Gestión de Abonos a Pendientes y Préstamos")
+    
+    sub_tab_abonos, sub_tab_prestamos = st.tabs([
+        "💰 Registrar Abono a Cuenta Pendiente", 
+        "🏦 Control de Préstamos"
+    ])
+    
+    # Validar variable lista_empleados si no está definida globalmente
+    if 'lista_empleados' not in locals():
+        if 'df_empleados' in locals() and not df_empleados.empty and 'nombre' in df_empleados.columns:
+            lista_empleados = df_empleados['nombre'].tolist()
+        else:
+            lista_empleados = ["Administrador General"]
+
+    # --- SUB-TAB 1: ABONOS A PENDIENTES ---
+    with sub_tab_abonos:
+        st.markdown("#### Registrar Abono a Cuenta por Cobrar o por Pagar")
+        
+        df_cuentas_pendientes = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy() if not df_finanzas.empty else pd.DataFrame()
+        
+        if not df_cuentas_pendientes.empty:
+            df_cuentas_pendientes['info_cuenta'] = df_cuentas_pendientes.apply(
+                lambda r: f"[{r['id']}] {r['tipo']} - {r['concepto']} (Pendiente: ${float(r['monto']):,.2f} MXN | Tercero: {r.get('asociado', 'N/A')})", 
+                axis=1
+            )
             
-            sub_tab_abonos, sub_tab_prestamos = st.tabs(["💰 Registrar Abono a Cuenta Pendiente", "🏦 Control de Préstamos"])
+            cuenta_sel = st.selectbox(
+                "Selecciona la cuenta pendiente a abonar:", 
+                df_cuentas_pendientes['info_cuenta'].tolist(),
+                key="sel_cuenta_abono"
+            )
             
-            # --- SUB-TAB 1: ABONOS A PENDIENTES ---
-            with sub_tab_abonos:
-                st.markdown("#### Registrar Abono a Cuenta por Cobrar o por Pagar")
-                df_cuentas_pendientes = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
+            id_cuenta = cuenta_sel.split("]")[0].replace("[", "").strip()
+            fila_cuenta = df_cuentas_pendientes[df_cuentas_pendientes['id'] == id_cuenta].iloc[0]
+            
+            monto_pendiente_actual = float(fila_cuenta['monto'])
+            st.info(f"📌 **Cuenta seleccionada:** {fila_cuenta['concepto']} | **Monto Restante:** $ {monto_pendiente_actual:,.2f} MXN")
+            
+            col_ab1, col_ab2, col_ab3 = st.columns(3)
+            with col_ab1:
+                monto_abono = st.number_input(
+                    "Monto del Abono ($ MXN)", 
+                    min_value=0.01, 
+                    max_value=max(0.01, monto_pendiente_actual), 
+                    value=float(min(100.0, monto_pendiente_actual)),
+                    step=50.0,
+                    key="input_monto_abono"
+                )
+            with col_ab2:
+                metodo_abono = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque"], key="metodo_pago_abono")
+            with col_ab3:
+                resp_abono = st.selectbox("Empleado Responsable", lista_empleados, key="emp_abono")
                 
-                if not df_cuentas_pendientes.empty:
-                    df_cuentas_pendientes['info_cuenta'] = df_cuentas_pendientes.apply(
-                        lambda r: f"[{r['id']}] {r['tipo']} - {r['concepto']} (Pendiente: ${r['monto']:,.2f} MXN | Tercero: {r.get('asociado', 'N/A')})", axis=1
-                    )
-                    
-                    cuenta_sel = st.selectbox(
-                        "Selecciona la cuenta pendiente a abonar:", 
-                        df_cuentas_pendientes['info_cuenta'].tolist(),
-                        key="sel_cuenta_abono"
-                    )
-                    
-                    id_cuenta = cuenta_sel.split("]")[0].replace("[", "").strip()
-                    fila_cuenta = df_cuentas_pendientes[df_cuentas_pendientes['id'] == id_cuenta].iloc[0]
-                    
-                    monto_pendiente_actual = float(fila_cuenta['monto'])
-                    st.info(f"📌 **Cuenta seleccionada:** {fila_cuenta['concepto']} | **Monto Restante:** $ {monto_pendiente_actual:,.2f} MXN")
-                    
-                    col_ab1, col_ab2, col_ab3 = st.columns(3)
-                    with col_ab1:
-                        monto_abono = st.number_input(
-                            "Monto del Abono ($ MXN)", 
-                            min_value=0.01, 
-                            max_value=monto_pendiente_actual, 
-                            value=min(100.0, monto_pendiente_actual),
-                            step=50.0,
-                            key="input_monto_abono"
-                        )
-                    with col_ab2:
-                        metodo_abono = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Cheque"], key="metodo_pago_abono")
-                    with col_ab3:
-                        resp_abono = st.selectbox("Empleado Responsable", lista_empleados, key="emp_abono")
-                        
-                    if st.button("✅ Registrar Abono", type="primary", use_container_width=True, key="btn_guardar_abono"):
-                        # 1. Crear transacción de flujo de efectivo pagado
-                        id_abono = f"AB-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
-                        registro_abono = {
-                            "id": id_abono,
-                            "fecha": datetime.now().strftime('%Y-%m-%d'),
-                            "tipo": fila_cuenta['tipo'],
-                            "categoria": fila_cuenta['categoria'],
-                            "concepto": f"Abono a ID [{fila_cuenta['id']}]: {fila_cuenta['concepto']}",
-                            "monto": float(monto_abono),
-                            "metodo_pago": metodo_abono,
-                            "asociado": fila_cuenta.get('asociado', ''),
-                            "empleado_responsable": resp_abono,
-                            "lote_asociado": fila_cuenta.get('lote_asociado', 'Ninguno'),
-                            "estado_deuda": "Pagado",
-                            "fecha_vencimiento": datetime.now().strftime('%Y-%m-%d')
-                        }
-                        
-                        # 2. Actualizar la cuenta pendiente original
-                        nuevo_saldo_pendiente = monto_pendiente_actual - monto_abono
-                        nuevo_estado = "Pagado" if nuevo_saldo_pendiente <= 0 else "Pendiente"
-                        
-                        registro_actualizado = {
-                            "id": fila_cuenta['id'],
-                            "fecha": str(fila_cuenta['fecha'])[:10],
-                            "tipo": fila_cuenta['tipo'],
-                            "categoria": fila_cuenta['categoria'],
-                            "concepto": fila_cuenta['concepto'],
-                            "monto": float(max(0.0, nuevo_saldo_pendiente)),
-                            "metodo_pago": fila_cuenta.get('metodo_pago', 'Efectivo'),
-                            "asociado": fila_cuenta.get('asociado', ''),
-                            "empleado_responsable": resp_abono,
-                            "lote_asociado": fila_cuenta.get('lote_asociado', 'Ninguno'),
-                            "estado_deuda": nuevo_estado,
-                            "fecha_vencimiento": str(fila_cuenta.get('fecha_vencimiento', datetime.now()))[:10]
-                        }
-                        
-                        if guardar_registro("finanzas", registro_abono, "id") and guardar_registro("finanzas", registro_actualizado, "id"):
-                            st.success(f"¡Abono de $ {monto_abono:,.2f} MXN aplicado exitosamente!")
-                            time.sleep(1)
-                            st.rerun()
-                else:
-                    st.info("No hay cuentas con pagos pendientes registradas por cobrar o por pagar.")
+            if st.button("✅ Registrar Abono", type="primary", use_container_width=True, key="btn_guardar_abono"):
+                # 1. Crear transacción de flujo de efectivo pagado
+                id_abono = f"AB-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
+                registro_abono = {
+                    "id": id_abono,
+                    "fecha": datetime.now().strftime('%Y-%m-%d'),
+                    "tipo": fila_cuenta['tipo'],
+                    "categoria": fila_cuenta['categoria'],
+                    "concepto": f"Abono a ID [{fila_cuenta['id']}]: {fila_cuenta['concepto']}",
+                    "monto": float(monto_abono),
+                    "metodo_pago": metodo_abono,
+                    "asociado": fila_cuenta.get('asociado', ''),
+                    "empleado_responsable": resp_abono,
+                    "lote_asociado": fila_cuenta.get('lote_asociado', 'Ninguno'),
+                    "estado_deuda": "Pagado",
+                    "fecha_vencimiento": datetime.now().strftime('%Y-%m-%d')
+                }
+                
+                # 2. Actualizar la cuenta pendiente original
+                nuevo_saldo_pendiente = monto_pendiente_actual - monto_abono
+                nuevo_estado = "Pagado" if nuevo_saldo_pendiente <= 0 else "Pendiente"
+                
+                registro_actualizado = {
+                    "id": fila_cuenta['id'],
+                    "fecha": str(fila_cuenta['fecha'])[:10],
+                    "tipo": fila_cuenta['tipo'],
+                    "categoria": fila_cuenta['categoria'],
+                    "concepto": fila_cuenta['concepto'],
+                    "monto": float(max(0.0, nuevo_saldo_pendiente)),
+                    "metodo_pago": fila_cuenta.get('metodo_pago', 'Efectivo'),
+                    "asociado": fila_cuenta.get('asociado', ''),
+                    "empleado_responsable": resp_abono,
+                    "lote_asociado": fila_cuenta.get('lote_asociado', 'Ninguno'),
+                    "estado_deuda": nuevo_estado,
+                    "fecha_vencimiento": str(fila_cuenta.get('fecha_vencimiento', datetime.now()))[:10]
+                }
+                
+                if guardar_registro("finanzas", registro_abono, "id") and guardar_registro("finanzas", registro_actualizado, "id"):
+                    st.success(f"¡Abono de $ {monto_abono:,.2f} MXN aplicado exitosamente!")
+                    time.sleep(1)
+                    st.rerun()
+        else:
+            st.info("No hay cuentas con pagos pendientes registradas por cobrar o por pagar.")
+
+    # --- SUB-TAB 2: CONTROL DE PRÉSTAMOS ---
+    with sub_tab_prestamos:
+        st.markdown("#### Control de Préstamos Otorgados / Recibidos")
+        st.info("Esta sección permite el registro y seguimiento de préstamos de capital.")
 
             # --- SUB-TAB 2: CONTROL DE PRÉSTAMOS ---
             with sub_tab_prestamos:
