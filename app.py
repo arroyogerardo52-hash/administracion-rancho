@@ -638,14 +638,12 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             df_filtrado = df_filtrado[df_filtrado['estado_deuda'] == filtro_estado]
 
         # --- CÁLCULOS METRICAS GENERALES AJUSTADOS ---
-        # Ingresos reales cobrados (Excluyendo préstamos del ingreso operativo)
         ingresos = df_filtrado[
             (df_filtrado['tipo'] == 'Ingreso') & 
             (df_filtrado['estado_deuda'] == 'Pagado') &
             (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')
         ]['monto'].sum()
 
-        # Egresos reales pagados
         egresos = df_filtrado[
             (df_filtrado['tipo'] == 'Egreso') & 
             (df_filtrado['estado_deuda'] == 'Pagado')
@@ -653,7 +651,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
         balance_neto = ingresos - egresos
         
-        # 🟢 Cuentas por Cobrar: Ventas operativas pendientes que clientes nos deben
         df_pend_ing = df_filtrado[
             (df_filtrado['tipo'] == 'Ingreso') & 
             (df_filtrado['estado_deuda'] == 'Pendiente') &
@@ -661,7 +658,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         ]
         por_cobrar = (df_pend_ing['monto'] - df_pend_ing['abono_acumulado']).sum() if not df_pend_ing.empty else 0.0
 
-        # 🔴 Cuentas por Pagar: Egresos a crédito O Préstamos bancarios/recibidos pendientes que debemos liquidar
         df_pend_egr = df_filtrado[
             ((df_filtrado['tipo'] == 'Egreso') | (df_filtrado['categoria'] == 'Préstamo / Crédito recibido')) & 
             (df_filtrado['estado_deuda'] == 'Pendiente')
@@ -823,7 +819,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             st.subheader("📊 Estado de Resultados (P&L) y Rentabilidad")
             st.markdown("Cálculos expresados en **Pesos Mexicanos (MXN)** basados **exclusivamente en transacciones pagadas/cobradas** dentro del período.")
             
-            # Se excluyen los préstamos del P&L
             df_pagados = df_filtrado[
                 (df_filtrado['estado_deuda'] == 'Pagado') &
                 (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')
@@ -1089,11 +1084,19 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
         fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
         
-        try: fecha_orig = pd.to_datetime(fila_sel['fecha']).date()
-        except: fecha_orig = datetime.today().date()
+        # Validar fecha_orig para evitar NaT/None
+        try:
+            val_fec = pd.to_datetime(fila_sel.get('fecha'))
+            fecha_orig = val_fec.date() if pd.notnull(val_fec) else datetime.today().date()
+        except:
+            fecha_orig = datetime.today().date()
             
-        try: f_venc_orig = pd.to_datetime(fila_sel.get('fecha_vencimiento', datetime.today())).date()
-        except: f_venc_orig = datetime.today().date()
+        # Validar f_venc_orig para evitar NaT/None (Causa del ValueError)
+        try:
+            val_venc = pd.to_datetime(fila_sel.get('fecha_vencimiento'))
+            f_venc_orig = val_venc.date() if pd.notnull(val_venc) else datetime.today().date()
+        except:
+            f_venc_orig = datetime.today().date()
             
         with st.expander("📝 Abrir Editor Manual"):
             tipo_actual_bd = fila_sel.get('tipo', 'Egreso')
@@ -1185,16 +1188,45 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 if st.button("🗑️ Eliminar Transacción", use_container_width=True, type="primary", key=f"btn_del_{id_seleccionado}"):
                     st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = True
 
-            # --- CONFIRMACIÓN Y ELIMINACIÓN CORREGIDA ---
+            # --- CONFIRMACIÓN Y ELIMINACIÓN CORREGIDA CON REVERTIDO DE SALDOS ---
             if st.session_state.get(f"confirmar_eliminar_{id_seleccionado}", False):
                 st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar permanentemente la transacción **{id_seleccionado}**?")
                 col_del_si, col_del_no = st.columns(2)
                 with col_del_si:
                     if st.button("🔴 Sí, Eliminar", use_container_width=True, key=f"confirm_si_{id_seleccionado}"):
                         try:
+                            # Revertir saldo en registro padre si la transacción a eliminar es un abono
+                            id_origen = str(fila_sel.get('id_origen_abono', ''))
+                            if not id_origen and '[ABONO PARCIAL]' in str(fila_sel.get('concepto', '')):
+                                try:
+                                    id_origen = fila_sel.get('concepto', '').split('(Ref: ')[1].replace(')', '').strip()
+                                except:
+                                    id_origen = ""
+
+                            if id_origen and id_origen in df_finanzas['id'].values:
+                                fila_padre = df_finanzas[df_finanzas['id'] == id_origen].iloc[0]
+                                nuevo_acumulado = max(0.0, float(fila_padre.get('abono_acumulado', 0.0)) - float(fila_sel.get('monto', 0.0)))
+                                nuevo_est_padre = "Pagado" if nuevo_acumulado >= float(fila_padre.get('monto', 0.0)) else "Pendiente"
+                                
+                                reg_padre_revertido = {
+                                    "id": fila_padre['id'],
+                                    "fecha": str(fila_padre['fecha'])[:10],
+                                    "tipo": fila_padre['tipo'],
+                                    "categoria": fila_padre['categoria'],
+                                    "concepto": fila_padre['concepto'],
+                                    "monto": float(fila_padre['monto']),
+                                    "abono_acumulado": nuevo_acumulado,
+                                    "metodo_pago": fila_padre.get('metodo_pago', 'Efectivo'),
+                                    "asociado": fila_padre.get('asociado', ''),
+                                    "empleado_responsable": fila_padre.get('empleado_responsable', ''),
+                                    "lote_asociado": fila_padre.get('lote_asociado', 'Ninguno'),
+                                    "estado_deuda": nuevo_est_padre,
+                                    "fecha_vencimiento": str(fila_padre.get('fecha_vencimiento', ''))[:10]
+                                }
+                                guardar_registro("finanzas", reg_padre_revertido, "id")
+
                             res_del = False
                             if 'eliminar_registro' in globals():
-                                # CORRECCIÓN CLAVE: La firma correcta es eliminar_registro(tabla, columna, valor)
                                 res_del = eliminar_registro("finanzas", "id", str(id_seleccionado))
                             else:
                                 df_finanzas = df_finanzas[df_finanzas['id'] != str(id_seleccionado)]
