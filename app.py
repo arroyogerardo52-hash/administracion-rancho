@@ -537,28 +537,48 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             df_finanzas['fecha_vencimiento'] = pd.to_datetime(df_finanzas['fecha_vencimiento'], errors='coerce')
         df_finanzas = df_finanzas.dropna(subset=['fecha'])
         
-        # --- 🔔 SISTEMA DE ALERTAS Y RECORDATORIOS DE VENCIMIENTO Y ABONOS ---
+        # --- 🔔 SISTEMA DE ALERTAS SEPARADO POR SENTIDO DE DEUDA ---
         hoy_dt = datetime.today()
         df_pendientes = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
         
         if not df_pendientes.empty:
             df_pendientes['saldo_pendiente'] = df_pendientes['monto'] - df_pendientes['abono_acumulado']
-            df_vencidos = df_pendientes[df_pendientes['fecha_vencimiento'] < hoy_dt] if 'fecha_vencimiento' in df_pendientes.columns else pd.DataFrame()
-            df_por_vencer = df_pendientes[(df_pendientes['fecha_vencimiento'] >= hoy_dt) & (df_pendientes['fecha_vencimiento'] <= hoy_dt + timedelta(days=7))] if 'fecha_vencimiento' in df_pendientes.columns else pd.DataFrame()
             
-            if not df_vencidos.empty or not df_por_vencer.empty:
+            # Cuentas que nos deben a nosotros
+            df_cobrar_pend = df_pendientes[
+                (df_pendientes['tipo'] == 'Ingreso') & 
+                (df_pendientes['categoria'] != 'Préstamo / Crédito recibido')
+            ]
+            
+            # Cuentas que nosotros debemos
+            df_pagar_pend = df_pendientes[
+                (df_pendientes['tipo'] == 'Egreso') | 
+                (df_pendientes['categoria'] == 'Préstamo / Crédito recibido')
+            ]
+
+            df_vencidos_cobrar = df_cobrar_pend[df_cobrar_pend['fecha_vencimiento'] < hoy_dt] if 'fecha_vencimiento' in df_cobrar_pend.columns else pd.DataFrame()
+            df_vencidos_pagar = df_pagar_pend[df_pagar_pend['fecha_vencimiento'] < hoy_dt] if 'fecha_vencimiento' in df_pagar_pend.columns else pd.DataFrame()
+
+            if not df_vencidos_cobrar.empty or not df_vencidos_pagar.empty:
                 with st.expander("🔔 **Alertas de Cuentas Pendientes y Vencimientos**", expanded=True):
                     col_al1, col_al2 = st.columns(2)
                     with col_al1:
-                        if not df_vencidos.empty:
-                            tot_vencido = df_vencidos['saldo_pendiente'].sum()
-                            st.error(f"⚠️ **{len(df_vencidos)} cuentas vencidas** (Saldo por liquidar: **$ {tot_vencido:,.2f} MXN**).")
-                            st.dataframe(df_vencidos[['id', 'fecha_vencimiento', 'concepto', 'tipo', 'monto', 'abono_acumulado', 'saldo_pendiente']], use_container_width=True)
+                        st.markdown("#### 🟢 Cuentas por Cobrar (Te deben dinero)")
+                        if not df_vencidos_cobrar.empty:
+                            tot_vencido_cob = df_vencidos_cobrar['saldo_pendiente'].sum()
+                            st.warning(f"⚠️ **{len(df_vencidos_cobrar)} cobros vencidos** (Saldo por cobrar: **$ {tot_vencido_cob:,.2f} MXN**).")
+                            st.dataframe(df_vencidos_cobrar[['id', 'fecha_vencimiento', 'concepto', 'monto', 'abono_acumulado', 'saldo_pendiente']], use_container_width=True)
+                        else:
+                            st.success("No tienes cobros vencidos pendientes.")
+                            
                     with col_al2:
-                        if not df_por_vencer.empty:
-                            tot_por_vencer = df_por_vencer['saldo_pendiente'].sum()
-                            st.warning(f"⏳ **{len(df_por_vencer)} cuentas por vencer** en 7 días (Saldo: **$ {tot_por_vencer:,.2f} MXN**).")
-                            st.dataframe(df_por_vencer[['id', 'fecha_vencimiento', 'concepto', 'tipo', 'monto', 'abono_acumulado', 'saldo_pendiente']], use_container_width=True)
+                        st.markdown("#### 🔴 Cuentas por Pagar (Tú debes dinero)")
+                        if not df_vencidos_pagar.empty:
+                            tot_vencido_pag = df_vencidos_pagar['saldo_pendiente'].sum()
+                            st.error(f"⚠️ **{len(df_vencidos_pagar)} deudas/préstamos vencidos** (Saldo a pagar: **$ {tot_vencido_pag:,.2f} MXN**).")
+                            st.dataframe(df_vencidos_pagar[['id', 'fecha_vencimiento', 'concepto', 'monto', 'abono_acumulado', 'saldo_pendiente']], use_container_width=True)
+                        else:
+                            st.success("No tienes deudas vencidas pendientes.")
 
         st.subheader("📆 Filtros de Consulta")
         col_filtro, col_lote_filtro, col_estado_filtro, col_fechas = st.columns([2, 2, 2, 3])
@@ -617,15 +637,35 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         if filtro_estado != "Todos":
             df_filtrado = df_filtrado[df_filtrado['estado_deuda'] == filtro_estado]
 
-        ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
-        egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
+        # --- CÁLCULOS METRICAS GENERALES AJUSTADOS ---
+        # Ingresos reales cobrados (Excluyendo préstamos del ingreso operativo)
+        ingresos = df_filtrado[
+            (df_filtrado['tipo'] == 'Ingreso') & 
+            (df_filtrado['estado_deuda'] == 'Pagado') &
+            (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')
+        ]['monto'].sum()
+
+        # Egresos reales pagados
+        egresos = df_filtrado[
+            (df_filtrado['tipo'] == 'Egreso') & 
+            (df_filtrado['estado_deuda'] == 'Pagado')
+        ]['monto'].sum()
+
         balance_neto = ingresos - egresos
         
-        # Cálculo de saldos netos por cobrar/pagar restando los abonos parciales recibidos o realizados
-        df_pend_ing = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]
+        # 🟢 Cuentas por Cobrar: Ventas operativas pendientes que clientes nos deben
+        df_pend_ing = df_filtrado[
+            (df_filtrado['tipo'] == 'Ingreso') & 
+            (df_filtrado['estado_deuda'] == 'Pendiente') &
+            (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')
+        ]
         por_cobrar = (df_pend_ing['monto'] - df_pend_ing['abono_acumulado']).sum() if not df_pend_ing.empty else 0.0
 
-        df_pend_egr = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pendiente')]
+        # 🔴 Cuentas por Pagar: Egresos a crédito O Préstamos bancarios/recibidos pendientes que debemos liquidar
+        df_pend_egr = df_filtrado[
+            ((df_filtrado['tipo'] == 'Egreso') | (df_filtrado['categoria'] == 'Préstamo / Crédito recibido')) & 
+            (df_filtrado['estado_deuda'] == 'Pendiente')
+        ]
         por_pagar = (df_pend_egr['monto'] - df_pend_egr['abono_acumulado']).sum() if not df_pend_egr.empty else 0.0
 
         # --- CREACIÓN DE PESTAÑAS ---
@@ -685,7 +725,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 df_cuentas_abono = df_cuentas_abono[df_cuentas_abono['saldo_restante'] > 0]
 
             if not df_cuentas_abono.empty:
-                # Formato visual para identificar rápidamente la cuenta
                 df_cuentas_abono['opcion_texto'] = df_cuentas_abono.apply(
                     lambda x: f"[{x['id']}] {x['tipo'].upper()} | {x['concepto']} | Total: ${x['monto']:,.2f} | Resta: ${x['saldo_restante']:,.2f} MXN", axis=1
                 )
@@ -714,7 +753,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     nuevo_abono_acumulado = float(fila_abono['abono_acumulado']) + float(monto_abono)
                     nuevo_estado = "Pagado" if nuevo_abono_acumulado >= float(fila_abono['monto']) else "Pendiente"
                     
-                    # 1. Actualizar la transacción padre con el abono acumulado
                     registro_padre_actualizado = {
                         "id": fila_abono['id'],
                         "fecha": fila_abono['fecha'].strftime('%Y-%m-%d') if hasattr(fila_abono['fecha'], 'strftime') else str(fila_abono['fecha']),
@@ -731,7 +769,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         "fecha_vencimiento": fila_abono['fecha_vencimiento'].strftime('%Y-%m-%d') if hasattr(fila_abono['fecha_vencimiento'], 'strftime') else str(fila_abono.get('fecha_vencimiento', ''))
                     }
 
-                    # 2. Generar movimiento en el historial por el abono pagado
                     tipo_movimiento_abono = "Egreso" if fila_abono['tipo'] == "Egreso" else "Ingreso"
                     categoria_abono = "Pago / Abono Préstamo" if "Préstamo" in str(fila_abono['categoria']) else fila_abono['categoria']
                     
@@ -786,7 +823,12 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             st.subheader("📊 Estado de Resultados (P&L) y Rentabilidad")
             st.markdown("Cálculos expresados en **Pesos Mexicanos (MXN)** basados **exclusivamente en transacciones pagadas/cobradas** dentro del período.")
             
-            df_pagados = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].copy()
+            # Se excluyen los préstamos del P&L
+            df_pagados = df_filtrado[
+                (df_filtrado['estado_deuda'] == 'Pagado') &
+                (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')
+            ].copy()
+            
             if not df_pagados.empty:
                 df_pagados['Rubro'] = df_pagados['categoria'].apply(lambda x: clasificar_categoria(x)[1])
                 
@@ -832,7 +874,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 <div style="background-color:#1e1e1e; padding:20px; border-radius:10px; color:white; font-family:sans-serif;">
                     <table style="width:100%; border-collapse:collapse; font-size:16px;">
                         <tr style="border-bottom: 2px solid #4CAF50;">
-                            <td style="padding:10px; font-weight:bold;">(+) INGRESOS TOTALES</td>
+                            <td style="padding:10px; font-weight:bold;">(+) INGRESOS TOTALES POR VENTAS</td>
                             <td style="padding:10px; text-align:right; font-weight:bold; color:#4CAF50;">$ {tot_ingresos:,.2f} MXN</td>
                         </tr>
                         <tr style="border-bottom: 1px solid #555;">
@@ -914,7 +956,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 opciones_lotes += list(df_lotes['nombre_lote'].dropna().unique())
             f_lote = st.selectbox("Lote Asociado", opciones_lotes, key="f_lot_pos")
             
-            # Si se registra un préstamo recibido, por defecto se marca como Pendiente para poder liquidarlo con abonos
             idx_est_defecto = 1 if f_cat == "Préstamo / Crédito recibido" else 0
             f_estado = st.selectbox("Estado del Pago", ["Pagado", "Pendiente"], index=idx_est_defecto, key="f_est_pos")
             f_venc = st.date_input("Fecha Vencimiento", datetime.today(), key="f_venc_pos").strftime('%Y-%m-%d')
@@ -1144,21 +1185,29 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 if st.button("🗑️ Eliminar Transacción", use_container_width=True, type="primary", key=f"btn_del_{id_seleccionado}"):
                     st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = True
 
+            # --- CONFIRMACIÓN Y ELIMINACIÓN CORREGIDA ---
             if st.session_state.get(f"confirmar_eliminar_{id_seleccionado}", False):
                 st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar permanentemente la transacción **{id_seleccionado}**?")
                 col_del_si, col_del_no = st.columns(2)
                 with col_del_si:
                     if st.button("🔴 Sí, Eliminar", use_container_width=True, key=f"confirm_si_{id_seleccionado}"):
-                        if 'eliminar_registro' in globals():
-                            eliminar_registro("finanzas", id_seleccionado, "id")
-                        else:
-                            df_finanzas = df_finanzas[df_finanzas['id'] != id_seleccionado]
-                            if 'guardar_dataframe' in globals():
-                                guardar_dataframe("finanzas", df_finanzas)
-                        st.success(f"Transacción {id_seleccionado} eliminada exitosamente.")
-                        st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
-                        time.sleep(1)
-                        st.rerun()
+                        try:
+                            res_del = False
+                            if 'eliminar_registro' in globals():
+                                # CORRECCIÓN CLAVE: La firma correcta es eliminar_registro(tabla, columna, valor)
+                                res_del = eliminar_registro("finanzas", "id", str(id_seleccionado))
+                            else:
+                                df_finanzas = df_finanzas[df_finanzas['id'] != str(id_seleccionado)]
+                                if 'guardar_dataframe' in globals():
+                                    res_del = guardar_dataframe("finanzas", df_finanzas)
+                            
+                            st.success(f"Transacción {id_seleccionado} eliminada exitosamente.")
+                            st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as err:
+                            st.error(f"Error al eliminar la transacción: {err}")
+                            
                 with col_del_no:
                     if st.button("❌ Cancelar", use_container_width=True, key=f"confirm_no_{id_seleccionado}"):
                         st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
