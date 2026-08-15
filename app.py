@@ -10,7 +10,7 @@ import os
 # -------------------------------------------------------------
 # 1. BANDERAS DE PRIVACIDAD Y CARGA DE USUARIOS
 # -------------------------------------------------------------
-TIEMPO_EXPIRED = 300  # Tiempo en segundos para cerrar sesión (5 min)
+TIEMPO_EXPIRED = 600  # Tiempo en segundos para cerrar sesión (5 min)
 
 # Cargar usuarios desde Streamlit Secrets (Nube) o fallback por defecto
 if "usuarios" in st.secrets:
