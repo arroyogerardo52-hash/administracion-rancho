@@ -1245,6 +1245,8 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     if st.button("❌ Cancelar", use_container_width=True, key=f"confirm_no_{id_seleccionado}"):
                         st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
                         st.rerun()
+elif modulo_activo == "📈 Proyecciones & Equilibrio":
+    render_vista_proyecciones_y_equilibrio(supabase)
 import streamlit as st
 import pandas as pd
 import numpy as np
