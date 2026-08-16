@@ -496,8 +496,9 @@ if modulo_activo == "📊 Dashboard & Finanzas":
     """, unsafe_allow_html=True)
 
 render_vista_proyecciones_y_equilibrio(supabase)
+   
     # --- DEFINICIÓN DE CATEGORÍAS PARA EL ESTADO DE RESULTADOS ---
- cat_ingresos = ["Venta de ganado", "Varios (Ingresos)", "Préstamo / Crédito recibido"]
+    cat_ingresos = ["Venta de ganado", "Varios (Ingresos)", "Préstamo / Crédito recibido"]
     cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)"]
     cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Pago / Abono Préstamo", "Varios (Gastos operativos)"]
     todas_las_categorias = cat_ingresos + cat_costos_directos + cat_gastos_operativos
