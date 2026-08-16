@@ -1,5 +1,6 @@
 streamlit
 pandas
 supabase
+plotly
 xlsxwriter
 pytz
