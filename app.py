@@ -151,6 +151,7 @@ with st.sidebar:
         "Ir a la sección:",
         [
             "📊 Dashboard & Finanzas", 
+            "📈 Proyecciones & Equilibrio",  
             "🤠 Personal / Empleados", 
             "🤝 Clientes", 
             "🚜 Proveedores", 
@@ -158,7 +159,6 @@ with st.sidebar:
         ],
         index=0
     )
-    
     st.markdown("---")
     st.header("⚙️ Copias de Seguridad")
     
@@ -495,8 +495,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         </style>
     """, unsafe_allow_html=True)
 
-    render_vista_proyecciones_y_equilibrio(supabase)
-   
     # --- DEFINICIÓN DE CATEGORÍAS PARA EL ESTADO DE RESULTADOS ---
     cat_ingresos = ["Venta de ganado", "Varios (Ingresos)", "Préstamo / Crédito recibido"]
     cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)"]
