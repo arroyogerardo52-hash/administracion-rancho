@@ -441,6 +441,11 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
     """
     return html
 
+import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
+import time
+
 # ==========================================
 # MÓDULO 1: DASHBOARD Y FINANZAS
 # ==========================================
@@ -782,12 +787,10 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             if not df_pagados.empty:
                 df_pagados['Rubro'] = df_pagados['categoria'].apply(lambda x: clasificar_categoria(x)[1])
                 
-                # Corrección: Ingresos directos por tipo "Ingreso" pagado (Coincide con los $40,000 MXN)
                 tot_ingresos = df_pagados[df_pagados['tipo'] == 'Ingreso']['monto'].sum()
                 tot_costos_directos = df_pagados[df_pagados['Rubro'] == 'Costo Directo']['monto'].sum()
                 tot_gastos_operativos = df_pagados[df_pagados['Rubro'] == 'Gasto Operativo']['monto'].sum()
                 
-                # Excluir amortizaciones o clasificaciones ambiguas que inflen otros gastos
                 df_otros = df_pagados[(df_pagados['Rubro'] == 'Otros') & (df_pagados['tipo'] == 'Egreso')]
                 tot_otros = df_otros['monto'].sum()
                 
@@ -931,6 +934,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 "fecha_vencimiento": f_venc,
                 "es_edicion": False
             }
+            st.rerun()
 
     if "transaccion_pendiente" in st.session_state:
         tx = st.session_state["transaccion_pendiente"]
@@ -952,12 +956,12 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     idx_emp_defecto = lista_empleados.index(tx["empleado_responsable"]) + 1
                     
                 opciones_modal_emp = ["-- Seleccionar Empleado --"] + lista_empleados
-                emp_seleccionado = st.selectbox("Empleado Responsable *", opciones_modal_emp, index=idx_emp_defecto)
+                emp_seleccionado = st.selectbox("Empleado Responsable *", opciones_modal_emp, index=idx_emp_defecto, key="modal_emp_sel")
                 
                 c_mod1, c_mod2 = st.columns(2)
                 with c_mod1:
                     es_invalido = (emp_seleccionado == "-- Seleccionar Empleado --")
-                    if st.button("✅ Confirmar y Guardar", disabled=es_invalido, use_container_width=True, type="primary"):
+                    if st.button("✅ Confirmar y Guardar", disabled=es_invalido, use_container_width=True, type="primary", key="modal_btn_guardar"):
                         registro_final = {
                             "id": tx["id"],
                             "fecha": tx["fecha"],
@@ -979,7 +983,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             time.sleep(1)
                             st.rerun()
                 with c_mod2:
-                    if st.button("❌ Cancelar", use_container_width=True):
+                    if st.button("❌ Cancelar", use_container_width=True, key="modal_btn_cancelar"):
                         del st.session_state["transaccion_pendiente"]
                         st.rerun()
 
@@ -1035,13 +1039,13 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         try:
             val_fec = pd.to_datetime(fila_sel.get('fecha'))
             fecha_orig = val_fec.date() if pd.notnull(val_fec) else datetime.today().date()
-        except:
+        except Exception:
             fecha_orig = datetime.today().date()
             
         try:
             val_venc = pd.to_datetime(fila_sel.get('fecha_vencimiento'))
             f_venc_orig = val_venc.date() if pd.notnull(val_venc) else datetime.today().date()
-        except:
+        except Exception:
             f_venc_orig = datetime.today().date()
             
         with st.expander("📝 Abrir Editor Manual"):
@@ -1144,7 +1148,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             if not id_origen and '[ABONO PARCIAL]' in str(fila_sel.get('concepto', '')):
                                 try:
                                     id_origen = fila_sel.get('concepto', '').split('(Ref: ')[1].replace(')', '').strip()
-                                except:
+                                except Exception:
                                     id_origen = ""
 
                             if id_origen and id_origen in df_finanzas['id'].values:
