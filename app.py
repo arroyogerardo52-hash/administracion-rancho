@@ -584,18 +584,12 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         ])
         
         with tab_resumen:
-            st.subheader("💰 Saldo Integral y Liquidez Global")
-
-            # Módulo de Saldo Integral
-            efectivo_disponible = balance_neto
-            saldo_integral = efectivo_disponible + por_cobrar - por_pagar
-
             m1, m2, m3, m4, m5 = st.columns(5)
-            m1.metric("💵 Disponible (Caja/Bancos)", f"$ {efectivo_disponible:,.2f} MXN")
-            m2.metric("📈 Por Cobrar (CXC)", f"$ {por_cobrar:,.2f} MXN")
-            m3.metric("📉 Por Pagar (CXP)", f"- $ {por_pagar:,.2f} MXN")
-            m4.metric("🏛️ Saldo Integral Neto", f"$ {saldo_integral:,.2f} MXN", delta=f"$ {por_cobrar - por_pagar:,.2f} MXN")
-            m5.metric("🟢/🔴 Balance Operativo", f"$ {balance_neto:,.2f} MXN")
+            m1.metric("🟢 Ingresos Reales", f"$ {ingresos:,.2f} MXN")
+            m2.metric("🔴 Egresos Reales", f"$ {egresos:,.2f} MXN")
+            m3.metric("💰 Balance Neto", f"$ {balance_neto:,.2f} MXN")
+            m4.metric("📈 Por Cobrar (Restante)", f"$ {por_cobrar:,.2f} MXN")
+            m5.metric("📉 Por Pagar (Restante)", f"$ {por_pagar:,.2f} MXN")
             
             st.write("---")
             col_tit_trans, col_btn_rep_filtrado = st.columns([3, 1])
@@ -708,43 +702,8 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 st.info("🎉 No hay cuentas ni préstamos con saldo pendiente registrado actualmente.")
 
         with tab_graficas:
-            st.subheader("📊 Visualización de Rendimiento y Cash Flow")
-            
+            st.subheader("📊 Visualización de Rendimiento")
             if not df_filtrado.empty:
-                # 1. PROYECCIÓN DE CASH FLOW
-                st.write("### 📉 Proyección de Cash Flow (Liquidez Futura)")
-                df_cf = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
-                
-                if not df_cf.empty and 'fecha_vencimiento' in df_cf.columns:
-                    df_cf['saldo_pendiente'] = df_cf['monto'] - df_cf['abono_acumulado']
-                    df_cf['flujo_neto'] = df_cf.apply(
-                        lambda r: r['saldo_pendiente'] if (r['tipo'] == 'Ingreso' and r['categoria'] != 'Préstamo / Crédito recibido') 
-                        else -r['saldo_pendiente'], axis=1
-                    )
-                    
-                    df_cf['Fecha_Proyeccion'] = pd.to_datetime(df_cf['fecha_vencimiento']).dt.date
-                    cf_diario = df_cf.groupby('Fecha_Proyeccion')['flujo_neto'].sum().reset_index().sort_values('Fecha_Proyeccion')
-                    cf_diario['saldo_proyectado'] = balance_neto + cf_diario['flujo_neto'].cumsum()
-                    
-                    import plotly.graph_objects as go
-                    fig_cf = go.Figure()
-                    fig_cf.add_trace(go.Scatter(
-                        x=cf_diario['Fecha_Proyeccion'],
-                        y=cf_diario['saldo_proyectado'],
-                        mode='lines+markers',
-                        name='Saldo Proyectado',
-                        line=dict(color='#2E7D32', width=3)
-                    ))
-                    fig_cf.add_hline(y=0, line_dash="dash", line_color="red", annotation_text="Punto Crítico Liquidez (0 MXN)")
-                    fig_cf.update_layout(title="Evolución de Liquidez Estimada por Vencimientos", xaxis_title="Fecha Vencimiento", yaxis_title="Monto ($ MXN)")
-                    
-                    st.plotly_chart(fig_cf, use_container_width=True)
-                else:
-                    st.info("No hay cuentas pendientes registradas con fecha de vencimiento para calcular la proyección.")
-
-                st.write("---")
-
-                # 2. GRÁFICAS EXISTENTES
                 cg1, cg2 = st.columns(2)
                 with cg1:
                     st.write("### 💰 Ingresos vs Egresos Reales (MXN)")
@@ -767,9 +726,57 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 st.info("No hay datos para graficar.")
 
         with tab_rentabilidad:
-            st.subheader("📊 Estado de Resultados (P&L) y Rentabilidad")
-            st.markdown("Cálculos expresados en **Pesos Mexicanos (MXN)** basados **exclusivamente en transacciones pagadas/cobradas** dentro del período.")
+            st.subheader("📊 Estado de Resultados (P&L) y Liquidez Global")
+            st.markdown("Cálculos expresados en **Pesos Mexicanos (MXN)** basados en el desempeño operativo y posición patrimonial.")
             
+            # MÓDULO 1: SALDO INTEGRAL Y LIQUIDEZ GLOBAL
+            efectivo_disponible = balance_neto
+            saldo_integral = efectivo_disponible + por_cobrar - por_pagar
+
+            st.write("### 💰 Saldo Integral y Liquidez Global")
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("💵 Disponible (Caja/Bancos)", f"$ {efectivo_disponible:,.2f} MXN")
+            m2.metric("📈 Por Cobrar (CXC)", f"$ {por_cobrar:,.2f} MXN")
+            m3.metric("📉 Por Pagar (CXP)", f"- $ {por_pagar:,.2f} MXN")
+            m4.metric("🏛️ Saldo Integral Neto", f"$ {saldo_integral:,.2f} MXN", delta=f"$ {por_cobrar - por_pagar:,.2f} MXN")
+            m5.metric("🟢/🔴 Balance Operativo", f"$ {balance_neto:,.2f} MXN")
+
+            st.write("---")
+
+            # MÓDULO 2: PROYECCIÓN DE CASH FLOW (LIQUIDEZ FUTURA)
+            st.write("### 📉 Proyección de Cash Flow (Liquidez Futura)")
+            df_cf = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
+            
+            if not df_cf.empty and 'fecha_vencimiento' in df_cf.columns:
+                df_cf['saldo_pendiente'] = df_cf['monto'] - df_cf['abono_acumulado']
+                df_cf['flujo_neto'] = df_cf.apply(
+                    lambda r: r['saldo_pendiente'] if (r['tipo'] == 'Ingreso' and r['categoria'] != 'Préstamo / Crédito recibido') 
+                    else -r['saldo_pendiente'], axis=1
+                )
+                
+                df_cf['Fecha_Proyeccion'] = pd.to_datetime(df_cf['fecha_vencimiento']).dt.date
+                cf_diario = df_cf.groupby('Fecha_Proyeccion')['flujo_neto'].sum().reset_index().sort_values('Fecha_Proyeccion')
+                cf_diario['saldo_proyectado'] = balance_neto + cf_diario['flujo_neto'].cumsum()
+                
+                import plotly.graph_objects as go
+                fig_cf = go.Figure()
+                fig_cf.add_trace(go.Scatter(
+                    x=cf_diario['Fecha_Proyeccion'],
+                    y=cf_diario['saldo_proyectado'],
+                    mode='lines+markers',
+                    name='Saldo Proyectado',
+                    line=dict(color='#2E7D32', width=3)
+                ))
+                fig_cf.add_hline(y=0, line_dash="dash", line_color="red", annotation_text="Punto Crítico Liquidez (0 MXN)")
+                fig_cf.update_layout(title="Evolución de Liquidez Estimada por Vencimientos", xaxis_title="Fecha Vencimiento", yaxis_title="Monto ($ MXN)")
+                
+                st.plotly_chart(fig_cf, use_container_width=True)
+            else:
+                st.info("No hay cuentas pendientes registradas con fecha de vencimiento para calcular la proyección.")
+
+            st.write("---")
+
+            # MÓDULO 3: ESTADO DE RESULTADOS (P&L TRADICIONAL)
             df_pagados = df_filtrado[(df_filtrado['estado_deuda'] == 'Pagado') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')].copy()
             
             if not df_pagados.empty:
