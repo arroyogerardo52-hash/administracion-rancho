@@ -785,19 +785,24 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             df_pagados = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].copy()
             
             if not df_pagados.empty:
-                df_pagados['Rubro'] = df_pagados['categoria'].apply(lambda x: clasificar_categoria(x)[1])
+                # Clasificación estricta por categoría
+                tot_ingresos = df_pagados[(df_pagados['tipo'] == 'Ingreso') & (df_pagados['categoria'] != 'Préstamo / Crédito recibido')]['monto'].sum()
+                tot_costos_directos = df_pagados[df_pagados['categoria'].isin(cat_costos_directos)]['monto'].sum()
+                tot_gastos_operativos = df_pagados[df_pagados['categoria'].isin(cat_gastos_operativos)]['monto'].sum()
                 
-                tot_ingresos = df_pagados[df_pagados['tipo'] == 'Ingreso']['monto'].sum()
-                tot_costos_directos = df_pagados[df_pagados['Rubro'] == 'Costo Directo']['monto'].sum()
-                tot_gastos_operativos = df_pagados[df_pagados['Rubro'] == 'Gasto Operativo']['monto'].sum()
+                # Otros gastos no categorizados explícitamente en Costos Directos o Gastos Operativos
+                tot_otros = df_pagados[
+                    (df_pagados['tipo'] == 'Egreso') & 
+                    (~df_pagados['categoria'].isin(cat_costos_directos)) & 
+                    (~df_pagados['categoria'].isin(cat_gastos_operativos))
+                ]['monto'].sum()
                 
-                df_otros = df_pagados[(df_pagados['Rubro'] == 'Otros') & (df_pagados['tipo'] == 'Egreso')]
-                tot_otros = df_otros['monto'].sum()
-                
+                # Fórmulas Financieras Correctas
                 utilidad_bruta = tot_ingresos - tot_costos_directos
                 margen_bruto = (utilidad_bruta / tot_ingresos * 100) if tot_ingresos > 0 else 0.0
                 
-                utilidad_neta = utilidad_bruta - tot_gastos_operativos - tot_otros
+                tot_egresos_totales = tot_costos_directos + tot_gastos_operativos + tot_otros
+                utilidad_neta = tot_ingresos - tot_egresos_totales
                 margen_neto = (utilidad_neta / tot_ingresos * 100) if tot_ingresos > 0 else 0.0
                 
                 flujo_caja = balance_neto
