@@ -1,28 +1,49 @@
-from finanzas_proyecciones import render_vista_proyecciones_y_equilibrio
 import streamlit as st
 import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
 import io
 import base64
 import time
 import json
 import os
+import pytz
+from supabase import create_client, Client
+
+# ==========================================
+# 1. CONFIGURACIÓN DE LA PÁGINA (¡DEBE SER EL PRIMER COMANDO DE STREAMLIT!)
+# ==========================================
+st.set_page_config(page_title="Rancho AE - Administración", page_icon="🤠", layout="wide")
+
+# Estilos CSS Globales
+st.markdown("""
+    <style>
+    div[data-testid="stMetricValue"] {
+        font-size: calc(1rem + 0.6vw) !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    .stCardPos {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 15px;
+        border: 1px solid #e0e0e0;
+        margin-bottom: 10px;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # -------------------------------------------------------------
-# 1. BANDERAS DE PRIVACIDAD Y CARGA DE USUARIOS
+# 2. CONTROL DE SESIÓN Y CARGA DE USUARIOS
 # -------------------------------------------------------------
-TIEMPO_EXPIRED = 600  # Tiempo en segundos para cerrar sesión (5 min)
+TIEMPO_EXPIRED = 600  # 10 minutos
 
-# Cargar usuarios desde Streamlit Secrets (Nube) o fallback por defecto
 if "usuarios" in st.secrets:
-    # Lee los usuarios configurados en los Secrets de Streamlit Cloud
     USUARIOS = {str(k).strip().lower(): str(v).strip() for k, v in st.secrets["usuarios"].items()}
 else:
-    # Usuario administrador por defecto en local
-    # (Usuario: gerardo | Contraseña: ADMINpg120214)
     USUARIOS = {"gerardo": "ADMINpg120214"}
 
-# Control del estado de la sesión
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 if "usuario_actual" not in st.session_state:
@@ -34,7 +55,7 @@ def cerrar_sesion():
     st.rerun()
 
 # -------------------------------------------------------------
-# 2. PUERTA DE ENTRADA (PANTALLA DE LOGIN CON COMPATIBILIDAD MÓVIL)
+# 3. PANTALLA DE LOGIN
 # -------------------------------------------------------------
 if not st.session_state.autenticado:
     st.title("🔒 Inicia sesión para continuar")
@@ -43,12 +64,9 @@ if not st.session_state.autenticado:
     clave_ingresada = st.text_input("Contraseña", type="password")
     
     if st.button("Entrar", use_container_width=True):
-        # .strip() elimina espacios invisibles del teclado móvil
-        # .lower() convierte a minúsculas para ignorar mayúsculas automáticas
         usr_limpio = usuario_ingresado.strip().lower()
         pwd_limpia = clave_ingresada.strip()
 
-        # Validación flexible
         if usr_limpio in USUARIOS and USUARIOS[usr_limpio] == pwd_limpia:
             st.session_state.autenticado = True
             st.session_state.usuario_actual = usr_limpio
@@ -57,11 +75,10 @@ if not st.session_state.autenticado:
         else:
             st.error("Usuario o contraseña incorrectos")
             
-    # Bloquea la app: nada debajo de esta línea se muestra sin sesión activa
     st.stop()
 
 # -------------------------------------------------------------
-# 3. BARRA LATERAL (Solo visible si ya inició sesión)
+# 4. BARRA LATERAL - SESIÓN
 # -------------------------------------------------------------
 with st.sidebar:
     st.write(f"👤 Hola, **{st.session_state.usuario_actual.capitalize()}**")
@@ -69,12 +86,7 @@ with st.sidebar:
         cerrar_sesion()
 
 # ==========================================
-# 1. CONFIGURACIÓN DE LA PÁGINA
-# ==========================================
-st.set_page_config(page_title="Rancho AE - Administración", page_icon="🤠", layout="wide")
-
-# ==========================================
-# 2. VALIDACIÓN DE CREDENCIALES SUPABASE
+# 5. VALIDACIÓN Y CONEXIÓN SUPABASE
 # ==========================================
 credentials_ready = False
 if "supabase" in st.secrets:
@@ -92,11 +104,6 @@ else:
 
 if not credentials_ready:
     st.stop()
-
-# ==========================================
-# 3. CONEXIÓN A LA BASE DE DATOS
-# ==========================================
-from supabase import create_client, Client
 
 @st.cache_resource
 def init_connection():
@@ -145,13 +152,11 @@ df_lotes = cargar_tabla("lotes")
 # BARRA LATERAL: NAVEGACIÓN Y RESPALDOS
 # ==========================================
 with st.sidebar:
-    # MENÚ DE NAVEGACIÓN PRINCIPAL
     st.header("🧭 Menú Principal")
     modulo_activo = st.radio(
         "Ir a la sección:",
         [
             "📊 Dashboard & Finanzas", 
-            "📈 Proyecciones & Equilibrio",  
             "🤠 Personal / Empleados", 
             "🤝 Clientes", 
             "🚜 Proveedores", 
@@ -159,6 +164,7 @@ with st.sidebar:
         ],
         index=0
     )
+    
     st.markdown("---")
     st.header("⚙️ Copias de Seguridad")
     
@@ -186,20 +192,12 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Error al generar el respaldo: {e}")
 
-# ENCABEZADO PRINCIPAL DE LA PÁGINA
 st.title("Rancho AE: Sistema de Administración")
-
 st.markdown("---")
 
 # ==========================================
 # FUNCIONES AUXILIARES Y DE REPORTES HTML
 # ==========================================
-from datetime import datetime, timedelta
-import time
-import pandas as pd
-import pytz
-import streamlit as st
-
 def colorear_filas_finanzas(row):
     if row['tipo'] == 'Ingreso':
         return ['background-color: rgba(46, 204, 113, 0.15); color: #2ecc71; font-weight: bold;'] * len(row)
@@ -208,12 +206,10 @@ def colorear_filas_finanzas(row):
     return [''] * len(row)
 
 def obtener_fecha_hora_mx():
-    """Obtiene la fecha y hora actual configurada en la zona horaria de México."""
     zona_mx = pytz.timezone('America/Mexico_City')
     return datetime.now(zona_mx).strftime('%d/%m/%Y %I:%M %p')
 
 def clasificar_categoria(cat):
-    """Clasifica una categoría contable en su respectivo tipo y rubro de costo/gasto."""
     cat_lower = str(cat).lower()
     costos_directos = ['ganado', 'alimento', 'medicina', 'veterinario', 'suplemento', 'pauta', 'lote']
     gastos_operativos = ['nómina', 'nomina', 'sueldo', 'oficina', 'mantenimiento', 'combustibles', 'flete', 'servicios', 'renta']
@@ -253,11 +249,8 @@ def generar_html_docs(titulo_seccion, columnas_headers, df_datos, mapping_column
     """
     for header in columnas_headers:
         html += f"<th>{header}</th>"
-    html += """
-                </tr>
-            </thead>
-            <tbody>
-    """
+    html += "</tr></thead><tbody>"
+    
     for _, fila in df_datos.iterrows():
         html += "<tr>"
         for col_bd in mapping_columnas:
@@ -274,7 +267,9 @@ def generar_html_docs(titulo_seccion, columnas_headers, df_datos, mapping_column
     html += """
             </tbody>
         </table>
-        <p style='margin-top:40px; font-size:11px; color:#999; text-align: center; border-top: 1px dashed #ccc; padding-top: 10px;'>Documento administrativo confidencial generado por el Sistema de Control Interno Rancho AE.</p>
+        <p style='margin-top:40px; font-size:11px; color:#999; text-align: center; border-top: 1px dashed #ccc; padding-top: 10px;'>
+            Documento administrativo confidencial generado por el Sistema de Control Interno Rancho AE.
+        </p>
     </body>
     </html>
     """
@@ -283,7 +278,6 @@ def generar_html_docs(titulo_seccion, columnas_headers, df_datos, mapping_column
 def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net, cob, pag):
     hoy_str = obtener_fecha_hora_mx()
     
-    # --- CÁLCULO DINÁMICO DE ESTADO DE RESULTADOS (P&L) ---
     df_pagados = df_datos[df_datos['estado_deuda'] == 'Pagado'].copy() if not df_datos.empty else pd.DataFrame()
     
     tot_ingresos = ing
@@ -312,26 +306,20 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
             .header-title {{ font-size: 24pt; color: #1A365D; font-weight: bold; margin: 0; }}
             .header-subtitle {{ font-size: 11pt; color: #718096; text-transform: uppercase; font-weight: bold; }}
             .divider {{ height: 3px; background-color: #2B6CB0; margin-top: 5px; margin-bottom: 20px; }}
-            
             .meta-section {{ background-color: #EDF2F7; padding: 12px; border-radius: 5px; margin-bottom: 20px; font-size: 10pt; }}
             .meta-table {{ width: 100%; border-collapse: collapse; }}
             .meta-table td {{ padding: 4px 0; color: #4A5568; border: none; }}
-            
             .kpi-table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; }}
             .kpi-card {{ background: #F8FAFC; border: 1px solid #CBD5E0; padding: 10px; text-align: center; border-top: 4px solid #2B6CB0; }}
             .kpi-title {{ font-size: 9pt; text-transform: uppercase; color: #718096; font-weight: bold; }}
             .kpi-value {{ font-size: 12pt; font-weight: bold; color: #1A365D; margin-top: 4px; }}
-            
             .section-title {{ font-size: 13pt; color: #1A365D; margin-top: 25px; margin-bottom: 10px; font-weight: bold; border-bottom: 2px solid #E2E8F0; padding-bottom: 4px; }}
-            
             .pnl-table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10pt; }}
             .pnl-table td {{ padding: 8px; border-bottom: 1px solid #E2E8F0; border-top: none; border-left: none; border-right: none; }}
-            
             .data-table {{ border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 9pt; }}
             .data-table th {{ background-color: #1A365D; color: white; padding: 8px; text-align: left; font-weight: bold; text-transform: uppercase; border: 1px solid #1A365D; }}
             .data-table td {{ border: 1px solid #CBD5E0; padding: 6px 8px; color: #2D3748; }}
             .data-table tr:nth-child(even) {{ background-color: #F7FAFC; }}
-            
             .text-right {{ text-align: right; }}
             .bold {{ font-weight: bold; }}
             .color-ingreso {{ color: #27AE60; }}
@@ -339,12 +327,9 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
         </style>
     </head>
     <body>
-        <!-- ENCABEZADO INSTITUCIONAL -->
         <div class="header-title">RANCHO AE</div>
         <div class="header-subtitle">Informe Ejecutivo de Control Financiero y Estado de Resultados</div>
         <div class="divider"></div>
-        
-        <!-- METADATOS DEL REPORTE -->
         <div class="meta-section">
             <table class="meta-table">
                 <tr>
@@ -357,8 +342,6 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
                 </tr>
             </table>
         </div>
-        
-        <!-- RESUMEN DE INDICADORES (KPIs) -->
         <div class="section-title">1. Resumen de Flujo de Efectivo</div>
         <table class="kpi-table">
             <tr>
@@ -384,8 +367,6 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
                 </td>
             </tr>
         </table>
-        
-        <!-- ESTADO DE RESULTADOS (P&L) -->
         <div class="section-title">2. Estado de Resultados y Rentabilidad (P&L)</div>
         <table class="pnl-table">
             <tr style="background-color: #F0FFF4; font-weight: bold;">
@@ -413,20 +394,12 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
                 <td class="text-right" style="padding: 10px; font-size: 11pt;">${utilidad_neta:,.2f} MXN</td>
             </tr>
         </table>
-        
-        <!-- DESGLOSE DETALLADO DE TRANSACCIONES -->
         <div class="section-title">3. Registro Detallado de Transacciones ({len(df_datos)} movimientos)</div>
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Fecha</th>
-                    <th>Tipo</th>
-                    <th>Categoría</th>
-                    <th>Concepto / Descripción</th>
-                    <th>Lote</th>
-                    <th>Método</th>
-                    <th>Estado</th>
-                    <th class="text-right">Monto (MXN)</th>
+                    <th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Concepto / Descripción</th>
+                    <th>Lote</th><th>Método</th><th>Estado</th><th class="text-right">Monto (MXN)</th>
                 </tr>
             </thead>
             <tbody>
@@ -435,7 +408,6 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
     for _, fila in df_datos.iterrows():
         f_date = fila.get('fecha', '')
         f_str = f_date.strftime('%Y-%m-%d') if hasattr(f_date, 'strftime') else str(f_date)[:10]
-        
         tipo_mov = fila.get('tipo', '')
         clase_color = "color-ingreso bold" if tipo_mov == "Ingreso" else "color-egreso"
         
@@ -460,10 +432,9 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
                 </tr>
             </tbody>
         </table>
-        
         <br><br>
         <p style='font-size:9pt; color:#A0AEC0; text-align: center; border-top: 1px dashed #CBD5E0; padding-top: 10px;'>
-            Este balance ejecutivo constituye un extracto oficial de la contabilidad interna de Rancho AE. Súbase directamente a Google Drive para su archivo permanente o firmas conducentes.
+            Este balance ejecutivo constituye un extracto oficial de la contabilidad interna de Rancho AE.
         </p>
     </body>
     </html>
@@ -476,56 +447,27 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
 if modulo_activo == "📊 Dashboard & Finanzas":
     st.header("📊 Balance y Control General Financiero")
 
-    # --- INYECCIÓN DE CSS PARA EVITAR TRUNCAMIENTO EN METRICAS ---
-    st.markdown("""
-        <style>
-        div[data-testid="stMetricValue"] {
-            font-size: calc(1rem + 0.6vw) !important;
-            white-space: nowrap !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-        }
-        .stCardPos {
-            background-color: #f8f9fa;
-            border-radius: 10px;
-            padding: 15px;
-            border: 1px solid #e0e0e0;
-            margin-bottom: 10px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # --- DEFINICIÓN DE CATEGORÍAS PARA EL ESTADO DE RESULTADOS ---
     cat_ingresos = ["Venta de ganado", "Varios (Ingresos)", "Préstamo / Crédito recibido"]
     cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)"]
     cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Pago / Abono Préstamo", "Varios (Gastos operativos)"]
-    todas_las_categorias = cat_ingresos + cat_costos_directos + cat_gastos_operativos
 
-    # --- EXTRACCIÓN DE LISTAS PARA SELECTBOXES ---
     lista_clientes = ["Público en general"]
-    if 'df_clientes' in locals() and not df_clientes.empty:
+    if not df_clientes.empty:
         col_c = 'nombre' if 'nombre' in df_clientes.columns else df_clientes.columns[0]
         lista_clientes += [c for c in df_clientes[col_c].dropna().unique() if c != "Público en general"]
 
     lista_proveedores = ["Egreso general", "Institución Financiera / Banco"]
-    if 'df_proveedores' in locals() and not df_proveedores.empty:
+    if not df_proveedores.empty:
         col_p = 'nombre' if 'nombre' in df_proveedores.columns else df_proveedores.columns[0]
         lista_proveedores += [p for p in df_proveedores[col_p].dropna().unique() if p not in lista_proveedores]
 
     lista_empleados = []
-    if 'df_empleados' in locals() and not df_empleados.empty:
+    if not df_empleados.empty:
         col_e = 'nombre' if 'nombre' in df_empleados.columns else df_empleados.columns[0]
         lista_empleados = list(df_empleados[col_e].dropna().unique())
     else:
         lista_empleados = ["Empleado General / Caja"]
 
-    def clasificar_categoria(cat):
-        if cat in cat_ingresos: return "Ingreso", "Ingreso"
-        elif cat in cat_costos_directos: return "Egreso", "Costo Directo"
-        elif cat in cat_gastos_operativos: return "Egreso", "Gasto Operativo"
-        else: return "Egreso", "Otros"
-
-    # Inicializar columnas opcionales si no existen en el DataFrame
     for col in ['abono_acumulado', 'id_origen_abono']:
         if not df_finanzas.empty and col not in df_finanzas.columns:
             df_finanzas[col] = 0.0 if col == 'abono_acumulado' else ""
@@ -538,24 +480,13 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             df_finanzas['fecha_vencimiento'] = pd.to_datetime(df_finanzas['fecha_vencimiento'], errors='coerce')
         df_finanzas = df_finanzas.dropna(subset=['fecha'])
         
-        # --- 🔔 SISTEMA DE ALERTAS SEPARADO POR SENTIDO DE DEUDA ---
         hoy_dt = datetime.today()
         df_pendientes = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
         
         if not df_pendientes.empty:
             df_pendientes['saldo_pendiente'] = df_pendientes['monto'] - df_pendientes['abono_acumulado']
-            
-            # Cuentas que nos deben a nosotros
-            df_cobrar_pend = df_pendientes[
-                (df_pendientes['tipo'] == 'Ingreso') & 
-                (df_pendientes['categoria'] != 'Préstamo / Crédito recibido')
-            ]
-            
-            # Cuentas que nosotros debemos
-            df_pagar_pend = df_pendientes[
-                (df_pendientes['tipo'] == 'Egreso') | 
-                (df_pendientes['categoria'] == 'Préstamo / Crédito recibido')
-            ]
+            df_cobrar_pend = df_pendientes[(df_pendientes['tipo'] == 'Ingreso') & (df_pendientes['categoria'] != 'Préstamo / Crédito recibido')]
+            df_pagar_pend = df_pendientes[(df_pendientes['tipo'] == 'Egreso') | (df_pendientes['categoria'] == 'Préstamo / Crédito recibido')]
 
             df_vencidos_cobrar = df_cobrar_pend[df_cobrar_pend['fecha_vencimiento'] < hoy_dt] if 'fecha_vencimiento' in df_cobrar_pend.columns else pd.DataFrame()
             df_vencidos_pagar = df_pagar_pend[df_pagar_pend['fecha_vencimiento'] < hoy_dt] if 'fecha_vencimiento' in df_pagar_pend.columns else pd.DataFrame()
@@ -638,34 +569,16 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         if filtro_estado != "Todos":
             df_filtrado = df_filtrado[df_filtrado['estado_deuda'] == filtro_estado]
 
-        # --- CÁLCULOS METRICAS GENERALES AJUSTADOS ---
-        ingresos = df_filtrado[
-            (df_filtrado['tipo'] == 'Ingreso') & 
-            (df_filtrado['estado_deuda'] == 'Pagado') &
-            (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')
-        ]['monto'].sum()
-
-        egresos = df_filtrado[
-            (df_filtrado['tipo'] == 'Egreso') & 
-            (df_filtrado['estado_deuda'] == 'Pagado')
-        ]['monto'].sum()
-
+        ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')]['monto'].sum()
+        egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
         balance_neto = ingresos - egresos
         
-        df_pend_ing = df_filtrado[
-            (df_filtrado['tipo'] == 'Ingreso') & 
-            (df_filtrado['estado_deuda'] == 'Pendiente') &
-            (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')
-        ]
+        df_pend_ing = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')]
         por_cobrar = (df_pend_ing['monto'] - df_pend_ing['abono_acumulado']).sum() if not df_pend_ing.empty else 0.0
 
-        df_pend_egr = df_filtrado[
-            ((df_filtrado['tipo'] == 'Egreso') | (df_filtrado['categoria'] == 'Préstamo / Crédito recibido')) & 
-            (df_filtrado['estado_deuda'] == 'Pendiente')
-        ]
+        df_pend_egr = df_filtrado[((df_filtrado['tipo'] == 'Egreso') | (df_filtrado['categoria'] == 'Préstamo / Crédito recibido')) & (df_filtrado['estado_deuda'] == 'Pendiente')]
         por_pagar = (df_pend_egr['monto'] - df_pend_egr['abono_acumulado']).sum() if not df_pend_egr.empty else 0.0
 
-        # --- CREACIÓN DE PESTAÑAS ---
         tab_resumen, tab_abonos, tab_graficas, tab_rentabilidad = st.tabs([
             "📋 Resumen Numérico", "💵 Gestión de Abonos y Créditos", "📈 Análisis Gráfico", "📊 Estados Financieros"
         ])
@@ -683,7 +596,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             with col_tit_trans:
                 st.subheader("📋 Transacciones del Período Seleccionado")
             with col_btn_rep_filtrado:
-                if not df_filtrado.empty and 'generar_reporte_finanzas_profesional' in globals():
+                if not df_filtrado.empty:
                     html_profesional_finanzas = generar_reporte_finanzas_profesional(
                         df_filtrado, periodo, lote_seleccionado, ingresos, egresos, balance_neto, por_cobrar, por_pagar
                     )
@@ -703,15 +616,11 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 
             if not df_bal_vista.empty:
                 df_bal_vista['fecha'] = df_bal_vista['fecha'].dt.strftime('%Y-%m-%d')
-                if 'colorear_filas_finanzas' in globals():
-                    df_bal_estilizado = df_bal_vista.style.apply(colorear_filas_finanzas, axis=1).format({'monto': '$ {:,.2f} MXN', 'abono_acumulado': '$ {:,.2f} MXN'})
-                    st.dataframe(df_bal_estilizado, use_container_width=True)
-                else:
-                    st.dataframe(df_bal_vista, use_container_width=True)
+                df_bal_estilizado = df_bal_vista.style.apply(colorear_filas_finanzas, axis=1).format({'monto': '$ {:,.2f} MXN', 'abono_acumulado': '$ {:,.2f} MXN'})
+                st.dataframe(df_bal_estilizado, use_container_width=True)
             else:
                 st.info("No hay registros que coincidan con la búsqueda.")
 
-        # --- PESTAÑA: GESTIÓN DE ABONOS A CUENTAS PENDIENTES Y PRÉSTAMOS ---
         with tab_abonos:
             st.subheader("💵 Realizar Abonos a Cuentas Pendientes y Préstamos")
             st.markdown("Selecciona una cuenta con saldo pendiente para abonar a la deuda o liquidarla por completo.")
@@ -820,10 +729,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             st.subheader("📊 Estado de Resultados (P&L) y Rentabilidad")
             st.markdown("Cálculos expresados en **Pesos Mexicanos (MXN)** basados **exclusivamente en transacciones pagadas/cobradas** dentro del período.")
             
-            df_pagados = df_filtrado[
-                (df_filtrado['estado_deuda'] == 'Pagado') &
-                (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')
-            ].copy()
+            df_pagados = df_filtrado[(df_filtrado['estado_deuda'] == 'Pagado') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')].copy()
             
             if not df_pagados.empty:
                 df_pagados['Rubro'] = df_pagados['categoria'].apply(lambda x: clasificar_categoria(x)[1])
@@ -905,9 +811,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
     st.markdown("---")
     
-    # --- FORMULARIO DE REGISTRO REESTRUCTURADO Y OPTIMIZADO ---
     st.subheader("💳 Captura y Registro Financiero / Préstamos")
-    
     f_tipo_dinamico = st.radio("Tipo de Movimiento:", ["Ingreso", "Egreso"], horizontal=True)
     
     with st.container():
@@ -915,12 +819,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         
         with col_f1:
             f_fecha = st.date_input("Fecha Transacción", datetime.today(), key="f_fec_pos").strftime('%Y-%m-%d')
-            
-            if f_tipo_dinamico == "Ingreso":
-                opciones_categorias = cat_ingresos
-            else:
-                opciones_categorias = cat_costos_directos + cat_gastos_operativos
-                
+            opciones_categorias = cat_ingresos if f_tipo_dinamico == "Ingreso" else cat_costos_directos + cat_gastos_operativos
             f_cat = st.selectbox("Categoría", opciones_categorias, key="f_cat_pos")
             f_concepto = st.text_input("Concepto / Descripción", key="f_con_pos").strip()
 
@@ -951,7 +850,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
                 opciones_lotes += list(df_lotes['nombre_lote'].dropna().unique())
             f_lote = st.selectbox("Lote Asociado", opciones_lotes, key="f_lot_pos")
-            
             idx_est_defecto = 1 if f_cat == "Préstamo / Crédito recibido" else 0
             f_estado = st.selectbox("Estado del Pago", ["Pagado", "Pendiente"], index=idx_est_defecto, key="f_est_pos")
             f_venc = st.date_input("Fecha Vencimiento", datetime.today(), key="f_venc_pos").strftime('%Y-%m-%d')
@@ -959,7 +857,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         st.markdown("<br>", unsafe_allow_html=True)
         btn_pre_guardar = st.button("Confirmar", use_container_width=True, type="primary")
 
-    # --- VALIDACIÓN INICIAL DE CAMPOS PARA NUEVO REGISTRO ---
     if btn_pre_guardar:
         if f_monto <= 0:
             st.error("❌ El monto debe ser mayor a $0.00 MXN.")
@@ -983,7 +880,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 "es_edicion": False
             }
 
-    # --- VENTANA EMERGENTE (MODAL DE CONFIRMACIÓN DE EMPLEADO QUE PROCESA/EDITA) ---
     if "transaccion_pendiente" in st.session_state:
         tx = st.session_state["transaccion_pendiente"]
         
@@ -1079,20 +975,17 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         del st.session_state["transaccion_pendiente"]
                         st.rerun()
 
-    # --- EDICIÓN MANUAL Y ELIMINACIÓN DE TRANSACCIONES ---
     if not df_finanzas.empty:
         st.markdown("#### 🛠️ Modificar o Eliminar Transacción")
         id_seleccionado = st.selectbox("Selecciona ID a alterar:", df_finanzas['id'].unique(), key="del_fin")
         fila_sel = df_finanzas[df_finanzas['id'] == id_seleccionado].iloc[0]
         
-        # Validar fecha_orig para evitar NaT/None
         try:
             val_fec = pd.to_datetime(fila_sel.get('fecha'))
             fecha_orig = val_fec.date() if pd.notnull(val_fec) else datetime.today().date()
         except:
             fecha_orig = datetime.today().date()
             
-        # Validar f_venc_orig para evitar NaT/None (Causa del ValueError)
         try:
             val_venc = pd.to_datetime(fila_sel.get('fecha_vencimiento'))
             f_venc_orig = val_venc.date() if pd.notnull(val_venc) else datetime.today().date()
@@ -1189,14 +1082,12 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 if st.button("🗑️ Eliminar Transacción", use_container_width=True, type="primary", key=f"btn_del_{id_seleccionado}"):
                     st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = True
 
-            # --- CONFIRMACIÓN Y ELIMINACIÓN CORREGIDA CON REVERTIDO DE SALDOS ---
             if st.session_state.get(f"confirmar_eliminar_{id_seleccionado}", False):
                 st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar permanentemente la transacción **{id_seleccionado}**?")
                 col_del_si, col_del_no = st.columns(2)
                 with col_del_si:
                     if st.button("🔴 Sí, Eliminar", use_container_width=True, key=f"confirm_si_{id_seleccionado}"):
                         try:
-                            # Revertir saldo en registro padre si la transacción a eliminar es un abono
                             id_origen = str(fila_sel.get('id_origen_abono', ''))
                             if not id_origen and '[ABONO PARCIAL]' in str(fila_sel.get('concepto', '')):
                                 try:
@@ -1226,14 +1117,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                                 }
                                 guardar_registro("finanzas", reg_padre_revertido, "id")
 
-                            res_del = False
-                            if 'eliminar_registro' in globals():
-                                res_del = eliminar_registro("finanzas", "id", str(id_seleccionado))
-                            else:
-                                df_finanzas = df_finanzas[df_finanzas['id'] != str(id_seleccionado)]
-                                if 'guardar_dataframe' in globals():
-                                    res_del = guardar_dataframe("finanzas", df_finanzas)
-                            
+                            eliminar_registro("finanzas", "id", str(id_seleccionado))
                             st.success(f"Transacción {id_seleccionado} eliminada exitosamente.")
                             st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
                             time.sleep(1)
@@ -1245,16 +1129,11 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     if st.button("❌ Cancelar", use_container_width=True, key=f"confirm_no_{id_seleccionado}"):
                         st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
                         st.rerun()
-elif modulo_activo == "📈 Proyecciones & Equilibrio":
-    render_vista_proyecciones_y_equilibrio(supabase)
-import streamlit as st
-import pandas as pd
-import numpy as np
-from datetime import datetime
-import time
 
+# ==========================================
 # MÓDULO 2: EMPLEADOS
-if modulo_activo == "🤠 Personal / Empleados":
+# ==========================================
+elif modulo_activo == "🤠 Personal / Empleados":
     st.header("🤠 Administración de Personal y Empleados")
 
     tab_registro, tab_listado, tab_transacciones = st.tabs([
@@ -1263,43 +1142,28 @@ if modulo_activo == "🤠 Personal / Empleados":
         "📊 Historial de Transacciones"
     ])
 
-    # ---------------------------------------------------------
-    # TAB 1: REGISTRO Y EDICIÓN VÍA FORMULARIO
-    # ---------------------------------------------------------
     with tab_registro:
-        modo_form = st.radio(
-            "Acción:", 
-            ["Registrar Nuevo Empleado", "Editar Empleado Existente"], 
-            horizontal=True
-        )
+        modo_form = st.radio("Acción:", ["Registrar Nuevo Empleado", "Editar Empleado Existente"], horizontal=True)
         
         e_nombre_val, e_puesto_val, e_sueldo_val = "", "", 0.0
         e_fecha_val = datetime.today()
         e_periodo_val, e_direccion_val, e_tel_val, e_email_val, e_estatus_val = "Quincenal", "", "", "", "Activo"
         emp_a_editar = None
 
-        # Obtener DataFrame de empleados de globals o session_state
-        df_emp_ref = globals().get('df_empleados', st.session_state.get('df_empleados', pd.DataFrame()))
-
         if modo_form == "Editar Empleado Existente":
-            if isinstance(df_emp_ref, pd.DataFrame) and not df_emp_ref.empty and 'nombre' in df_emp_ref.columns:
-                lista_empleados = [e for e in df_emp_ref['nombre'].dropna().unique() if str(e).strip()]
+            if not df_empleados.empty and 'nombre' in df_empleados.columns:
+                lista_empleados = [e for e in df_empleados['nombre'].dropna().unique() if str(e).strip()]
                 if lista_empleados:
                     emp_a_editar = st.selectbox("Selecciona Empleado a Editar:", lista_empleados)
-                    row_emp = df_emp_ref[df_emp_ref['nombre'] == emp_a_editar].iloc[0]
+                    row_emp = df_empleados[df_empleados['nombre'] == emp_a_editar].iloc[0]
                     
                     e_nombre_val = str(row_emp.get('nombre', ''))
                     e_puesto_val = str(row_emp.get('puesto_funcion', ''))
-                    try:
-                        e_sueldo_val = float(row_emp.get('sueldo', 0.0))
-                    except (ValueError, TypeError):
-                        e_sueldo_val = 0.0
+                    try: e_sueldo_val = float(row_emp.get('sueldo', 0.0))
+                    except: e_sueldo_val = 0.0
                         
-                    fecha_str = str(row_emp.get('fecha_ingreso', ''))
-                    try:
-                        e_fecha_val = datetime.strptime(fecha_str, '%Y-%m-%d')
-                    except ValueError:
-                        e_fecha_val = datetime.today()
+                    try: e_fecha_val = datetime.strptime(str(row_emp.get('fecha_ingreso', '')), '%Y-%m-%d')
+                    except: e_fecha_val = datetime.today()
                         
                     e_periodo_val = str(row_emp.get('periodo_nomina', 'Quincenal'))
                     e_direccion_val = str(row_emp.get('direccion', ''))
@@ -1314,7 +1178,6 @@ if modulo_activo == "🤠 Personal / Empleados":
         with st.form("form_empleados", clear_on_submit=False):
             st.subheader("Datos del Empleado")
             col1, col2 = st.columns(2)
-            
             periodos_opciones = ["Semanal", "Catorcenal", "Quincenal", "Mensual"]
             idx_periodo = periodos_opciones.index(e_periodo_val) if e_periodo_val in periodos_opciones else 2
             
@@ -1349,50 +1212,37 @@ if modulo_activo == "🤠 Personal / Empleados":
                         "email": e_email,
                         "estatus": e_estatus
                     }
-                    
-                    if isinstance(df_emp_ref, pd.DataFrame) and not df_emp_ref.empty:
-                        cols_validas = list(df_emp_ref.columns)
-                        datos_empleado = {k: v for k, v in datos_empleado.items() if k in cols_validas or k == 'nombre'}
-
                     if guardar_registro("empleados", datos_empleado, "nombre"):
                         st.success(f"Empleado {'actualizado' if modo_form == 'Editar Empleado Existente' else 'guardado'} correctamente.")
                         time.sleep(0.4)
                         st.rerun()
 
-    # ---------------------------------------------------------
-    # TAB 2: LISTADO DE PERSONAL (SOLO LECTURA / VISTA GENERAL)
-    # ---------------------------------------------------------
     with tab_listado:
         col_bus_emp, col_rep_emp = st.columns([3, 1])
         with col_bus_emp:
             buscar_emp = st.text_input("🔍 Buscar Empleado:", key="bus_emp").strip()
 
-        df_emp_list = globals().get('df_empleados', st.session_state.get('df_empleados', pd.DataFrame()))
-
-        if isinstance(df_emp_list, pd.DataFrame) and not df_emp_list.empty:
-            df_emp_vista = df_emp_list.copy()
+        if not df_empleados.empty:
+            df_emp_vista = df_empleados.copy()
 
             if buscar_emp:
-                df_emp_vista = df_emp_vista[
-                    df_emp_vista.astype(str).apply(lambda x: x.str.contains(buscar_emp, case=False)).any(axis=1)
-                ]
+                df_emp_vista = df_emp_vista[df_emp_vista.astype(str).apply(lambda x: x.str.contains(buscar_emp, case=False)).any(axis=1)]
 
             with col_rep_emp:
                 st.write("")
-                if 'generar_html_docs' in globals():
-                    html_emp = generar_html_docs(
-                        "Listado de Personal", 
-                        ["Nombre", "Puesto", "Sueldo", "Fecha Ingreso", "Nómina", "Teléfono", "E-mail", "Estatus"], 
-                        df_emp_vista, 
-                        [c for c in ["nombre", "puesto_funcion", "sueldo", "fecha_ingreso", "periodo_nomina", "telefono", "email", "estatus"] if c in df_emp_vista.columns]
-                    )
-                    st.download_button(
-                        label="📄 Generar Reporte (Docs)",
-                        data=html_emp,
-                        file_name=f"Reporte_Empleados_{datetime.now().strftime('%Y%m%d')}.doc",
-                        mime="application/msword",
-                        use_container_width=True
-                    )
+                html_emp = generar_html_docs(
+                    "Listado de Personal", 
+                    ["Nombre", "Puesto", "Sueldo", "Fecha Ingreso", "Nómina", "Teléfono", "E-mail", "Estatus"], 
+                    df_emp_vista, 
+                    [c for c in ["nombre", "puesto_funcion", "sueldo", "fecha_ingreso", "periodo_nomina", "telefono", "email", "estatus"] if c in df_emp_vista.columns]
+                )
+                st.download_button(
+                    label="📄 Generar Reporte (Docs)",
+                    data=html_emp,
+                    file_name=f"Reporte_Empleados_{datetime.now().strftime('%Y%m%d')}.doc",
+                    mime="application/msword",
+                    use_container_width=True
+                )
 
             st.dataframe(
                 df_emp_vista,
@@ -1407,8 +1257,7 @@ if modulo_activo == "🤠 Personal / Empleados":
 
             st.divider()
             col_del1, col_del2 = st.columns(2)
-            
-            lista_emp_elim = [e for e in df_emp_list['nombre'].dropna().unique() if str(e).strip()] if 'nombre' in df_emp_list.columns else []
+            lista_emp_elim = [e for e in df_empleados['nombre'].dropna().unique() if str(e).strip()] if 'nombre' in df_empleados.columns else []
 
             if lista_emp_elim:
                 with col_del1:
@@ -1420,10 +1269,8 @@ if modulo_activo == "🤠 Personal / Empleados":
                     col_btn1, col_btn2 = st.columns(2)
                     with col_btn1:
                         if st.button("⚠️ Cambiar a Inactivo", use_container_width=True):
-                            datos_inactivo = df_emp_list[df_emp_list['nombre'] == emp_sel].iloc[0].to_dict()
+                            datos_inactivo = df_empleados[df_empleados['nombre'] == emp_sel].iloc[0].to_dict()
                             datos_inactivo['estatus'] = "Inactivo"
-                            cols_validas = list(df_emp_list.columns)
-                            datos_inactivo = {k: v for k, v in datos_inactivo.items() if k in cols_validas or k == 'nombre'}
                             if guardar_registro("empleados", datos_inactivo, "nombre"):
                                 st.warning(f"Empleado {emp_sel} marcado como Inactivo.")
                                 time.sleep(0.4)
@@ -1438,31 +1285,11 @@ if modulo_activo == "🤠 Personal / Empleados":
         else:
             st.info("No hay información de empleados registrada.")
 
-    # ---------------------------------------------------------
-    # TAB 3: HISTORIAL DE TRANSACCIONES POR EMPLEADO
-    # ---------------------------------------------------------
     with tab_transacciones:
         st.subheader("📊 Transacciones Registradas por Empleado")
-
-        df_finanzas_base = globals().get('df_finanzas', st.session_state.get('df_finanzas', pd.DataFrame()))
-
-        if (df_finanzas_base is None or df_finanzas_base.empty) and 'cargar_tabla' in globals():
-            try:
-                res_fin = cargar_tabla('finanzas')
-                if isinstance(res_fin, pd.DataFrame) and not res_fin.empty:
-                    df_finanzas_base = res_fin
-                    st.session_state['df_finanzas'] = res_fin
-            except Exception:
-                pass
-
-        if isinstance(df_finanzas_base, pd.DataFrame) and not df_finanzas_base.empty:
-            df_tx_base = df_finanzas_base.copy()
-
-            col_emp_tx = None
-            if 'empleado_responsable' in df_tx_base.columns:
-                col_emp_tx = 'empleado_responsable'
-            elif 'asociado' in df_tx_base.columns:
-                col_emp_tx = 'asociado'
+        if not df_finanzas.empty:
+            df_tx_base = df_finanzas.copy()
+            col_emp_tx = 'empleado_responsable' if 'empleado_responsable' in df_tx_base.columns else ('asociado' if 'asociado' in df_tx_base.columns else None)
 
             if col_emp_tx:
                 df_tx_base[col_emp_tx] = df_tx_base[col_emp_tx].astype(str).str.strip().str.upper()
@@ -1470,20 +1297,17 @@ if modulo_activo == "🤠 Personal / Empleados":
             col_f1, col_f2 = st.columns([2, 2])
             with col_f1:
                 opciones_empleados = ["TODOS"]
-                
-                df_emp_sub = globals().get('df_empleados', st.session_state.get('df_empleados', pd.DataFrame()))
-                if isinstance(df_emp_sub, pd.DataFrame) and not df_emp_sub.empty:
-                    col_e_nombre = 'nombre' if 'nombre' in df_emp_sub.columns else df_emp_sub.columns[0]
-                    opciones_empleados += list(df_emp_sub[col_e_nombre].dropna().astype(str).str.strip().str.upper().unique())
+                if not df_empleados.empty:
+                    col_e_nombre = 'nombre' if 'nombre' in df_empleados.columns else df_empleados.columns[0]
+                    opciones_empleados += list(df_empleados[col_e_nombre].dropna().astype(str).str.strip().str.upper().unique())
                 
                 if col_emp_tx:
-                    unicos_tx = [e for e in df_tx_base[col_emp_tx].dropna().unique() if e not in opciones_empleados and e != "NONE" and e != "NAN"]
+                    unicos_tx = [e for e in df_tx_base[col_emp_tx].dropna().unique() if e not in opciones_empleados and e not in ["NONE", "NAN"]]
                     opciones_empleados += unicos_tx
 
                 filtro_emp_tx = st.selectbox("Filtrar por Empleado Responsable:", opciones_empleados, key="sb_filtro_emp_tx")
 
             df_tx_display = df_tx_base.copy()
-
             if filtro_emp_tx != "TODOS" and col_emp_tx:
                 df_tx_display = df_tx_display[df_tx_display[col_emp_tx] == filtro_emp_tx]
 
@@ -1494,29 +1318,21 @@ if modulo_activo == "🤠 Personal / Empleados":
                 st.dataframe(df_tx_display, use_container_width=True, hide_index=True)
             else:
                 st.info(f"No hay transacciones registradas para el empleado **{filtro_emp_tx}**.")
-
         else:
-            st.info("No se encontraron registros financieros o transacciones cargadas en la tabla 'finanzas'.")
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-import time
+            st.info("No se encontraron registros financieros cargados.")
 
-# --- MÓDULO 3: CLIENTES ---
-if modulo_activo == "🤝 Clientes":
+# ==========================================
+# MÓDULO 3: CLIENTES
+# ==========================================
+elif modulo_activo == "🤝 Clientes":
     st.header("🤝 Registro y Catálogo de Clientes")
 
-    # --- MÉTRICAS RÁPIDAS ---
     if not df_clientes.empty:
         col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            st.metric("Total de Clientes", len(df_clientes))
-        with col_m2:
-            # Ejemplo si agregas estatus en el futuro
-            st.metric("Catálogo Actualizado", datetime.now().strftime("%d/%m/%Y"))
+        with col_m1: st.metric("Total de Clientes", len(df_clientes))
+        with col_m2: st.metric("Catálogo Actualizado", datetime.now().strftime("%d/%m/%Y"))
     st.markdown("---")
 
-    # --- FORMULARIO DE REGISTRO ---
     with st.expander("➕ **Registrar Nuevo Cliente**", expanded=True):
         with st.form("form_clientes", clear_on_submit=True):
             col_f1, col_f2 = st.columns(2)
@@ -1537,18 +1353,12 @@ if modulo_activo == "🤝 Clientes":
                 elif c_email and ("@" not in c_email or "." not in c_email):
                     st.error("❌ Por favor, ingresa un correo electrónico válido.")
                 else:
-                    datos_nuevo = {
-                        "nombre_razon": c_nombre,
-                        "telefono": c_tel,
-                        "email": c_email,
-                        "direccion": c_dir
-                    }
+                    datos_nuevo = {"nombre_razon": c_nombre, "telefono": c_tel, "email": c_email, "direccion": c_dir}
                     if guardar_registro("clientes", datos_nuevo, "nombre_razon"):
                         st.success(f"¡Cliente '{c_nombre}' guardado correctamente!")
                         time.sleep(0.4)
                         st.rerun()
 
-    # --- BÚSQUEDA Y REPORTES ---
     st.markdown("### 📋 Catálogo de Clientes")
     col_bus_cli, col_rep_cli = st.columns([3, 1])
     
@@ -1558,40 +1368,23 @@ if modulo_activo == "🤝 Clientes":
     df_cli_vista = df_clientes.copy()
     if not df_cli_vista.empty:
         if buscar_cli:
-            df_cli_vista = df_cli_vista[
-                df_cli_vista.astype(str).apply(lambda x: x.str.contains(buscar_cli, case=False)).any(axis=1)
-            ]
+            df_cli_vista = df_cli_vista[df_cli_vista.astype(str).apply(lambda x: x.str.contains(buscar_cli, case=False)).any(axis=1)]
 
         with col_rep_cli:
             st.write("")
-            html_cli = generar_html_docs(
-                "Catálogo de Clientes", 
-                ["Nombre/Razón Social", "Teléfono", "E-mail", "Dirección"], 
-                df_cli_vista, 
-                ["nombre_razon", "telefono", "email", "direccion"]
-            )
-            st.download_button(
-                label="📄 Reporte (Docs)",
-                data=html_cli,
-                file_name=f"Reporte_Clientes_{datetime.now().strftime('%Y%m%d')}.doc",
-                mime="application/msword",
-                use_container_width=True
-            )
+            html_cli = generar_html_docs("Catálogo de Clientes", ["Nombre/Razón Social", "Teléfono", "E-mail", "Dirección"], df_cli_vista, ["nombre_razon", "telefono", "email", "direccion"])
+            st.download_button(label="📄 Reporte (Docs)", data=html_cli, file_name=f"Reporte_Clientes_{datetime.now().strftime('%Y%m%d')}.doc", mime="application/msword", use_container_width=True)
 
-        # Mostrar tabla de clientes
         st.dataframe(df_cli_vista, use_container_width=True, hide_index=True)
 
-    # --- SECCIÓN DE EDICIÓN Y ELIMINACIÓN ---
     if not df_clientes.empty:
         st.markdown("---")
         st.markdown("#### 🛠️ Gestionar Cliente (Editar o Eliminar)")
-        
         cli_sel = st.selectbox("Selecciona un Cliente para modificar:", df_clientes['nombre_razon'].unique(), key="sel_cli_edit")
         
         if cli_sel:
             fila_cli = df_clientes[df_clientes['nombre_razon'] == cli_sel].iloc[0]
 
-            # Botones de Acción Rápida (WhatsApp / Email)
             col_acc1, col_acc2 = st.columns(2)
             with col_acc1:
                 tel_val = str(fila_cli.get('telefono', '')).strip()
@@ -1602,7 +1395,6 @@ if modulo_activo == "🤝 Clientes":
                 if email_val:
                     st.link_button(f"✉️ Enviar Correo", f"mailto:{email_val}", use_container_width=True)
 
-            # Formulario de Edición
             with st.expander(f"📝 Editar datos de: {cli_sel}", expanded=False):
                 with st.form(key=f"form_edit_{cli_sel}"):
                     e_col1, e_col2 = st.columns(2)
@@ -1616,26 +1408,16 @@ if modulo_activo == "🤝 Clientes":
                     btn_guardar_edit = st.form_submit_button("🔄 Actualizar Datos", use_container_width=True)
 
                     if btn_guardar_edit:
-                        if not edit_nombre:
-                            st.error("El nombre no puede estar vacío.")
-                        elif edit_tel and (not edit_tel.isdigit() or len(edit_tel) != 10):
-                            st.error("El teléfono debe constar de 10 dígitos.")
-                        elif edit_email and ("@" not in edit_email or "." not in edit_email):
-                            st.error("E-mail no válido.")
+                        if not edit_nombre: st.error("El nombre no puede estar vacío.")
+                        elif edit_tel and (not edit_tel.isdigit() or len(edit_tel) != 10): st.error("El teléfono debe constar de 10 dígitos.")
+                        elif edit_email and ("@" not in edit_email or "." not in edit_email): st.error("E-mail no válido.")
                         else:
-                            datos_actualizados = {
-                                "nombre_razon": edit_nombre,
-                                "telefono": edit_tel,
-                                "email": edit_email,
-                                "direccion": edit_dir
-                            }
-                            # Si cambia el nombre, asegúrate de actualizar la clave primaria o registro en tu DB
+                            datos_actualizados = {"nombre_razon": edit_nombre, "telefono": edit_tel, "email": edit_email, "direccion": edit_dir}
                             if guardar_registro("clientes", datos_actualizados, "nombre_razon"):
                                 st.success("¡Cliente actualizado correctamente!")
                                 time.sleep(0.4)
                                 st.rerun()
 
-            # Opción de Eliminar con Confirmación
             with st.expander(f"⚠️ Eliminar Registro de {cli_sel}"):
                 st.warning("Esta acción borrará al cliente del catálogo permanentemente.")
                 chk_confirmar = st.checkbox("Entiendo los riesgos y deseo eliminar este cliente.", key=f"chk_del_{cli_sel}")
@@ -1649,36 +1431,27 @@ if modulo_activo == "🤝 Clientes":
                             time.sleep(0.4)
                             st.rerun()
 
+# ==========================================
 # MÓDULO 4: PROVEEDORES
+# ==========================================
 elif modulo_activo == "🚜 Proveedores":
     st.header("🚜 Gestión y Catálogo de Proveedores")
     
-    # Columnas estandarizadas en la base de datos
     cols_requeridas = ["nombre_proveedor", "insumo_principal", "telefono", "correo", "direccion", "dias_credito", "datos_bancarios", "estatus"]
     
     if df_proveedores.empty:
         df_prov_base = pd.DataFrame(columns=cols_requeridas)
     else:
         df_prov_base = df_proveedores.copy()
-        # Asegurar que existan todas las columnas clave
         for col in cols_requeridas:
             if col not in df_prov_base.columns:
                 df_prov_base[col] = "ACTIVO" if col == "estatus" else ""
 
     tab_formulario, tab_catalogo = st.tabs(["📝 Formulario de Registro / Edición", "📋 Directorio y Catálogo"])
 
-    # ---------------------------------------------------------
-    # TAB 1: FORMULARIO DE ALTA Y EDICIÓN CLARO Y VISIBLE
-    # ---------------------------------------------------------
     with tab_formulario:
         st.subheader("Acción a realizar")
-        
-        # Switch claro para elegir entre Crear o Editar
-        accion_form = st.radio(
-            "Selecciona una opción:",
-            ["➕ Registrar Nuevo Proveedor", "✏️ Modificar Proveedor Existente"],
-            horizontal=True
-        )
+        accion_form = st.radio("Selecciona una opción:", ["➕ Registrar Nuevo Proveedor", "✏️ Modificar Proveedor Existente"], horizontal=True)
         
         es_edicion = accion_form == "✏️ Modificar Proveedor Existente"
         prov_a_editar = None
@@ -1695,64 +1468,31 @@ elif modulo_activo == "🚜 Proveedores":
                 st.warning("⚠️ No hay proveedores registrados para modificar.")
 
         st.markdown("---")
-        
-        # Formulario
         with st.form("form_proveedores", clear_on_submit=False):
             st.markdown(f"### {'✏️ Modificando: ' + str(prov_a_editar) if es_edicion else '➕ Captura de Nuevo Proveedor'}")
-            
             col_f1, col_f2 = st.columns(2)
             
             with col_f1:
-                p_nombre = st.text_input(
-                    "Nombre del Proveedor / Razón Social *",
-                    value=datos_previos.get("nombre_proveedor", ""),
-                    disabled=es_edicion,
-                    help="El nombre no se puede modificar si estás editando (es el identificador)."
-                ).strip().upper()
+                p_nombre = st.text_input("Nombre del Proveedor / Razón Social *", value=datos_previos.get("nombre_proveedor", ""), disabled=es_edicion).strip().upper()
+                p_insumo = st.text_input("Insumo Principal / Giro *", value=str(datos_previos.get("insumo_principal", ""))).strip().upper()
                 
-                p_insumo = st.text_input(
-                    "Insumo Principal / Giro * (Ej: ALIMENTO, MEDICINAS, DIÉSEL)",
-                    value=str(datos_previos.get("insumo_principal", ""))
-                ).strip().upper()
-                
-                # Carga teléfono o recupera de 'contacto' si venía de versión vieja
                 tel_default = datos_previos.get("telefono", "")
                 if not tel_default or str(tel_default).strip() in ["", "None", "nan"]:
                     tel_default = datos_previos.get("contacto", "")
                 
-                p_telefono = st.text_input(
-                    "Teléfono de Contacto",
-                    value=str(tel_default if str(tel_default) != "None" else "")
-                ).strip()
-                
-                p_correo = st.text_input(
-                    "Correo Electrónico",
-                    value=str(datos_previos.get("correo", "") if str(datos_previos.get("correo", "")) != "None" else "")
-                ).strip()
+                p_telefono = st.text_input("Teléfono de Contacto", value=str(tel_default if str(tel_default) != "None" else "")).strip()
+                p_correo = st.text_input("Correo Electrónico", value=str(datos_previos.get("correo", "") if str(datos_previos.get("correo", "")) != "None" else "")).strip()
 
             with col_f2:
-                p_direccion = st.text_input(
-                    "Dirección / Ubicación",
-                    value=str(datos_previos.get("direccion", "") if str(datos_previos.get("direccion", "")) != "None" else "")
-                ).strip().upper()
-                
-                p_dias_credito = st.number_input(
-                    "Días de Crédito (0 = Contado)",
-                    min_value=0,
-                    max_value=120,
-                    value=int(datos_previos.get("dias_credito", 0)) if str(datos_previos.get("dias_credito", "0")).isdigit() else 0
-                )
+                p_direccion = st.text_input("Dirección / Ubicación", value=str(datos_previos.get("direccion", "") if str(datos_previos.get("direccion", "")) != "None" else "")).strip().upper()
+                p_dias_credito = st.number_input("Días de Crédito (0 = Contado)", min_value=0, max_value=120, value=int(datos_previos.get("dias_credito", 0)) if str(datos_previos.get("dias_credito", "0")).isdigit() else 0)
                 
                 estatus_opciones = ["ACTIVO", "INACTIVO"]
                 est_prev = str(datos_previos.get("estatus", "ACTIVO")).upper()
                 idx_est = estatus_opciones.index(est_prev) if est_prev in estatus_opciones else 0
                 p_estatus = st.selectbox("Estatus", estatus_opciones, index=idx_est)
                 
-                p_datos_bancarios = st.text_area(
-                    "Datos de Pago / Cuenta CLABE / Banco",
-                    value=str(datos_previos.get("datos_bancarios", "") if str(datos_previos.get("datos_bancarios", "")) != "None" else ""),
-                    height=68
-                ).strip().upper()
+                p_datos_bancarios = st.text_area("Datos de Pago / Cuenta CLABE / Banco", value=str(datos_previos.get("datos_bancarios", "") if str(datos_previos.get("datos_bancarios", "")) != "None" else ""), height=68).strip().upper()
 
             submit_label = "🔄 Actualizar Proveedor" if es_edicion else "💾 Guardar Proveedor"
             submit_prov = st.form_submit_button(submit_label, use_container_width=True)
@@ -1760,10 +1500,8 @@ elif modulo_activo == "🚜 Proveedores":
             if submit_prov:
                 nombre_final = prov_a_editar if es_edicion else p_nombre
                 
-                if not nombre_final:
-                    st.error("❌ El nombre del proveedor es obligatorio.")
-                elif not p_insumo:
-                    st.error("❌ El insumo principal o giro es obligatorio.")
+                if not nombre_final: st.error("❌ El nombre del proveedor es obligatorio.")
+                elif not p_insumo: st.error("❌ El insumo principal o giro es obligatorio.")
                 else:
                     datos_proveedor = {
                         "nombre_proveedor": nombre_final,
@@ -1775,18 +1513,13 @@ elif modulo_activo == "🚜 Proveedores":
                         "datos_bancarios": p_datos_bancarios,
                         "estatus": p_estatus
                     }
-                    
                     if guardar_registro("proveedores", datos_proveedor, "nombre_proveedor"):
                         st.success(f"Proveedor '{nombre_final}' {'actualizado' if es_edicion else 'guardado'} correctamente.")
                         time.sleep(0.4)
                         st.rerun()
 
-    # ---------------------------------------------------------
-    # TAB 2: DIRECTORIO Y CATÁLOGO (LIMPIO Y UNIFICADO)
-    # ---------------------------------------------------------
     with tab_catalogo:
         st.subheader("📋 Directorio de Proveedores")
-        
         col_bus, col_rep = st.columns([3, 1.5])
         
         with col_bus:
@@ -1795,26 +1528,17 @@ elif modulo_activo == "🚜 Proveedores":
         if not df_prov_base.empty:
             df_prov_vista = df_prov_base.copy()
 
-            # 1. Migración en vista: Unificar 'contacto' antiguo dentro de 'telefono'
             if 'contacto' in df_prov_vista.columns:
                 df_prov_vista['telefono'] = df_prov_vista['telefono'].replace(['', 'None', 'nan', None], pd.NA)
                 df_prov_vista['telefono'] = df_prov_vista['telefono'].fillna(df_prov_vista['contacto'])
 
-            # 2. Reemplazar valores nulos/vacíos/None por '-' para vista profesional
             df_prov_vista = df_prov_vista.fillna('-').replace(['', 'None', 'none', 'nan', 'NaN'], '-')
-
-            # 3. Filtrar explícitamente solo las columnas deseadas (Oculta la columna 'contacto' repetida)
             cols_deseadas = ["nombre_proveedor", "insumo_principal", "telefono", "correo", "direccion", "dias_credito", "datos_bancarios", "estatus"]
-            cols_existentes = [c for c in cols_deseadas if c in df_prov_vista.columns]
-            df_prov_vista = df_prov_vista[cols_existentes]
+            df_prov_vista = df_prov_vista[[c for c in cols_deseadas if c in df_prov_vista.columns]]
 
-            # 4. Aplicar Búsqueda
             if buscar_prov:
-                df_prov_vista = df_prov_vista[
-                    df_prov_vista.astype(str).apply(lambda x: x.str.contains(buscar_prov, case=False)).any(axis=1)
-                ]
+                df_prov_vista = df_prov_vista[df_prov_vista.astype(str).apply(lambda x: x.str.contains(buscar_prov, case=False)).any(axis=1)]
 
-            # Botón de Descarga
             with col_rep:
                 st.write("")
                 cols_html_headers = ["Nombre Proveedor", "Insumo Principal", "Teléfono", "Correo", "Dirección", "Días Crédito", "Datos Pago", "Estatus"]
@@ -1824,15 +1548,8 @@ elif modulo_activo == "🚜 Proveedores":
                 cols_existentes_headers = [cols_html_headers[i] for i, c in enumerate(cols_df_keys) if c in df_prov_vista.columns]
 
                 html_prov = generar_html_docs("Registro de Proveedores", cols_existentes_headers, df_prov_vista, cols_existentes_keys)
-                st.download_button(
-                    label="📄 Exportar Reporte (Docs)",
-                    data=html_prov,
-                    file_name=f"Reporte_Proveedores_{datetime.now().strftime('%Y%m%d')}.doc",
-                    mime="application/msword",
-                    use_container_width=True
-                )
+                st.download_button(label="📄 Exportar Reporte (Docs)", data=html_prov, file_name=f"Reporte_Proveedores_{datetime.now().strftime('%Y%m%d')}.doc", mime="application/msword", use_container_width=True)
 
-            # Tabla de Proveedores limpia
             st.dataframe(
                 df_prov_vista,
                 use_container_width=True,
@@ -1849,7 +1566,6 @@ elif modulo_activo == "🚜 Proveedores":
                 }
             )
 
-            # Sección de Eliminación con espacio para evitar traslapes visuales
             st.markdown("<br>", unsafe_allow_html=True)
             with st.expander("🗑️ Eliminar Registro de Proveedor"):
                 col_del1, col_del2 = st.columns([3, 1])
@@ -1864,7 +1580,10 @@ elif modulo_activo == "🚜 Proveedores":
                             st.rerun()
         else:
             st.info("No hay proveedores registrados aún o no coinciden con la búsqueda.")
+
+# ==========================================
 # MÓDULO 5: CONTROL DE LOTES
+# ==========================================
 elif modulo_activo == "🐂 Control de Lotes":
     st.header("🐂 Control de Lotes de Ganado")
     with st.form("form_lotes", clear_on_submit=True):
@@ -1916,7 +1635,6 @@ elif modulo_activo == "🐂 Control de Lotes":
             
     st.dataframe(df_lotes_vista, use_container_width=True, hide_index=True)
     
-    # Edición Manual de Lotes
     if not df_lotes.empty:
         st.markdown("#### 🛠️ Editar o Eliminar Lote de Ganado")
         lote_sel = st.selectbox("Selecciona un Lote para Modificar:", df_lotes['nombre_lote'].unique(), key="sel_lot_edit")
