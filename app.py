@@ -776,16 +776,20 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
             st.write("---")
 
-            # MÓDULO 3: ESTADO DE RESULTADOS (P&L TRADICIONAL)
-            df_pagados = df_filtrado[(df_filtrado['estado_deuda'] == 'Pagado') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')].copy()
+            # MÓDULO 3: ESTADO DE RESULTADOS (P&L TRADICIONAL CORREGIDO)
+            df_pagados = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].copy()
             
             if not df_pagados.empty:
                 df_pagados['Rubro'] = df_pagados['categoria'].apply(lambda x: clasificar_categoria(x)[1])
                 
-                tot_ingresos = df_pagados[df_pagados['Rubro'] == 'Ingreso']['monto'].sum()
+                # Corrección: Ingresos directos por tipo "Ingreso" pagado (Coincide con los $40,000 MXN)
+                tot_ingresos = df_pagados[df_pagados['tipo'] == 'Ingreso']['monto'].sum()
                 tot_costos_directos = df_pagados[df_pagados['Rubro'] == 'Costo Directo']['monto'].sum()
                 tot_gastos_operativos = df_pagados[df_pagados['Rubro'] == 'Gasto Operativo']['monto'].sum()
-                tot_otros = df_pagados[df_pagados['Rubro'] == 'Otros']['monto'].sum()
+                
+                # Excluir amortizaciones o clasificaciones ambiguas que inflen otros gastos
+                df_otros = df_pagados[(df_pagados['Rubro'] == 'Otros') & (df_pagados['tipo'] == 'Egreso')]
+                tot_otros = df_otros['monto'].sum()
                 
                 utilidad_bruta = tot_ingresos - tot_costos_directos
                 margen_bruto = (utilidad_bruta / tot_ingresos * 100) if tot_ingresos > 0 else 0.0
@@ -793,7 +797,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 utilidad_neta = utilidad_bruta - tot_gastos_operativos - tot_otros
                 margen_neto = (utilidad_neta / tot_ingresos * 100) if tot_ingresos > 0 else 0.0
                 
-                flujo_caja = tot_ingresos - (tot_costos_directos + tot_gastos_operativos + tot_otros)
+                flujo_caja = balance_neto
                 
                 k1, k2, k3, k4 = st.columns(4)
                 k1.metric("1️⃣ Flujo de Caja Total", f"$ {flujo_caja:,.2f} MXN", help="Efectivo real disponible")
