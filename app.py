@@ -1458,114 +1458,164 @@ elif modulo_activo == "🤠 Personal / Empleados":
                 st.info("No se encontraron registros financieros cargados.")
 
 # ==========================================
-# MÓDULO 3: CLIENTES
+# MÓDULO 3: CLIENTES (DISEÑO MEJORADO)
 # ==========================================
 elif modulo_activo == "🤝 Clientes":
-    st.header("🤝 Registro y Catálogo de Clientes")
 
-    if not df_clientes.empty:
-        col_m1, col_m2 = st.columns(2)
-        with col_m1: st.metric("Total de Clientes", len(df_clientes))
-        with col_m2: st.metric("Catálogo Actualizado", datetime.now().strftime("%d/%m/%Y"))
-    st.markdown("---")
+    # --- MODAL PARA REGISTRAR / EDITAR CLIENTE ---
+    if hasattr(st, "dialog"):
+        @st.dialog("👤 Gestión de Cliente")
+        def modal_formulario_cliente(cli_data=None):
+            es_edicion = cli_data is not None
+            st.markdown(f"### {'✏️ Editar Datos de Cliente' if es_edicion else '➕ Registrar Nuevo Cliente'}")
 
-    with st.expander("➕ **Registrar Nuevo Cliente**", expanded=True):
-        with st.form("form_clientes", clear_on_submit=True):
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                c_nombre = st.text_input("Razón Social / Nombre *").strip().upper()
-                c_tel = st.text_input("Teléfono (10 dígitos)").strip()
-            with col_f2:
-                c_email = st.text_input("Correo Electrónico (E-mail)").strip().lower()
-                c_dir = st.text_input("Dirección / Ubicación").strip()
+            nombre_prev = cli_data.get('nombre_razon', '') if es_edicion else ""
+            tel_prev = str(cli_data.get('telefono', '')).strip() if es_edicion else ""
+            email_prev = str(cli_data.get('email', '')).strip() if es_edicion else ""
+            dir_prev = str(cli_data.get('direccion', '')).strip() if es_edicion else ""
 
-            submit_cliente = st.form_submit_button("💾 Guardar Cliente", use_container_width=True)
+            with st.form("form_modal_cliente", clear_on_submit=not es_edicion):
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    c_nombre = st.text_input("Razón Social / Nombre *", value=nombre_prev, disabled=es_edicion).strip().upper()
+                    c_tel = st.text_input("Teléfono (10 dígitos)", value=tel_prev).strip()
+                with col_f2:
+                    c_email = st.text_input("Correo Electrónico (E-mail)", value=email_prev).strip().lower()
+                    c_dir = st.text_input("Dirección / Ubicación", value=dir_prev).strip()
 
-            if submit_cliente:
-                if not c_nombre:
-                    st.error("❌ El nombre o razón social es obligatorio.")
-                elif c_tel and (not c_tel.isdigit() or len(c_tel) != 10):
-                    st.error("❌ El teléfono debe constar exactamente de 10 dígitos numéricos.")
-                elif c_email and ("@" not in c_email or "." not in c_email):
-                    st.error("❌ Por favor, ingresa un correo electrónico válido.")
-                else:
-                    datos_nuevo = {"nombre_razon": c_nombre, "telefono": c_tel, "email": c_email, "direccion": c_dir}
-                    if guardar_registro("clientes", datos_nuevo, "nombre_razon"):
-                        st.success(f"¡Cliente '{c_nombre}' guardado correctamente!")
-                        time.sleep(0.4)
-                        st.rerun()
+                st.divider()
+                submit_cliente = st.form_submit_button("💾 Actualizar Datos" if es_edicion else "💾 Guardar Cliente", use_container_width=True, type="primary")
 
-    st.markdown("### 📋 Catálogo de Clientes")
-    col_bus_cli, col_rep_cli = st.columns([3, 1])
-    
-    with col_bus_cli:
-        buscar_cli = st.text_input("🔍 Buscar por Nombre, Teléfono, Email o Dirección:", key="bus_cli").strip()
-
-    df_cli_vista = df_clientes.copy()
-    if not df_cli_vista.empty:
-        if buscar_cli:
-            df_cli_vista = df_cli_vista[df_cli_vista.astype(str).apply(lambda x: x.str.contains(buscar_cli, case=False)).any(axis=1)]
-
-        with col_rep_cli:
-            st.write("")
-            html_cli = generar_html_docs("Catálogo de Clientes", ["Nombre/Razón Social", "Teléfono", "E-mail", "Dirección"], df_cli_vista, ["nombre_razon", "telefono", "email", "direccion"])
-            st.download_button(label="📄 Reporte (Docs)", data=html_cli, file_name=f"Reporte_Clientes_{datetime.now().strftime('%Y%m%d')}.doc", mime="application/msword", use_container_width=True)
-
-        st.dataframe(df_cli_vista, use_container_width=True, hide_index=True)
-
-    if not df_clientes.empty:
-        st.markdown("---")
-        st.markdown("#### 🛠️ Gestionar Cliente (Editar o Eliminar)")
-        cli_sel = st.selectbox("Selecciona un Cliente para modificar:", df_clientes['nombre_razon'].unique(), key="sel_cli_edit")
-        
-        if cli_sel:
-            fila_cli = df_clientes[df_clientes['nombre_razon'] == cli_sel].iloc[0]
-
-            col_acc1, col_acc2 = st.columns(2)
-            with col_acc1:
-                tel_val = str(fila_cli.get('telefono', '')).strip()
-                if tel_val and len(tel_val) == 10:
-                    st.link_button(f"💬 Abrir WhatsApp ({tel_val})", f"https://wa.me/52{tel_val}", use_container_width=True)
-            with col_acc2:
-                email_val = str(fila_cli.get('email', '')).strip()
-                if email_val:
-                    st.link_button(f"✉️ Enviar Correo", f"mailto:{email_val}", use_container_width=True)
-
-            with st.expander(f"📝 Editar datos de: {cli_sel}", expanded=False):
-                with st.form(key=f"form_edit_{cli_sel}"):
-                    e_col1, e_col2 = st.columns(2)
-                    with e_col1:
-                        edit_nombre = st.text_input("Nombre / Razón Social:", str(fila_cli.get('nombre_razon', ''))).strip().upper()
-                        edit_tel = st.text_input("Teléfono:", str(fila_cli.get('telefono', ''))).strip()
-                    with e_col2:
-                        edit_email = st.text_input("E-mail:", str(fila_cli.get('email', ''))).strip().lower()
-                        edit_dir = st.text_input("Dirección:", str(fila_cli.get('direccion', ''))).strip()
-
-                    btn_guardar_edit = st.form_submit_button("🔄 Actualizar Datos", use_container_width=True)
-
-                    if btn_guardar_edit:
-                        if not edit_nombre: st.error("El nombre no puede estar vacío.")
-                        elif edit_tel and (not edit_tel.isdigit() or len(edit_tel) != 10): st.error("El teléfono debe constar de 10 dígitos.")
-                        elif edit_email and ("@" not in edit_email or "." not in edit_email): st.error("E-mail no válido.")
-                        else:
-                            datos_actualizados = {"nombre_razon": edit_nombre, "telefono": edit_tel, "email": edit_email, "direccion": edit_dir}
-                            if guardar_registro("clientes", datos_actualizados, "nombre_razon"):
-                                st.success("¡Cliente actualizado correctamente!")
-                                time.sleep(0.4)
-                                st.rerun()
-
-            with st.expander(f"⚠️ Eliminar Registro de {cli_sel}"):
-                st.warning("Esta acción borrará al cliente del catálogo permanentemente.")
-                chk_confirmar = st.checkbox("Entiendo los riesgos y deseo eliminar este cliente.", key=f"chk_del_{cli_sel}")
-                
-                if st.button("🗑️ Eliminar Definitivamente", key=f"btn_del_cli_{cli_sel}", use_container_width=True, type="primary"):
-                    if not chk_confirmar:
-                        st.error("❌ Por favor marca la casilla de confirmación primero.")
+                if submit_cliente:
+                    if not c_nombre:
+                        st.error("❌ El nombre o razón social es obligatorio.")
+                    elif c_tel and (not c_tel.isdigit() or len(c_tel) != 10):
+                        st.error("❌ El teléfono debe constar exactamente de 10 dígitos numéricos.")
+                    elif c_email and ("@" not in c_email or "." not in c_email):
+                        st.error("❌ Por favor, ingresa un correo electrónico válido.")
                     else:
-                        if eliminar_registro("clientes", "nombre_razon", cli_sel):
-                            st.success(f"Cliente '{cli_sel}' eliminado.")
+                        datos_nuevo = {"nombre_razon": c_nombre, "telefono": c_tel, "email": c_email, "direccion": c_dir}
+                        if guardar_registro("clientes", datos_nuevo, "nombre_razon"):
+                            st.success(f"¡Cliente '{c_nombre}' {'actualizado' if es_edicion else 'guardado'} correctamente!")
                             time.sleep(0.4)
                             st.rerun()
+
+    # --- ENCABEZADO Y BARRA DE ACCIONES ---
+    col_head, col_btns = st.columns([2.5, 1.5])
+    with col_head:
+        st.title("🤝 Registro y Catálogo de Clientes")
+        st.caption("Directorio comercial, gestión de datos de contacto e integración directa con WhatsApp.")
+
+    with col_btns:
+        st.write("") # Espaciador vertical
+        cb1, cb2 = st.columns(2)
+        with cb1:
+            if st.button("➕ Nuevo", type="primary", use_container_width=True):
+                modal_formulario_cliente()
+        with cb2:
+            if not df_clientes.empty and 'nombre_razon' in df_clientes.columns:
+                if st.button("✏️ Editar", use_container_width=True):
+                    st.session_state["abrir_selector_edit_cli"] = True
+
+    # Selector rápido para editar cliente
+    if st.session_state.get("abrir_selector_edit_cli", False) and not df_clientes.empty:
+        with st.container(border=True):
+            st.markdown("##### ✏️ Selecciona el cliente que deseas modificar:")
+            cli_a_mod = st.selectbox("Cliente:", df_clientes['nombre_razon'].dropna().unique(), key="sb_quick_edit_cli")
+            col_cm1, col_cm2 = st.columns(2)
+            with col_cm1:
+                if st.button("Abrir Formulario", type="primary", use_container_width=True):
+                    row_data_cli = df_clientes[df_clientes['nombre_razon'] == cli_a_mod].iloc[0].to_dict()
+                    st.session_state["abrir_selector_edit_cli"] = False
+                    modal_formulario_cliente(row_data_cli)
+            with col_cm2:
+                if st.button("Cancelar", use_container_width=True):
+                    st.session_state["abrir_selector_edit_cli"] = False
+                    st.rerun()
+
+    st.divider()
+
+    # --- TARJETAS DE MÉTRICAS (KPIs) ---
+    if not df_clientes.empty:
+        tot_cli = len(df_clientes)
+        con_tel = len(df_clientes[df_clientes['telefono'].astype(str).str.strip() != ""])
+        
+        k1, k2, k3 = st.columns(3)
+        with k1:
+            with st.container(border=True): st.metric("Total de Clientes", tot_cli)
+        with k2:
+            with st.container(border=True): st.metric("Con Teléfono Registrado", con_tel, delta=f"{con_tel/tot_cli*100:.0f}% con contacto" if tot_cli > 0 else "")
+        with k3:
+            with st.container(border=True): st.metric("Catálogo Actualizado", datetime.now().strftime("%d/%m/%Y"))
+
+    # --- TABLA Y BÚSQUEDA EN CONTENEDOR ---
+    with st.container(border=True):
+        st.markdown("#### 📋 Catálogo Comercial de Clientes")
+        col_bus_cli, col_rep_cli = st.columns([3, 1])
+        
+        with col_bus_cli:
+            buscar_cli = st.text_input("🔍 Buscar por Nombre, Teléfono, Email o Dirección:", key="bus_cli").strip()
+
+        df_cli_vista = df_clientes.copy()
+        if not df_cli_vista.empty:
+            if buscar_cli:
+                df_cli_vista = df_cli_vista[df_cli_vista.astype(str).apply(lambda x: x.str.contains(buscar_cli, case=False)).any(axis=1)]
+
+            with col_rep_cli:
+                st.write("")
+                html_cli = generar_html_docs("Catálogo de Clientes", ["Nombre/Razón Social", "Teléfono", "E-mail", "Dirección"], df_cli_vista, ["nombre_razon", "telefono", "email", "direccion"])
+                st.download_button(label="📄 Exportar Reporte", data=html_cli, file_name=f"Reporte_Clientes_{datetime.now().strftime('%Y%m%d')}.doc", mime="application/msword", use_container_width=True)
+
+            st.dataframe(
+                df_cli_vista, 
+                use_container_width=True, 
+                hide_index=True,
+                column_config={
+                    "nombre_razon": "Nombre / Razón Social",
+                    "telefono": "Teléfono",
+                    "email": "Correo Electrónico",
+                    "direccion": "Dirección / Ubicación"
+                }
+            )
+        else:
+            st.info("No hay clientes registrados en el catálogo.")
+
+    # --- SECCIÓN DE ACCIONES RÁPIDAS Y BAJA ---
+    if not df_clientes.empty:
+        st.divider()
+        with st.container(border=True):
+            st.markdown("##### 🛠️ Contacto Directo y Gestión de Cliente")
+            cli_sel = st.selectbox("Selecciona un Cliente para interactuar o eliminar:", df_clientes['nombre_razon'].unique(), key="sel_cli_edit")
+            
+            if cli_sel:
+                fila_cli = df_clientes[df_clientes['nombre_razon'] == cli_sel].iloc[0]
+
+                col_acc1, col_acc2 = st.columns(2)
+                with col_acc1:
+                    tel_val = str(fila_cli.get('telefono', '')).strip()
+                    if tel_val and len(tel_val) == 10:
+                        st.link_button(f"💬 Abrir WhatsApp ({tel_val})", f"https://wa.me/52{tel_val}", use_container_width=True)
+                    else:
+                        st.info("Sin teléfono de 10 dígitos para WhatsApp.")
+                with col_acc2:
+                    email_val = str(fila_cli.get('email', '')).strip()
+                    if email_val:
+                        st.link_button(f"✉️ Enviar Correo a {email_val}", f"mailto:{email_val}", use_container_width=True)
+                    else:
+                        st.info("Sin correo electrónico registrado.")
+
+                with st.expander(f"⚠️ Eliminar Registro de {cli_sel}"):
+                    st.warning("Esta acción borrará al cliente del catálogo permanentemente.")
+                    chk_confirmar = st.checkbox("Entiendo los riesgos y deseo eliminar este cliente.", key=f"chk_del_{cli_sel}")
+                    
+                    if st.button("🗑️ Eliminar Definitivamente", key=f"btn_del_cli_{cli_sel}", use_container_width=True, type="primary"):
+                        if not chk_confirmar:
+                            st.error("❌ Por favor marca la casilla de confirmación primero.")
+                        else:
+                            if eliminar_registro("clientes", "nombre_razon", cli_sel):
+                                st.success(f"Cliente '{cli_sel}' eliminado correctamente.")
+                                time.sleep(0.4)
+                                st.rerun()
 
 # ==========================================
 # MÓDULO 4: PROVEEDORES
