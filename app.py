@@ -1809,89 +1809,162 @@ elif modulo_activo == "🚜 Proveedores":
             st.info("No hay proveedores registrados aún o no coinciden con la búsqueda.")
 
 # ==========================================
-# MÓDULO 5: CONTROL DE LOTES
+# MÓDULO 5: CONTROL DE LOTES (DISEÑO MEJORADO)
 # ==========================================
 elif modulo_activo == "🐂 Control de Lotes":
-    st.header("🐂 Control de Lotes de Ganado")
-    with st.form("form_lotes", clear_on_submit=True):
-        l_nombre = st.text_input("Código del Lote (Ej: LOTE_SARDO_01)").strip().upper()
-        col_lote_1, col_lote_2 = st.columns(2)
-        with col_lote_1:
-            l_cabezas = st.number_input("Número de cabezas de ganado:", min_value=0, step=1, value=10)
-        with col_lote_2:
-            l_raza = st.text_input("Raza / Genética preponderante (Ej: SARDO NEGRO, SUIZBU):").strip().upper()
+
+    # --- MODAL PARA REGISTRAR / EDITAR LOTE ---
+    if hasattr(st, "dialog"):
+        @st.dialog("🐂 Gestión de Lote de Ganado")
+        def modal_formulario_lote(lote_data=None):
+            es_edicion = lote_data is not None
+            st.markdown(f"### {'✏️ Modificar Parámetros de Lote' if es_edicion else '➕ Registrar Nuevo Lote'}")
+
+            l_nombre_prev = lote_data.get('nombre_lote', '') if es_edicion else ""
             
-        l_desc = st.text_area("Notas Adicionales de Alimentación o Potrero").strip()
-        submit_lote = st.form_submit_button("💾 Guardar Lote", use_container_width=True)
-        
-        if submit_lote:
-            if not l_nombre.strip():
-                st.error("❌ El código del lote es obligatorio para el control administrativo.")
-            else:
-                registro_lote = {
-                    "nombre_lote": l_nombre, 
-                    "cabezas": int(l_cabezas),
-                    "raza": l_raza,
-                    "descripcion_notas": l_desc, 
-                    "fecha_creacion": datetime.today().strftime('%Y-%m-%d')
-                }
-                if guardar_registro("lotes", registro_lote, "nombre_lote"):
-                    st.success(f"¡Lote {l_nombre} guardado con éxito con datos estructurados!")
-                    time.sleep(0.4)
-                    st.rerun()
+            try: l_cabezas_prev = int(lote_data.get('cabezas', 10)) if es_edicion and pd.notnull(lote_data.get('cabezas')) else 10
+            except: l_cabezas_prev = 10
+            
+            l_raza_prev = str(lote_data.get('raza', '')) if es_edicion else ""
+            
+            desc_val = lote_data.get('descripcion_notas', lote_data.get('descripcion_notes', '')) if es_edicion else ""
+            l_desc_prev = str(desc_val) if desc_val else ""
+
+            with st.form("form_modal_lote", clear_on_submit=not es_edicion):
+                l_nombre = st.text_input("Código del Lote (Ej: LOTE_SARDO_01)", value=l_nombre_prev, disabled=es_edicion).strip().upper()
                 
-    col_bus_lot, col_rep_lot = st.columns([3, 1])
-    with col_bus_lot:
-        buscar_lote = st.text_input("🔍 Buscar Lote:", key="bus_lote").strip()
-        
-    df_lotes_vista = df_lotes.copy()
-    if not df_lotes_vista.empty:
-        if buscar_lote:
-            df_lotes_vista = df_lotes_vista[df_lotes_vista.astype(str).apply(lambda x: x.str.contains(buscar_lote, case=False)).any(axis=1)]
-            
-        with col_rep_lot:
-            st.write("")
-            html_lot = generar_html_docs("Inventario de Lotes de Ganado", ["Código Lote", "Cabezas", "Raza/Genética", "Notas/Potrero", "Fecha Creación"], df_lotes_vista, ["nombre_lote", "cabezas", "raza", "descripcion_notas", "fecha_creacion"])
-            st.download_button(
-                label="📄 Generar Reporte Lotes (Docs)",
-                data=html_lot,
-                file_name=f"Reporte_Lotes_{datetime.now().strftime('%Y%m%d')}.doc",
-                mime="application/msword",
-                use_container_width=True
-            )
-            
-    st.dataframe(df_lotes_vista, use_container_width=True, hide_index=True)
-    
+                col_l1, col_l2 = st.columns(2)
+                with col_l1:
+                    l_cabezas = st.number_input("Número de cabezas de ganado:", min_value=0, step=1, value=l_cabezas_prev)
+                with col_l2:
+                    l_raza = st.text_input("Raza / Genética (Ej: SARDO NEGRO, SUIZBU):", value=l_raza_prev).strip().upper()
+
+                l_desc = st.text_area("Notas Adicionales de Alimentación o Potrero", value=l_desc_prev).strip()
+
+                st.divider()
+                submit_lote = st.form_submit_button("🔄 Guardar Cambios" if es_edicion else "💾 Guardar Lote", use_container_width=True, type="primary")
+
+                if submit_lote:
+                    if not l_nombre:
+                        st.error("❌ El código del lote es obligatorio para el control administrativo.")
+                    else:
+                        fecha_crea = str(lote_data.get('fecha_creacion', datetime.today().strftime('%Y-%m-%d'))) if es_edicion else datetime.today().strftime('%Y-%m-%d')
+                        registro_lote = {
+                            "nombre_lote": l_nombre,
+                            "cabezas": int(l_cabezas),
+                            "raza": l_raza,
+                            "descripcion_notas": l_desc,
+                            "fecha_creacion": fecha_crea
+                        }
+                        if guardar_registro("lotes", registro_lote, "nombre_lote"):
+                            st.success(f"¡Lote {l_nombre} {'actualizado' if es_edicion else 'guardado'} correctamente!")
+                            time.sleep(0.4)
+                            st.rerun()
+
+    # --- ENCABEZADO Y BARRA DE ACCIONES ---
+    col_head, col_btns = st.columns([2.5, 1.5])
+    with col_head:
+        st.title("🐂 Control de Lotes de Ganado")
+        st.caption("Inventario de animales, seguimiento por potrero, genética y distribución de cabezas.")
+
+    with col_btns:
+        st.write("") # Espaciador
+        cb1, cb2 = st.columns(2)
+        with cb1:
+            if st.button("➕ Nuevo", type="primary", use_container_width=True):
+                modal_formulario_lote()
+        with cb2:
+            if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
+                if st.button("✏️ Editar", use_container_width=True):
+                    st.session_state["abrir_selector_edit_lote"] = True
+
+    # Selector rápido para editar lote
+    if st.session_state.get("abrir_selector_edit_lote", False) and not df_lotes.empty:
+        with st.container(border=True):
+            st.markdown("##### ✏️ Selecciona el lote que deseas modificar:")
+            lote_a_mod = st.selectbox("Lote de Ganado:", df_lotes['nombre_lote'].dropna().unique(), key="sb_quick_edit_lote")
+            col_lm1, col_lm2 = st.columns(2)
+            with col_lm1:
+                if st.button("Abrir Formulario", type="primary", use_container_width=True):
+                    row_data_lote = df_lotes[df_lotes['nombre_lote'] == lote_a_mod].iloc[0].to_dict()
+                    st.session_state["abrir_selector_edit_lote"] = False
+                    modal_formulario_lote(row_data_lote)
+            with col_lm2:
+                if st.button("Cancelar", use_container_width=True):
+                    st.session_state["abrir_selector_edit_lote"] = False
+                    st.rerun()
+
+    st.divider()
+
+    # --- TARJETAS DE MÉTRICAS (KPIs) ---
     if not df_lotes.empty:
-        st.markdown("#### 🛠️ Editar o Eliminar Lote de Ganado")
-        lote_sel = st.selectbox("Selecciona un Lote para Modificar:", df_lotes['nombre_lote'].unique(), key="sel_lot_edit")
-        fila_lot = df_lotes[df_lotes['nombre_lote'] == lote_sel].iloc[0]
+        tot_lotes = len(df_lotes)
+        tot_cabezas = pd.to_numeric(df_lotes.get('cabezas', 0), errors='coerce').sum()
+        prom_cabezas = tot_cabezas / tot_lotes if tot_lotes > 0 else 0
+
+        k1, k2, k3 = st.columns(3)
+        with k1:
+            with st.container(border=True): st.metric("Total de Lotes", tot_lotes)
+        with k2:
+            with st.container(border=True): st.metric("Inventario Total de Cabezas", f"{int(tot_cabezas):,} cabezas")
+        with k3:
+            with st.container(border=True): st.metric("Promedio por Lote", f"{prom_cabezas:.1f} cabezas/lote")
+
+    # --- CATÁLOGO DE LOTES EN CONTENEDOR ---
+    with st.container(border=True):
+        st.markdown("#### 📋 Inventario General de Lotes")
+        col_bus_lot, col_rep_lot = st.columns([3, 1.5])
         
-        with st.expander(f"📝 Modificar Parámetros de {lote_sel}"):
-            le_c1, le_c2 = st.columns(2)
-            with le_c1:
-                edit_lot_cabezas = st.number_input("Corregir Cabezas:", min_value=0, step=1, value=int(fila_lot.get('cabezas', 0)) if pd.notnull(fila_lot.get('cabezas')) else 0, key=f"cab_{lote_sel}")
-            with le_c2:
-                edit_lot_raza = st.text_input("Corregir Raza/Genética:", str(fila_lot.get('raza', '')), key=f"raz_{lote_sel}").strip().upper()
-            
-            edit_lot_desc = st.text_area("Modificar Notas / Potrero:", str(fila_lot.get('descripcion_notas', fila_lot.get('descripcion_notes', ''))), key=f"desc_{lote_sel}").strip()
-            
-            l_act, l_elim = st.columns(2)
-            with l_act:
-                if st.button("🔄 Guardar Cambios en Lote", key=f"btn_up_lot_{lote_sel}", use_container_width=True):
-                    registro_lote_act = {
-                        "nombre_lote": lote_sel,
-                        "cabezas": int(edit_lot_cabezas),
-                        "raza": edit_lot_raza,
-                        "descripcion_notas": edit_lot_desc,
-                        "fecha_creacion": str(fila_lot.get('fecha_creacion', datetime.today().strftime('%Y-%m-%d')))
-                    }
-                    if guardar_registro("lotes", registro_lote_act, "nombre_lote"):
-                        st.success("¡Lote actualizado en Supabase!")
-                        time.sleep(0.4)
-                        st.rerun()
-            with l_elim:
-                if st.button("🗑️ Eliminar Lote Completo", key=f"btn_del_lot_{lote_sel}", use_container_width=True, type="primary"):
-                    if eliminar_registro("lotes", "nombre_lote", lote_sel):
-                        time.sleep(0.4)
-                        st.rerun()
+        with col_bus_lot:
+            buscar_lote = st.text_input("🔍 Buscar Lote por Código, Raza o Potrero:", key="bus_lote").strip()
+
+        df_lotes_vista = df_lotes.copy()
+        if not df_lotes_vista.empty:
+            if buscar_lote:
+                df_lotes_vista = df_lotes_vista[df_lotes_vista.astype(str).apply(lambda x: x.str.contains(buscar_lote, case=False)).any(axis=1)]
+
+            with col_rep_lot:
+                st.write("")
+                html_lot = generar_html_docs(
+                    "Inventario de Lotes de Ganado", 
+                    ["Código Lote", "Cabezas", "Raza/Genética", "Notas/Potrero", "Fecha Creación"], 
+                    df_lotes_vista, 
+                    ["nombre_lote", "cabezas", "raza", "descripcion_notas", "fecha_creacion"]
+                )
+                st.download_button(
+                    label="📄 Exportar Reporte",
+                    data=html_lot,
+                    file_name=f"Reporte_Lotes_{datetime.now().strftime('%Y%m%d')}.doc",
+                    mime="application/msword",
+                    use_container_width=True
+                )
+
+            st.dataframe(
+                df_lotes_vista, 
+                use_container_width=True, 
+                hide_index=True,
+                column_config={
+                    "nombre_lote": "Código del Lote",
+                    "cabezas": st.column_config.NumberColumn("Cabezas de Ganado", format="%d cabezas"),
+                    "raza": "Raza / Genética",
+                    "descripcion_notas": "Notas / Potrero",
+                    "fecha_creacion": st.column_config.DateColumn("Fecha Creación")
+                }
+            )
+
+            st.divider()
+
+            # SECCIÓN DE ELIMINACIÓN EN TARJETA
+            with st.expander("🗑️ Eliminar Lote de Ganado"):
+                col_del1, col_del2 = st.columns([3, 1])
+                with col_del1:
+                    lote_sel_del = st.selectbox("Selecciona Lote a Eliminar:", df_lotes['nombre_lote'].unique(), key="sb_del_lote")
+                with col_del2:
+                    st.write("")
+                    if st.button("🗑️ Eliminar Lote Completo", type="primary", use_container_width=True):
+                        if eliminar_registro("lotes", "nombre_lote", lote_sel_del):
+                            st.success(f"Lote '{lote_sel_del}' eliminado correctamente.")
+                            time.sleep(0.4)
+                            st.rerun()
+        else:
+            st.info("No hay lotes de ganado registrados actualmente.")
