@@ -1220,171 +1220,211 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
                             st.rerun()
 # ==========================================
-# MÓDULO 2: EMPLEADOS
+# MÓDULO 2: EMPLEADOS (DISEÑO MEJORADO)
 # ==========================================
 elif modulo_activo == "🤠 Personal / Empleados":
-    st.header("🤠 Administración de Personal y Empleados")
 
-    tab_registro, tab_listado, tab_transacciones = st.tabs([
-        "➕ Registrar / Editar Empleado", 
+    # --- MODAL PARA REGISTRAR / EDITAR EMPLEADO ---
+    if hasattr(st, "dialog"):
+        @st.dialog("👤 Gestión de Empleado")
+        def modal_formulario_empleado(emp_data=None):
+            es_edicion = emp_data is not None
+            st.markdown(f"### {'✏️ Editar Empleado' if es_edicion else '➕ Registrar Nuevo Empleado'}")
+            
+            e_nombre_val = emp_data.get('nombre', '') if es_edicion else ""
+            e_puesto_val = emp_data.get('puesto_funcion', '') if es_edicion else ""
+            try: e_sueldo_val = float(emp_data.get('sueldo', 0.0)) if es_edicion else 0.0
+            except: e_sueldo_val = 0.0
+            
+            try: e_fecha_val = datetime.strptime(str(emp_data.get('fecha_ingreso', '')), '%Y-%m-%d') if es_edicion else datetime.today()
+            except: e_fecha_val = datetime.today()
+            
+            e_periodo_val = str(emp_data.get('periodo_nomina', 'Quincenal')) if es_edicion else "Quincenal"
+            e_direccion_val = str(emp_data.get('direccion', '')) if es_edicion else ""
+            e_tel_val = str(emp_data.get('telefono', '')) if es_edicion else ""
+            e_email_val = str(emp_data.get('email', '')) if es_edicion else ""
+            e_estatus_val = str(emp_data.get('estatus', 'Activo')) if es_edicion else "Activo"
+
+            periodos_opciones = ["Semanal", "Catorcenal", "Quincenal", "Mensual"]
+            idx_periodo = periodos_opciones.index(e_periodo_val) if e_periodo_val in periodos_opciones else 2
+
+            with st.form("form_modal_empleado", clear_on_submit=False):
+                col1, col2 = st.columns(2)
+                with col1:
+                    e_nombre = st.text_input("Nombre Completo *", value=e_nombre_val, disabled=es_edicion).strip().upper()
+                    e_puesto = st.text_input("Puesto / Función", value=e_puesto_val).strip().upper()
+                    e_sueldo = st.number_input("Sueldo ($ MXN)", min_value=0.0, value=e_sueldo_val, step=100.0)
+                    e_fecha_ingreso = st.date_input("Fecha de Contratación", value=e_fecha_val)
+                    e_periodo = st.selectbox("Periodo de Nómina", periodos_opciones, index=idx_periodo)
+
+                with col2:
+                    e_tel = st.text_input("Teléfono", value=e_tel_val).strip()
+                    e_email = st.text_input("Correo Electrónico", value=e_email_val).strip().lower()
+                    e_direccion = st.text_area("Dirección", value=e_direccion_val, height=80).strip().upper()
+                    e_estatus = st.selectbox("Estatus del Empleado", ["Activo", "Inactivo"], index=0 if e_estatus_val == "Activo" else 1)
+
+                st.divider()
+                submit_empleado = st.form_submit_button("💾 Guardar Cambios" if es_edicion else "💾 Registrar Empleado", use_container_width=True, type="primary")
+
+                if submit_empleado:
+                    if not e_nombre:
+                        st.error("❌ El nombre del empleado es obligatorio.")
+                    else:
+                        datos_empleado = {
+                            "nombre": e_nombre,
+                            "puesto_funcion": e_puesto,
+                            "sueldo": e_sueldo,
+                            "fecha_ingreso": e_fecha_ingreso.strftime('%Y-%m-%d'),
+                            "periodo_nomina": e_periodo,
+                            "direccion": e_direccion,
+                            "telefono": e_tel,
+                            "email": e_email,
+                            "estatus": e_estatus
+                        }
+                        if guardar_registro("empleados", datos_empleado, "nombre"):
+                            st.success(f"Empleado {'actualizado' if es_edicion else 'guardado'} correctamente.")
+                            time.sleep(0.4)
+                            st.rerun()
+
+    # --- BARRA DE ENCABEZADO Y BOTONES DE ACCIÓN ---
+    col_head, col_btns = st.columns([2.5, 1.5])
+    with col_head:
+        st.title("🤠 Administración de Personal y Empleados")
+        st.caption("Control de expediente de nómina, estatus del personal y registro histórico.")
+    
+    with col_btns:
+        st.write("") # Espaciador
+        cb1, cb2 = st.columns(2)
+        with cb1:
+            if st.button("➕ Nuevo", type="primary", use_container_width=True):
+                modal_formulario_empleado()
+        with cb2:
+            if not df_empleados.empty and 'nombre' in df_empleados.columns:
+                lista_emp_edit = [e for e in df_empleados['nombre'].dropna().unique() if str(e).strip()]
+                if st.button("✏️ Editar", use_container_width=True):
+                    st.session_state["abrir_selector_editar"] = True
+
+    # Selector rápido si presiona editar
+    if st.session_state.get("abrir_selector_editar", False) and not df_empleados.empty:
+        with st.container(border=True):
+            st.markdown("##### ✏️ Selecciona el empleado que deseas modificar:")
+            emp_a_mod = st.selectbox("Empleado:", df_empleados['nombre'].dropna().unique(), key="sb_mod_emp_quick")
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                if st.button("Abrir Formulario", type="primary", use_container_width=True):
+                    row_data = df_empleados[df_empleados['nombre'] == emp_a_mod].iloc[0].to_dict()
+                    st.session_state["abrir_selector_editar"] = False
+                    modal_formulario_empleado(row_data)
+            with col_m2:
+                if st.button("Cancelar", use_container_width=True):
+                    st.session_state["abrir_selector_editar"] = False
+                    st.rerun()
+
+    st.divider()
+
+    # --- TARJETAS DE MÉTRICAS (KPIs) ---
+    if not df_empleados.empty:
+        tot_emp = len(df_empleados)
+        activos = len(df_empleados[df_empleados.get('estatus', 'Activo') == 'Activo'])
+        nomina_est = pd.to_numeric(df_empleados.get('sueldo', 0), errors='coerce').sum()
+
+        k1, k2, k3 = st.columns(3)
+        with k1:
+            with st.container(border=True): st.metric("Total Empleados", tot_emp)
+        with k2:
+            with st.container(border=True): st.metric("Personal Activo", activos, delta=f"{activos/tot_emp*100:.0f}% del total" if tot_emp > 0 else "")
+        with k3:
+            with st.container(border=True): st.metric("Nómina Total Estimada", f"$ {nomina_est:,.2f} MXN")
+
+    # --- PESTAÑAS PRINCIPALES ---
+    tab_listado, tab_transacciones = st.tabs([
         "📋 Listado de Personal", 
         "📊 Historial de Transacciones"
     ])
 
-    with tab_registro:
-        modo_form = st.radio("Acción:", ["Registrar Nuevo Empleado", "Editar Empleado Existente"], horizontal=True)
-        
-        e_nombre_val, e_puesto_val, e_sueldo_val = "", "", 0.0
-        e_fecha_val = datetime.today()
-        e_periodo_val, e_direccion_val, e_tel_val, e_email_val, e_estatus_val = "Quincenal", "", "", "", "Activo"
-        emp_a_editar = None
-
-        if modo_form == "Editar Empleado Existente":
-            if not df_empleados.empty and 'nombre' in df_empleados.columns:
-                lista_empleados = [e for e in df_empleados['nombre'].dropna().unique() if str(e).strip()]
-                if lista_empleados:
-                    emp_a_editar = st.selectbox("Selecciona Empleado a Editar:", lista_empleados)
-                    row_emp = df_empleados[df_empleados['nombre'] == emp_a_editar].iloc[0]
-                    
-                    e_nombre_val = str(row_emp.get('nombre', ''))
-                    e_puesto_val = str(row_emp.get('puesto_funcion', ''))
-                    try: e_sueldo_val = float(row_emp.get('sueldo', 0.0))
-                    except: e_sueldo_val = 0.0
-                        
-                    try: e_fecha_val = datetime.strptime(str(row_emp.get('fecha_ingreso', '')), '%Y-%m-%d')
-                    except: e_fecha_val = datetime.today()
-                        
-                    e_periodo_val = str(row_emp.get('periodo_nomina', 'Quincenal'))
-                    e_direccion_val = str(row_emp.get('direccion', ''))
-                    e_tel_val = str(row_emp.get('telefono', ''))
-                    e_email_val = str(row_emp.get('email', ''))
-                    e_estatus_val = str(row_emp.get('estatus', 'Activo'))
-                else:
-                    st.info("No hay nombres válidos registrados.")
-            else:
-                st.info("No hay empleados registrados para editar.")
-
-        with st.form("form_empleados", clear_on_submit=False):
-            st.subheader("Datos del Empleado")
-            col1, col2 = st.columns(2)
-            periodos_opciones = ["Semanal", "Catorcenal", "Quincenal", "Mensual"]
-            idx_periodo = periodos_opciones.index(e_periodo_val) if e_periodo_val in periodos_opciones else 2
-            
-            with col1:
-                e_nombre = st.text_input("Nombre Completo *", value=e_nombre_val).strip().upper()
-                e_puesto = st.text_input("Puesto / Función", value=e_puesto_val).strip().upper()
-                e_sueldo = st.number_input("Sueldo ($)", min_value=0.0, value=e_sueldo_val, step=100.0)
-                e_fecha_ingreso = st.date_input("Fecha de Contratación", value=e_fecha_val)
-                e_periodo = st.selectbox("Periodo de Nómina", periodos_opciones, index=idx_periodo)
-
-            with col2:
-                e_tel = st.text_input("Teléfono", value=e_tel_val).strip()
-                e_email = st.text_input("Correo Electrónico", value=e_email_val).strip().lower()
-                e_direccion = st.text_area("Dirección", value=e_direccion_val, height=80).strip().upper()
-                e_estatus = st.selectbox("Estatus del Empleado", ["Activo", "Inactivo"], index=0 if e_estatus_val == "Activo" else 1)
-
-            submit_label = "💾 Actualizar Empleado" if modo_form == "Editar Empleado Existente" else "💾 Guardar Empleado"
-            submit_empleado = st.form_submit_button(submit_label, use_container_width=True)
-
-            if submit_empleado:
-                if not e_nombre:
-                    st.error("❌ El nombre del empleado es obligatorio.")
-                else:
-                    datos_empleado = {
-                        "nombre": e_nombre,
-                        "puesto_funcion": e_puesto,
-                        "sueldo": e_sueldo,
-                        "fecha_ingreso": e_fecha_ingreso.strftime('%Y-%m-%d'),
-                        "periodo_nomina": e_periodo,
-                        "direccion": e_direccion,
-                        "telefono": e_tel,
-                        "email": e_email,
-                        "estatus": e_estatus
-                    }
-                    if guardar_registro("empleados", datos_empleado, "nombre"):
-                        st.success(f"Empleado {'actualizado' if modo_form == 'Editar Empleado Existente' else 'guardado'} correctamente.")
-                        time.sleep(0.4)
-                        st.rerun()
-
     with tab_listado:
-        col_bus_emp, col_rep_emp = st.columns([3, 1])
-        with col_bus_emp:
-            buscar_emp = st.text_input("🔍 Buscar Empleado:", key="bus_emp").strip()
+        with st.container(border=True):
+            col_bus_emp, col_rep_emp = st.columns([3, 1])
+            with col_bus_emp:
+                buscar_emp = st.text_input("🔍 Buscar por Nombre, Puesto, Teléfono o E-mail:", key="bus_emp").strip()
 
-        if not df_empleados.empty:
-            df_emp_vista = df_empleados.copy()
+            if not df_empleados.empty:
+                df_emp_vista = df_empleados.copy()
 
-            if buscar_emp:
-                df_emp_vista = df_emp_vista[df_emp_vista.astype(str).apply(lambda x: x.str.contains(buscar_emp, case=False)).any(axis=1)]
+                if buscar_emp:
+                    df_emp_vista = df_emp_vista[df_emp_vista.astype(str).apply(lambda x: x.str.contains(buscar_emp, case=False)).any(axis=1)]
 
-            with col_rep_emp:
-                st.write("")
-                html_emp = generar_html_docs(
-                    "Listado de Personal", 
-                    ["Nombre", "Puesto", "Sueldo", "Fecha Ingreso", "Nómina", "Teléfono", "E-mail", "Estatus"], 
-                    df_emp_vista, 
-                    [c for c in ["nombre", "puesto_funcion", "sueldo", "fecha_ingreso", "periodo_nomina", "telefono", "email", "estatus"] if c in df_emp_vista.columns]
+                with col_rep_emp:
+                    st.write("")
+                    html_emp = generar_html_docs(
+                        "Listado de Personal", 
+                        ["Nombre", "Puesto", "Sueldo", "Fecha Ingreso", "Nómina", "Teléfono", "E-mail", "Estatus"], 
+                        df_emp_vista, 
+                        [c for c in ["nombre", "puesto_funcion", "sueldo", "fecha_ingreso", "periodo_nomina", "telefono", "email", "estatus"] if c in df_emp_vista.columns]
+                    )
+                    st.download_button(
+                        label="📄 Exportar Reporte",
+                        data=html_emp,
+                        file_name=f"Reporte_Empleados_{datetime.now().strftime('%Y%m%d')}.doc",
+                        mime="application/msword",
+                        use_container_width=True
+                    )
+
+                st.dataframe(
+                    df_emp_vista,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "nombre": "Nombre Completo",
+                        "puesto_funcion": "Puesto / Función",
+                        "periodo_nomina": st.column_config.TextColumn("Periodo Nómina"),
+                        "estatus": st.column_config.TextColumn("Estatus"),
+                        "sueldo": st.column_config.NumberColumn("Sueldo ($)", format="$%.2f")
+                    }
                 )
-                st.download_button(
-                    label="📄 Generar Reporte (Docs)",
-                    data=html_emp,
-                    file_name=f"Reporte_Empleados_{datetime.now().strftime('%Y%m%d')}.doc",
-                    mime="application/msword",
-                    use_container_width=True
-                )
 
-            st.dataframe(
-                df_emp_vista,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "periodo_nomina": st.column_config.TextColumn("Periodo Nómina"),
-                    "estatus": st.column_config.TextColumn("Estatus"),
-                    "sueldo": st.column_config.NumberColumn("Sueldo ($)", format="$%.2f")
-                }
-            )
-
-            st.divider()
-            col_del1, col_del2 = st.columns(2)
-            lista_emp_elim = [e for e in df_empleados['nombre'].dropna().unique() if str(e).strip()] if 'nombre' in df_empleados.columns else []
-
-            if lista_emp_elim:
-                with col_del1:
-                    st.subheader("🗑️ Eliminar / Inactivar Empleado")
-                    emp_sel = st.selectbox("Selecciona Empleado:", lista_emp_elim, key="sel_del_emp")
+                st.divider()
                 
-                with col_del2:
-                    st.write("###")
-                    col_btn1, col_btn2 = st.columns(2)
-                    with col_btn1:
-                        if st.button("⚠️ Cambiar a Inactivo", use_container_width=True):
-                            datos_inactivo = df_empleados[df_empleados['nombre'] == emp_sel].iloc[0].to_dict()
-                            datos_inactivo['estatus'] = "Inactivo"
-                            if guardar_registro("empleados", datos_inactivo, "nombre"):
-                                st.warning(f"Empleado {emp_sel} marcado como Inactivo.")
-                                time.sleep(0.4)
-                                st.rerun()
+                # SECCIÓN DE INACTIVACIÓN Y ELIMINACIÓN EN TARJETA
+                lista_emp_elim = [e for e in df_empleados['nombre'].dropna().unique() if str(e).strip()] if 'nombre' in df_empleados.columns else []
 
-                    with col_btn2:
-                        if st.button("🗑️ Eliminar Definitivo", type="primary", use_container_width=True):
-                            if eliminar_registro("empleados", "nombre", emp_sel):
-                                st.success(f"Empleado {emp_sel} eliminado permanentemente.")
-                                time.sleep(0.4)
-                                st.rerun()
-        else:
-            st.info("No hay información de empleados registrada.")
+                if lista_emp_elim:
+                    st.markdown("##### 🛠️ Acciones de Estatus y Baja de Personal")
+                    col_del1, col_del2 = st.columns(2)
+                    with col_del1:
+                        emp_sel = st.selectbox("Selecciona Empleado:", lista_emp_elim, key="sel_del_emp")
+                    
+                    with col_del2:
+                        st.write("")
+                        col_btn1, col_btn2 = st.columns(2)
+                        with col_btn1:
+                            if st.button("⚠️ Marcar Inactivo", use_container_width=True):
+                                datos_inactivo = df_empleados[df_empleados['nombre'] == emp_sel].iloc[0].to_dict()
+                                datos_inactivo['estatus'] = "Inactivo"
+                                if guardar_registro("empleados", datos_inactivo, "nombre"):
+                                    st.warning(f"Empleado {emp_sel} marcado como Inactivo.")
+                                    time.sleep(0.4)
+                                    st.rerun()
+
+                        with col_btn2:
+                            if st.button("🗑️ Eliminar Registro", type="primary", use_container_width=True):
+                                if eliminar_registro("empleados", "nombre", emp_sel):
+                                    st.success(f"Empleado {emp_sel} eliminado permanentemente.")
+                                    time.sleep(0.4)
+                                    st.rerun()
+            else:
+                st.info("No hay información de empleados registrada.")
 
     with tab_transacciones:
-        st.subheader("📊 Transacciones Registradas por Empleado")
-        if not df_finanzas.empty:
-            df_tx_base = df_finanzas.copy()
-            col_emp_tx = 'empleado_responsable' if 'empleado_responsable' in df_tx_base.columns else ('asociado' if 'asociado' in df_tx_base.columns else None)
+        with st.container(border=True):
+            st.markdown("#### 📊 Transacciones y Pagos Registrados por Empleado")
+            if not df_finanzas.empty:
+                df_tx_base = df_finanzas.copy()
+                col_emp_tx = 'empleado_responsable' if 'empleado_responsable' in df_tx_base.columns else ('asociado' if 'asociado' in df_tx_base.columns else None)
 
-            if col_emp_tx:
-                df_tx_base[col_emp_tx] = df_tx_base[col_emp_tx].astype(str).str.strip().str.upper()
+                if col_emp_tx:
+                    df_tx_base[col_emp_tx] = df_tx_base[col_emp_tx].astype(str).str.strip().str.upper()
 
-            col_f1, col_f2 = st.columns([2, 2])
-            with col_f1:
                 opciones_empleados = ["TODOS"]
                 if not df_empleados.empty:
                     col_e_nombre = 'nombre' if 'nombre' in df_empleados.columns else df_empleados.columns[0]
@@ -1394,21 +1434,28 @@ elif modulo_activo == "🤠 Personal / Empleados":
                     unicos_tx = [e for e in df_tx_base[col_emp_tx].dropna().unique() if e not in opciones_empleados and e not in ["NONE", "NAN"]]
                     opciones_empleados += unicos_tx
 
-                filtro_emp_tx = st.selectbox("Filtrar por Empleado Responsable:", opciones_empleados, key="sb_filtro_emp_tx")
+                filtro_emp_tx = st.selectbox("Filtrar por Empleado Responsable / Beneficiario:", opciones_empleados, key="sb_filtro_emp_tx")
 
-            df_tx_display = df_tx_base.copy()
-            if filtro_emp_tx != "TODOS" and col_emp_tx:
-                df_tx_display = df_tx_display[df_tx_display[col_emp_tx] == filtro_emp_tx]
+                df_tx_display = df_tx_base.copy()
+                if filtro_emp_tx != "TODOS" and col_emp_tx:
+                    df_tx_display = df_tx_display[df_tx_display[col_emp_tx] == filtro_emp_tx]
 
-            if 'monto' in df_tx_display.columns:
-                df_tx_display['monto'] = pd.to_numeric(df_tx_display['monto'], errors='coerce').fillna(0.0)
+                if 'monto' in df_tx_display.columns:
+                    df_tx_display['monto'] = pd.to_numeric(df_tx_display['monto'], errors='coerce').fillna(0.0)
 
-            if not df_tx_display.empty:
-                st.dataframe(df_tx_display, use_container_width=True, hide_index=True)
+                if not df_tx_display.empty:
+                    st.dataframe(
+                        df_tx_display, 
+                        use_container_width=True, 
+                        hide_index=True,
+                        column_config={
+                            "monto": st.column_config.NumberColumn("Monto ($)", format="$%.2f")
+                        }
+                    )
+                else:
+                    st.info(f"No hay transacciones registradas para el empleado **{filtro_emp_tx}**.")
             else:
-                st.info(f"No hay transacciones registradas para el empleado **{filtro_emp_tx}**.")
-        else:
-            st.info("No se encontraron registros financieros cargados.")
+                st.info("No se encontraron registros financieros cargados.")
 
 # ==========================================
 # MÓDULO 3: CLIENTES
