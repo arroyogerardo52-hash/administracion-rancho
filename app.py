@@ -1901,11 +1901,13 @@ elif modulo_activo == "🐂 Control de Lotes":
     st.divider()
 
     # --- TARJETAS DE MÉTRICAS (KPIs) ---
-    if not df_lotes.empty:
-        tot_lotes = len(df_lotes)
-        lotes_act = len(df_lotes[df_lotes.get('estatus', 'Activo') == 'Activo'])
-        tot_cabezas = pd.to_numeric(df_lotes.get('cabezas_iniciales', 0), errors='coerce').sum()
-
+   if not df_lotes.empty:
+    tot_lotes = len(df_lotes)
+    
+    # Línea 1906 corregida:
+    lotes_act = len(df_lotes[df_lotes['estatus'] == 'Activo']) if 'estatus' in df_lotes.columns else tot_lotes
+    
+    tot_cabezas = pd.to_numeric(df_lotes['cabezas_iniciales'], errors='coerce').sum() if 'cabezas_iniciales' in df_lotes.columns else 0
         k1, k2, k3 = st.columns(3)
         with k1:
             with st.container(border=True): st.metric("Total Lotes Registrados", tot_lotes)
