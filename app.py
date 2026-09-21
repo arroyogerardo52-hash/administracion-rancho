@@ -1815,7 +1815,7 @@ elif modulo_activo == "🚜 Proveedores":
 # ==========================================
 # MÓDULO: CONTROL DE LOTES
 # ==========================================
-elif modulo_activo == " 🐂 Control de Lotes":
+elif modulo_activo and "Control de Lotes" in modulo_activo:
     st.title("🐂 Control de Lotes e Inventario")
 
     # 1. Selector rápido para editar lote (Modal)
