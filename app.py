@@ -1815,8 +1815,8 @@ elif modulo_activo == "🚜 Proveedores":
 # ==========================================
 # MÓDULO: CONTROL DE LOTES
 # ==========================================
-elif opcion_menu == "Control de Lotes":
-    st.title("🐂 Control de Lotes e Inventario")
+elif opcion_menu == "🐂 Control de Lotes"::
+    st.title("🐂 Control de Lotes")
 
     # 1. Selector rápido para editar lote (Modal)
     if st.session_state.get("abrir_selector_edit_lote", False) and not df_lotes.empty:
