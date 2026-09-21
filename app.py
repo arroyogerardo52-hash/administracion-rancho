@@ -1843,8 +1843,17 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
     # 2. TARJETAS DE MÉTRICAS (KPIs) DE INVENTARIO
     if not df_lotes.empty:
         tot_lotes = len(df_lotes)
-        lotes_act = len(df_lotes[df_lotes['estatus'] == 'Activo']) if 'estatus' in df_lotes.columns else tot_lotes
-        tot_cabezas = pd.to_numeric(df_lotes['cabezas_iniciales'], errors='coerce').sum() if 'cabezas_iniciales' in df_lotes.columns else 0
+        
+        # Búsqueda segura de estatus
+        col_estatus = [c for c in df_lotes.columns if 'estatus' in c.lower() or 'estado' in c.lower()]
+        lotes_act = len(df_lotes[df_lotes[col_estatus[0]] == 'Activo']) if col_estatus else tot_lotes
+
+        # Búsqueda flexible de la columna de cabezas de ganado
+        col_cabezas = [c for c in df_lotes.columns if any(k in c.lower() for k in ['cabeza', 'cantidad', 'inicial', 'num'])]
+        if col_cabezas:
+            tot_cabezas = pd.to_numeric(df_lotes[col_cabezas[0]], errors='coerce').fillna(0).sum()
+        else:
+            tot_cabezas = 0
 
         k1, k2, k3 = st.columns(3)
         with k1:
@@ -1873,11 +1882,18 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
         if len(lotes_lista) > 0:
             lote_sel = st.selectbox("Lote a consultar:", lotes_lista, key="sb_balance_lote")
 
+            # Identificación segura del DataFrame financiero para prevenir NameError
+            df_fin = None
+            for var_name in ['df_transacciones', 'df_finanzas', 'df_movimientos']:
+                if var_name in locals() or var_name in globals():
+                    df_fin = eval(var_name)
+                    break
+
             # Cálculo de Balance por Lote Seleccionado
-            if not df_transacciones.empty and 'lote' in df_transacciones.columns:
-                df_lote_tx = df_transacciones[df_transacciones['lote'] == lote_sel]
-                ingresos_lote = df_lote_tx[df_lote_tx['tipo'] == 'Ingreso']['monto'].sum()
-                egresos_lote = df_lote_tx[df_lote_tx['tipo'] == 'Egreso']['monto'].sum()
+            if df_fin is not None and not df_fin.empty and 'lote' in df_fin.columns:
+                df_lote_tx = df_fin[df_fin['lote'] == lote_sel]
+                ingresos_lote = df_lote_tx[df_lote_tx['tipo'] == 'Ingreso']['monto'].sum() if 'tipo' in df_lote_tx.columns and 'monto' in df_lote_tx.columns else 0
+                egresos_lote = df_lote_tx[df_lote_tx['tipo'] == 'Egreso']['monto'].sum() if 'tipo' in df_lote_tx.columns and 'monto' in df_lote_tx.columns else 0
                 balance_lote = ingresos_lote - egresos_lote
 
                 st.markdown(f"#### 📊 Desglose del Lote: {lote_sel}")
