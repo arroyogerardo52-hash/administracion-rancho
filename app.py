@@ -1901,8 +1901,7 @@ elif modulo_activo == "🐂 Control de Lotes":
     st.divider()
 
     # --- TARJETAS DE MÉTRICAS (KPIs) ---
-    if not df_lotes.empty:
-    tot_lotes = len(df_lotes)
+    if not df_lotes.empty:tot_lotes = len(df_lotes)
     
     # Línea 1906 corregida:
     lotes_act = len(df_lotes[df_lotes['estatus'] == 'Activo']) if 'estatus' in df_lotes.columns else tot_lotes
