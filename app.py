@@ -1893,7 +1893,6 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                     with c_origen:
                         lote_origen = st.selectbox("Lote Origen (Sale ganado):", lotes_lista, key="tr_origen")
                     with c_destino:
-                        # Filtrar para evitar seleccionar el mismo lote como origen y destino
                         lotes_dest_opt = [l for l in lotes_lista if l != lote_origen]
                         lote_destino = st.selectbox("Lote Destino (Entra ganado):", lotes_dest_opt, key="tr_destino")
 
@@ -1915,7 +1914,7 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                     if btn_guardar_tr:
                         val_total_tr = num_cabezas_tr * val_unitario
                         
-                        # 1. Actualizar número de cabezas en df_lotes si existe la columna
+                        # Actualizar número de cabezas en df_lotes si existe la columna
                         if col_cabezas:
                             c_col = col_cabezas[0]
                             # Restar al origen
@@ -1927,7 +1926,7 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                                 pd.to_numeric(df_lotes.loc[df_lotes['nombre_lote'] == lote_destino, c_col], errors='coerce').fillna(0) + num_cabezas_tr
                             )
 
-                        # 2. Registrar la transferencia en el historial de activos
+                        # Registrar la transferencia en el historial de activos
                         nueva_tr = pd.DataFrame([{
                             "fecha": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
                             "lote_origen": lote_origen,
@@ -1950,11 +1949,11 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
 
         st.divider()
 
-        # 5. BALANCE FINANCIERO Y OPERATIVO POR LOTE (Caja Real + Traspasos)
+        # 5. BALANCE FINANCIERO Y REGISTRO DE MOVIMIENTOS POR LOTE
         st.markdown("### 📊 Consulta Integral de Lote (Operativo y Financiero)")
         lote_sel = st.selectbox("Lote a consultar:", lotes_lista, key="sb_balance_lote")
 
-        # A) Transacciones Reales de Caja (Alimento, Medicinas, Ventas Finales)
+        # A) Búsqueda e identificación segura del DataFrame financiero
         df_fin = None
         for var_name in ['df_transacciones', 'df_finanzas', 'df_movimientos']:
             if var_name in locals() or var_name in globals():
@@ -1962,10 +1961,13 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                 break
 
         ingresos_lote, egresos_lote = 0.0, 0.0
+        df_lote_tx = pd.DataFrame()
+
         if df_fin is not None and not df_fin.empty:
             col_lote_fin = [c for c in df_fin.columns if 'lote' in c.lower()]
             if col_lote_fin:
                 col_lote = col_lote_fin[0]
+                # Filtrar transacciones del lote limpiando espacios
                 df_lote_tx = df_fin[df_fin[col_lote].astype(str).str.strip() == str(lote_sel).strip()]
                 
                 col_monto = [c for c in df_lote_tx.columns if any(k in c.lower() for k in ['monto', 'total', 'cantidad'])]
@@ -1976,13 +1978,7 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                     ingresos_lote = pd.to_numeric(df_lote_tx[df_lote_tx[c_t].astype(str).str.contains('Ingreso|ingreso', na=False)][c_m], errors='coerce').sum()
                     egresos_lote = pd.to_numeric(df_lote_tx[df_lote_tx[c_t].astype(str).str.contains('Egreso|egreso|Gasto', na=False)][c_m], errors='coerce').sum()
 
-        # B) Historial de Traspasos Internos del Lote Seleccionado
-        df_tr_lote = st.session_state["df_transferencias"][
-            (st.session_state["df_transferencias"]["lote_origen"] == lote_sel) | 
-            (st.session_state["df_transferencias"]["lote_destino"] == lote_sel)
-        ]
-
-        st.markdown(f"#### 🏷️ Estado del Lote: **{lote_sel}**")
+        st.markdown(f"#### 🏷️ Estado Financiero del Lote: **{lote_sel}**")
         b1, b2, b3 = st.columns(3)
         with b1:
             st.success(f"Ventas Reales (Caja): ${ingresos_lote:,.2f} MXN")
@@ -1992,8 +1988,21 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
             balance_real = ingresos_lote - egresos_lote
             st.info(f"Margen Operativo Real: ${balance_real:,.2f} MXN")
 
+        # B) Tabla con los Registros de Movimientos Financieros Reales del Lote
+        st.markdown(f"##### 🧾 Tabla de Movimientos Financieros Reales ({lote_sel})")
+        if not df_lote_tx.empty:
+            st.dataframe(df_lote_tx, use_container_width=True)
+        else:
+            st.info(f"No hay movimientos financieros de caja (ingresos/gastos) registrados directamente para el lote '{lote_sel}'.")
+
+        # C) Historial de Traspasos Internos del Lote Seleccionado
+        df_tr_lote = st.session_state["df_transferencias"][
+            (st.session_state["df_transferencias"]["lote_origen"] == lote_sel) | 
+            (st.session_state["df_transferencias"]["lote_destino"] == lote_sel)
+        ]
+
         if not df_tr_lote.empty:
-            st.markdown("##### 🔀 Transferencias de Inventario que afectan a este Lote:")
+            st.markdown(f"##### 🔀 Transferencias de Inventario asociadas a {lote_sel}:")
             st.dataframe(df_tr_lote, use_container_width=True)
 
     else:
