@@ -1813,80 +1813,20 @@ elif modulo_activo == "🚜 Proveedores":
                                 st.rerun()
 
 # ==========================================
-# MÓDULO 5: CONTROL DE LOTES (NUEVA IMPLEMENTACIÓN COMPLETA)
+# MÓDULO: CONTROL DE LOTES
 # ==========================================
-elif modulo_activo == "🐂 Control de Lotes":
+elif opcion_menu == "Control de Lotes":
+    st.title("🐂 Control de Lotes e Inventario")
 
-    # --- MODAL PARA REGISTRAR / EDITAR LOTE ---
-    if hasattr(st, "dialog"):
-        @st.dialog("🐂 Gestión de Lote de Ganado")
-        def modal_formulario_lote(lote_data=None):
-            es_edicion = lote_data is not None
-            st.markdown(f"### {'✏️ Editar Lote' if es_edicion else '➕ Captura de Nuevo Lote'}")
-
-            l_nombre_val = lote_data.get('nombre_lote', '') if es_edicion else ""
-            l_desc_val = lote_data.get('descripcion', '') if es_edicion else ""
-            try: l_cabezas_val = int(lote_data.get('cabezas_iniciales', 0)) if es_edicion else 0
-            except: l_cabezas_val = 0
-            
-            try: l_fecha_val = datetime.strptime(str(lote_data.get('fecha_creacion', '')), '%Y-%m-%d') if es_edicion else datetime.today()
-            except: l_fecha_val = datetime.today()
-            
-            l_estatus_val = str(lote_data.get('estatus', 'Activo')) if es_edicion else "Activo"
-
-            with st.form("form_modal_lote", clear_on_submit=not es_edicion):
-                col_f1, col_f2 = st.columns(2)
-                with col_f1:
-                    l_nombre = st.text_input("Nombre / Código del Lote *", value=l_nombre_val, disabled=es_edicion).strip().upper()
-                    l_cabezas = st.number_input("Número de Cabezas Iniciales", min_value=0, value=l_cabezas_val, step=1)
-                with col_f2:
-                    l_fecha = st.date_input("Fecha de Creación / Entrada", value=l_fecha_val)
-                    l_estatus = st.selectbox("Estatus del Lote", ["Activo", "Cerrado / Vendido", "En Proceso"], index=["Activo", "Cerrado / Vendido", "En Proceso"].index(l_estatus_val) if l_estatus_val in ["Activo", "Cerrado / Vendido", "En Proceso"] else 0)
-
-                l_desc = st.text_area("Descripción / Observaciones / Raza", value=l_desc_val, height=70).strip().upper()
-
-                st.divider()
-                submit_lote = st.form_submit_button("🔄 Actualizar Lote" if es_edicion else "💾 Guardar Lote", use_container_width=True, type="primary")
-
-                if submit_lote:
-                    nombre_final = lote_data.get("nombre_lote") if es_edicion else l_nombre
-                    if not nombre_final:
-                        st.error("❌ El nombre del lote es obligatorio.")
-                    else:
-                        datos_lote = {
-                            "nombre_lote": nombre_final,
-                            "descripcion": l_desc,
-                            "cabezas_iniciales": l_cabezas,
-                            "fecha_creacion": l_fecha.strftime('%Y-%m-%d'),
-                            "estatus": l_estatus
-                        }
-                        if guardar_registro("lotes", datos_lote, "nombre_lote"):
-                            st.success(f"Lote '{nombre_final}' {'actualizado' if es_edicion else 'guardado'} correctamente!")
-                            time.sleep(0.4)
-                            st.rerun()
-
-    # --- ENCABEZADO Y BARRA DE ACCIONES ---
-    col_head, col_btns = st.columns([2.5, 1.5])
-    with col_head:
-        st.title("🐂 Control y Tracking de Lotes de Ganado")
-        st.caption("Administración de grupos de ganado, trazabilidad, registro de inventario y estado operativo.")
-
-    with col_btns:
-        st.write("") # Espaciador
-        cb1, cb2 = st.columns(2)
-        with cb1:
-            if st.button("➕ Nuevo", type="primary", use_container_width=True):
-                modal_formulario_lote()
-        with cb2:
-            if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
-                if st.button("✏️ Editar", use_container_width=True):
-                    st.session_state["abrir_selector_edit_lote"] = True
-
-    # Selector rápido para editar lote
+    # 1. Selector rápido para editar lote (Modal)
     if st.session_state.get("abrir_selector_edit_lote", False) and not df_lotes.empty:
         with st.container(border=True):
             st.markdown("##### ✏️ Selecciona el lote que deseas modificar:")
-            lote_a_mod = st.selectbox("Lote:", df_lotes['nombre_lote'].dropna().unique(), key="sb_quick_edit_lote")
+            lote_a_mod = st.selectbox(
+                "Lote:", 
+                df_lotes['nombre_lote'].dropna().unique(), 
+                key="sb_quick_edit_lote"
+            )
             col_lm1, col_lm2 = st.columns(2)
             with col_lm1:
                 if st.button("Abrir Formulario", type="primary", use_container_width=True):
@@ -1898,94 +1838,59 @@ elif modulo_activo == "🐂 Control de Lotes":
                     st.session_state["abrir_selector_edit_lote"] = False
                     st.rerun()
 
-st.divider()
+    st.divider()
 
-# --- TARJETAS DE MÉTRICAS (KPIs) ---
-if not df_lotes.empty:
-    tot_lotes = len(df_lotes)
-    lotes_act = len(df_lotes[df_lotes['estatus'] == 'Activo']) if 'estatus' in df_lotes.columns else tot_lotes
-    tot_cabezas = pd.to_numeric(df_lotes['cabezas_iniciales'], errors='coerce').sum() if 'cabezas_iniciales' in df_lotes.columns else 0
-
-    k1, k2, k3 = st.columns(3)
-    with k1:
-        with st.container(border=True):
-            st.metric("Total Lotes Registrados", tot_lotes)
-    with k2:
-        with st.container(border=True):
-            st.metric("Lotes Activos", lotes_act)
-    with k3:
-        with st.container(border=True):
-            st.metric("Cabezas de Ganado (Registradas)", f"{int(tot_cabezas)} cabezas")
-    # --- TABLA Y BÚSQUEDA EN CONTENEDOR ---
-    with st.container(border=True):
-        st.markdown("#### 📋 Catálogo e Inventario de Lotes")
-        col_bus_lt, col_rep_lt = st.columns([3, 1])
-        
-        with col_bus_lt:
-            buscar_lote = st.text_input("🔍 Buscar por Nombre, Descripción o Estatus:", key="bus_lote").strip()
-
-        df_lotes_vista = df_lotes.copy()
-        if not df_lotes_vista.empty:
-            if buscar_lote:
-                df_lotes_vista = df_lotes_vista[df_lotes_vista.astype(str).apply(lambda x: x.str.contains(buscar_lote, case=False)).any(axis=1)]
-
-            with col_rep_lt:
-                st.write("")
-                html_lotes = generar_html_docs("Control de Lotes de Ganado", ["Nombre / Código Lote", "Descripción", "Cabezas Iniciales", "Fecha Creación", "Estatus"], df_lotes_vista, ["nombre_lote", "descripcion", "cabezas_iniciales", "fecha_creacion", "estatus"])
-                st.download_button(label="📄 Exportar Reporte", data=html_lotes, file_name=f"Reporte_Lotes_{datetime.now().strftime('%Y%m%d')}.doc", mime="application/msword", use_container_width=True)
-
-            st.dataframe(
-                df_lotes_vista, 
-                use_container_width=True, 
-                hide_index=True,
-                column_config={
-                    "nombre_lote": "Nombre / Código Lote",
-                    "descripcion": "Descripción / Detalles",
-                    "cabezas_iniciales": st.column_config.NumberColumn("Cabezas", format="%d"),
-                    "fecha_creacion": "Fecha Creación",
-                    "estatus": "Estatus"
-                }
-            )
-        else:
-            st.info("No hay lotes de ganado registrados actualmente.")
-
-    # --- SECCIÓN DE ACCIONES RÁPIDAS Y BAJA ---
+    # 2. TARJETAS DE MÉTRICAS (KPIs) DE INVENTARIO
     if not df_lotes.empty:
-        st.divider()
-        with st.container(border=True):
-            st.markdown("##### 🛠️ Balance Financiero Asociado y Gestión de Lotes")
-            lote_sel = st.selectbox("Selecciona un Lote para consultar movimientos o eliminar:", df_lotes['nombre_lote'].unique(), key="sel_lote_edit")
-            
-            if lote_sel:
-                st.markdown(f"###### 📊 Desglose del Lote: **{lote_sel}**")
-                
-                if not df_finanzas.empty and 'lote_asociado' in df_finanzas.columns:
-                    df_tx_lote = df_finanzas[df_finanzas['lote_asociado'] == lote_sel]
-                    if not df_tx_lote.empty:
-                        ing_lote = df_tx_lote[(df_tx_lote['tipo'] == 'Ingreso') & (df_tx_lote['estado_deuda'] == 'Pagado')]['monto'].sum()
-                        egr_lote = df_tx_lote[(df_tx_lote['tipo'] == 'Egreso') & (df_tx_lote['estado_deuda'] == 'Pagado')]['monto'].sum()
-                        bal_lote = ing_lote - egr_lote
-                        
-                        m_l1, m_l2, m_l3 = st.columns(3)
-                        with m_l1: st.success(f"Ingresos: $ {ing_lote:,.2f} MXN")
-                        with m_l2: st.error(f"Egresos: $ {egr_lote:,.2f} MXN")
-                        with m_l3: st.info(f"Balance Lote: $ {bal_lote:,.2f} MXN")
-                        
-                        st.dataframe(df_tx_lote[['id', 'fecha', 'tipo', 'categoria', 'concepto', 'monto', 'estado_deuda']], use_container_width=True)
-                    else:
-                        st.info("Este lote no registra transacciones financieras asociadas actualmente.")
-                else:
-                    st.info("No hay información de finanzas para relacionar.")
+        tot_lotes = len(df_lotes)
+        lotes_act = len(df_lotes[df_lotes['estatus'] == 'Activo']) if 'estatus' in df_lotes.columns else tot_lotes
+        tot_cabezas = pd.to_numeric(df_lotes['cabezas_iniciales'], errors='coerce').sum() if 'cabezas_iniciales' in df_lotes.columns else 0
 
-                with st.expander(f"⚠️ Eliminar Registro del Lote {lote_sel}"):
-                    st.warning("Esta acción borrará el lote del catálogo. Las transacciones financieras asociadas conservarán el nombre del lote.")
-                    chk_confirmar_l = st.checkbox("Entiendo los riesgos y deseo eliminar este lote.", key=f"chk_del_lt_{lote_sel}")
-                    
-                    if st.button("🗑️ Eliminar Definitivamente", key=f"btn_del_lote_{lote_sel}", use_container_width=True, type="primary"):
-                        if not chk_confirmar_l:
-                            st.error("❌ Por favor marca la casilla de confirmación primero.")
-                        else:
-                            if eliminar_registro("lotes", "nombre_lote", lote_sel):
-                                st.success(f"Lote '{lote_sel}' eliminado correctamente.")
-                                time.sleep(0.4)
-                                st.rerun()
+        k1, k2, k3 = st.columns(3)
+        with k1:
+            with st.container(border=True):
+                st.metric("Total Lotes Registrados", tot_lotes)
+        with k2:
+            with st.container(border=True):
+                st.metric("Lotes Activos", lotes_act)
+        with k3:
+            with st.container(border=True):
+                st.metric("Cabezas de Ganado (Registradas)", f"{int(tot_cabezas)} cabezas")
+
+        st.divider()
+
+        # 3. CATÁLOGO / TABLA DE INVENTARIO DE LOTES
+        st.markdown("### 📋 Catálogo de Lotes Registrados")
+        st.dataframe(df_lotes, use_container_width=True)
+
+        st.divider()
+
+        # 4. BALANCE FINANCIERO ASOCIADO A LOTES
+        st.markdown("### 🛠️ Balance Financiero Asociado y Gestión de Lotes")
+        st.caption("Selecciona un Lote para consultar movimientos o eliminar:")
+        
+        lotes_lista = df_lotes['nombre_lote'].dropna().unique()
+        if len(lotes_lista) > 0:
+            lote_sel = st.selectbox("Lote a consultar:", lotes_lista, key="sb_balance_lote")
+
+            # Cálculo de Balance por Lote Seleccionado
+            if not df_transacciones.empty and 'lote' in df_transacciones.columns:
+                df_lote_tx = df_transacciones[df_transacciones['lote'] == lote_sel]
+                ingresos_lote = df_lote_tx[df_lote_tx['tipo'] == 'Ingreso']['monto'].sum()
+                egresos_lote = df_lote_tx[df_lote_tx['tipo'] == 'Egreso']['monto'].sum()
+                balance_lote = ingresos_lote - egresos_lote
+
+                st.markdown(f"#### 📊 Desglose del Lote: {lote_sel}")
+                b1, b2, b3 = st.columns(3)
+                with b1:
+                    st.success(f"Ingresos: ${ingresos_lote:,.2f} MXN")
+                with b2:
+                    st.error(f"Egresos: ${egresos_lote:,.2f} MXN")
+                with b3:
+                    st.info(f"Balance Lote: ${balance_lote:,.2f} MXN")
+
+                st.dataframe(df_lote_tx, use_container_width=True)
+            else:
+                st.info("No hay movimientos financieros registrados para este lote.")
+    else:
+        st.warning("No hay lotes registrados actualmente en el sistema.")
