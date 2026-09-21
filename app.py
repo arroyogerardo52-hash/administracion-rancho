@@ -9,6 +9,7 @@ import json
 import os
 import pytz
 from supabase import create_client, Client
+import plotly.graph_objects as go
 
 # ==========================================
 # 1. CONFIGURACIÓN DE LA PÁGINA (¡DEBE SER EL PRIMER COMANDO DE STREAMLIT!)
@@ -441,10 +442,6 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
     """
     return html
 
-import streamlit as st
-import pandas as pd
-from datetime import datetime, timedelta
-import time
 
 # ==========================================
 # MÓDULO 1: DASHBOARD Y FINANZAS (DISEÑO MEJORADO)
@@ -859,7 +856,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 cf_diario = df_cf.groupby('Fecha_Proyeccion')['flujo_neto'].sum().reset_index().sort_values('Fecha_Proyeccion')
                 cf_diario['saldo_proyectado'] = balance_neto + cf_diario['flujo_neto'].cumsum()
                 
-                import plotly.graph_objects as go
                 fig_cf = go.Figure()
                 fig_cf.add_trace(go.Scatter(
                     x=cf_diario['Fecha_Proyeccion'],
@@ -966,7 +962,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
     else:
         st.warning("No se encontraron registros financieros para procesar en el sistema.")
 
-    # --- LÓGICA DE CONFIRMACIÓN DE EMPLEADO (INTACTA) ---
+    # --- LÓGICA DE CONFIRMACIÓN DE EMPLEADO ---
     if "transaccion_pendiente" in st.session_state:
         tx = st.session_state["transaccion_pendiente"]
         
@@ -1062,7 +1058,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         del st.session_state["transaccion_pendiente"]
                         st.rerun()
 
-    # --- EDITOR/ELIMINADOR ESTILIZADO EN CONTENEDOR (INTACTO) ---
+    # --- EDITOR/ELIMINADOR ESTILIZADO EN CONTENEDOR ---
     if not df_finanzas.empty:
         st.divider()
         with st.container(border=True):
@@ -1219,6 +1215,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         if st.button("❌ Cancelar", use_container_width=True, key=f"confirm_no_{id_seleccionado}"):
                             st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
                             st.rerun()
+
 # ==========================================
 # MÓDULO 2: EMPLEADOS (DISEÑO MEJORADO)
 # ==========================================
@@ -1731,85 +1728,92 @@ elif modulo_activo == "🚜 Proveedores":
     # --- TARJETAS DE MÉTRICAS (KPIs) ---
     if not df_prov_base.empty:
         tot_prov = len(df_prov_base)
-        prov_activos = len(df_prov_base[df_prov_base.get('estatus', 'ACTIVO').astype(str).str.upper() == 'ACTIVO'])
-        prom_credito = pd.to_numeric(df_prov_base.get('dias_credito', 0), errors='coerce').mean()
+        act_prov = len(df_prov_base[df_prov_base.get('estatus', 'ACTIVO') == 'ACTIVO'])
+        cred_prov = len(df_prov_base[pd.to_numeric(df_prov_base.get('dias_credito', 0), errors='coerce') > 0])
 
         k1, k2, k3 = st.columns(3)
         with k1:
             with st.container(border=True): st.metric("Total Proveedores", tot_prov)
         with k2:
-            with st.container(border=True): st.metric("Proveedores Activos", prov_activos, delta=f"{prov_activos/tot_prov*100:.0f}% del catálogo" if tot_prov > 0 else "")
+            with st.container(border=True): st.metric("Proveedores Activos", act_prov)
         with k3:
-            with st.container(border=True): st.metric("Promedio Crédito", f"{prom_credito:.0f} días" if pd.notnull(prom_credito) else "0 días")
+            with st.container(border=True): st.metric("Con Crédito Directo", cred_prov)
 
-    # --- CATÁLOGO DE PROVEEDORES EN CONTENEDOR ---
+    # --- TABLA Y BÚSQUEDA EN CONTENEDOR ---
     with st.container(border=True):
-        st.markdown("#### 📋 Directorio y Catálogo Comercial")
-        col_bus, col_rep = st.columns([3, 1.5])
+        st.markdown("#### 📋 Directorio de Proveedores e Insumos")
+        col_bus_pr, col_rep_pr = st.columns([3, 1])
         
-        with col_bus:
-            buscar_prov = st.text_input("🔍 Buscar por Nombre, Insumo, Dirección o Teléfono:", key="bus_prov").strip()
+        with col_bus_pr:
+            buscar_prov = st.text_input("🔍 Buscar por Proveedor, Insumo, Teléfono o E-mail:", key="bus_prov").strip()
 
-        if not df_prov_base.empty:
-            df_prov_vista = df_prov_base.copy()
-
-            if 'contacto' in df_prov_vista.columns:
-                df_prov_vista['telefono'] = df_prov_vista['telefono'].replace(['', 'None', 'nan', None], pd.NA)
-                df_prov_vista['telefono'] = df_prov_vista['telefono'].fillna(df_prov_vista['contacto'])
-
-            df_prov_vista = df_prov_vista.fillna('-').replace(['', 'None', 'none', 'nan', 'NaN'], '-')
-            cols_deseadas = ["nombre_proveedor", "insumo_principal", "telefono", "correo", "direccion", "dias_credito", "datos_bancarios", "estatus"]
-            df_prov_vista = df_prov_vista[[c for c in cols_deseadas if c in df_prov_vista.columns]]
-
+        df_prov_vista = df_prov_base.copy()
+        if not df_prov_vista.empty:
             if buscar_prov:
                 df_prov_vista = df_prov_vista[df_prov_vista.astype(str).apply(lambda x: x.str.contains(buscar_prov, case=False)).any(axis=1)]
 
-            with col_rep:
+            with col_rep_pr:
                 st.write("")
-                cols_html_headers = ["Nombre Proveedor", "Insumo Principal", "Teléfono", "Correo", "Dirección", "Días Crédito", "Datos Pago", "Estatus"]
-                cols_df_keys = ["nombre_proveedor", "insumo_principal", "telefono", "correo", "direccion", "dias_credito", "datos_bancarios", "estatus"]
-                
-                cols_existentes_keys = [c for c in cols_df_keys if c in df_prov_vista.columns]
-                cols_existentes_headers = [cols_html_headers[i] for i, c in enumerate(cols_df_keys) if c in df_prov_vista.columns]
-
-                html_prov = generar_html_docs("Registro de Proveedores", cols_existentes_headers, df_prov_vista, cols_existentes_keys)
+                html_prov = generar_html_docs("Directorio de Proveedores", ["Proveedor", "Insumo Principal", "Teléfono", "Correo", "Dirección", "Días Crédito", "Datos Bancarios", "Estatus"], df_prov_vista, ["nombre_proveedor", "insumo_principal", "telefono", "correo", "direccion", "dias_credito", "datos_bancarios", "estatus"])
                 st.download_button(label="📄 Exportar Reporte", data=html_prov, file_name=f"Reporte_Proveedores_{datetime.now().strftime('%Y%m%d')}.doc", mime="application/msword", use_container_width=True)
 
             st.dataframe(
-                df_prov_vista,
-                use_container_width=True,
+                df_prov_vista, 
+                use_container_width=True, 
                 hide_index=True,
                 column_config={
                     "nombre_proveedor": "Proveedor / Razón Social",
-                    "insumo_principal": "Insumo Principal / Giro",
+                    "insumo_principal": "Insumo / Giro",
                     "telefono": "Teléfono",
                     "correo": "Correo Electrónico",
                     "direccion": "Dirección",
                     "dias_credito": st.column_config.NumberColumn("Días Crédito", format="%d días"),
-                    "datos_bancarios": "Datos de Pago",
+                    "datos_bancarios": "Datos de Pago / CLABE",
                     "estatus": "Estatus"
                 }
             )
-
-            st.divider()
-            
-            # SECCIÓN DE ELIMINACIÓN EN TARJETA
-            with st.expander("🗑️ Eliminar Registro de Proveedor"):
-                col_del1, col_del2 = st.columns([3, 1])
-                with col_del1:
-                    prov_sel_del = st.selectbox("Selecciona Proveedor a Eliminar:", df_prov_base['nombre_proveedor'].unique(), key="sb_del_prov")
-                with col_del2:
-                    st.write("")
-                    if st.button("🗑️ Eliminar Definitivamente", type="primary", use_container_width=True):
-                        if eliminar_registro("proveedores", "nombre_proveedor", prov_sel_del):
-                            st.success(f"Proveedor '{prov_sel_del}' eliminado correctamente.")
-                            time.sleep(0.4)
-                            st.rerun()
         else:
-            st.info("No hay proveedores registrados aún o no coinciden con la búsqueda.")
+            st.info("No hay proveedores registrados.")
+
+    # --- SECCIÓN DE ACCIONES RÁPIDAS Y BAJA ---
+    if not df_prov_base.empty:
+        st.divider()
+        with st.container(border=True):
+            st.markdown("##### 🛠️ Contacto Directo y Gestión de Proveedor")
+            prov_sel = st.selectbox("Selecciona un Proveedor para interactuar o eliminar:", df_prov_base['nombre_proveedor'].unique(), key="sel_prov_edit")
+            
+            if prov_sel:
+                fila_prov = df_prov_base[df_prov_base['nombre_proveedor'] == prov_sel].iloc[0]
+
+                col_acc1, col_acc2 = st.columns(2)
+                with col_acc1:
+                    tel_val = str(fila_prov.get('telefono', '')).strip()
+                    if tel_val and len(tel_val) == 10:
+                        st.link_button(f"💬 Abrir WhatsApp ({tel_val})", f"https://wa.me/52{tel_val}", use_container_width=True)
+                    else:
+                        st.info("Sin teléfono de 10 dígitos registrado.")
+                with col_acc2:
+                    email_val = str(fila_prov.get('correo', '')).strip()
+                    if email_val and email_val != "None":
+                        st.link_button(f"✉️ Enviar Correo a {email_val}", f"mailto:{email_val}", use_container_width=True)
+                    else:
+                        st.info("Sin correo electrónico registrado.")
+
+                with st.expander(f"⚠️ Eliminar Registro de {prov_sel}"):
+                    st.warning("Esta acción borrará al proveedor del catálogo permanentemente.")
+                    chk_confirmar = st.checkbox("Entiendo los riesgos y deseo eliminar este proveedor.", key=f"chk_del_pr_{prov_sel}")
+                    
+                    if st.button("🗑️ Eliminar Definitivamente", key=f"btn_del_prov_{prov_sel}", use_container_width=True, type="primary"):
+                        if not chk_confirmar:
+                            st.error("❌ Por favor marca la casilla de confirmación primero.")
+                        else:
+                            if eliminar_registro("proveedores", "nombre_proveedor", prov_sel):
+                                st.success(f"Proveedor '{prov_sel}' eliminado correctamente.")
+                                time.sleep(0.4)
+                                st.rerun()
 
 # ==========================================
-# MÓDULO 5: CONTROL DE LOTES (DISEÑO MEJORADO)
+# MÓDULO 5: CONTROL DE LOTES (NUEVA IMPLEMENTACIÓN COMPLETA)
 # ==========================================
 elif modulo_activo == "🐂 Control de Lotes":
 
@@ -1818,54 +1822,54 @@ elif modulo_activo == "🐂 Control de Lotes":
         @st.dialog("🐂 Gestión de Lote de Ganado")
         def modal_formulario_lote(lote_data=None):
             es_edicion = lote_data is not None
-            st.markdown(f"### {'✏️ Modificar Parámetros de Lote' if es_edicion else '➕ Registrar Nuevo Lote'}")
+            st.markdown(f"### {'✏️ Editar Lote' if es_edicion else '➕ Captura de Nuevo Lote'}")
 
-            l_nombre_prev = lote_data.get('nombre_lote', '') if es_edicion else ""
+            l_nombre_val = lote_data.get('nombre_lote', '') if es_edicion else ""
+            l_desc_val = lote_data.get('descripcion', '') if es_edicion else ""
+            try: l_cabezas_val = int(lote_data.get('cabezas_iniciales', 0)) if es_edicion else 0
+            except: l_cabezas_val = 0
             
-            try: l_cabezas_prev = int(lote_data.get('cabezas', 10)) if es_edicion and pd.notnull(lote_data.get('cabezas')) else 10
-            except: l_cabezas_prev = 10
+            try: l_fecha_val = datetime.strptime(str(lote_data.get('fecha_creacion', '')), '%Y-%m-%d') if es_edicion else datetime.today()
+            except: l_fecha_val = datetime.today()
             
-            l_raza_prev = str(lote_data.get('raza', '')) if es_edicion else ""
-            
-            desc_val = lote_data.get('descripcion_notas', lote_data.get('descripcion_notes', '')) if es_edicion else ""
-            l_desc_prev = str(desc_val) if desc_val else ""
+            l_estatus_val = str(lote_data.get('estatus', 'Activo')) if es_edicion else "Activo"
 
             with st.form("form_modal_lote", clear_on_submit=not es_edicion):
-                l_nombre = st.text_input("Código del Lote (Ej: LOTE_SARDO_01)", value=l_nombre_prev, disabled=es_edicion).strip().upper()
-                
-                col_l1, col_l2 = st.columns(2)
-                with col_l1:
-                    l_cabezas = st.number_input("Número de cabezas de ganado:", min_value=0, step=1, value=l_cabezas_prev)
-                with col_l2:
-                    l_raza = st.text_input("Raza / Genética (Ej: SARDO NEGRO, SUIZBU):", value=l_raza_prev).strip().upper()
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    l_nombre = st.text_input("Nombre / Código del Lote *", value=l_nombre_val, disabled=es_edicion).strip().upper()
+                    l_cabezas = st.number_input("Número de Cabezas Iniciales", min_value=0, value=l_cabezas_val, step=1)
+                with col_f2:
+                    l_fecha = st.date_input("Fecha de Creación / Entrada", value=l_fecha_val)
+                    l_estatus = st.selectbox("Estatus del Lote", ["Activo", "Cerrado / Vendido", "En Proceso"], index=["Activo", "Cerrado / Vendido", "En Proceso"].index(l_estatus_val) if l_estatus_val in ["Activo", "Cerrado / Vendido", "En Proceso"] else 0)
 
-                l_desc = st.text_area("Notas Adicionales de Alimentación o Potrero", value=l_desc_prev).strip()
+                l_desc = st.text_area("Descripción / Observaciones / Raza", value=l_desc_val, height=70).strip().upper()
 
                 st.divider()
-                submit_lote = st.form_submit_button("🔄 Guardar Cambios" if es_edicion else "💾 Guardar Lote", use_container_width=True, type="primary")
+                submit_lote = st.form_submit_button("🔄 Actualizar Lote" if es_edicion else "💾 Guardar Lote", use_container_width=True, type="primary")
 
                 if submit_lote:
-                    if not l_nombre:
-                        st.error("❌ El código del lote es obligatorio para el control administrativo.")
+                    nombre_final = lote_data.get("nombre_lote") if es_edicion else l_nombre
+                    if not nombre_final:
+                        st.error("❌ El nombre del lote es obligatorio.")
                     else:
-                        fecha_crea = str(lote_data.get('fecha_creacion', datetime.today().strftime('%Y-%m-%d'))) if es_edicion else datetime.today().strftime('%Y-%m-%d')
-                        registro_lote = {
-                            "nombre_lote": l_nombre,
-                            "cabezas": int(l_cabezas),
-                            "raza": l_raza,
-                            "descripcion_notas": l_desc,
-                            "fecha_creacion": fecha_crea
+                        datos_lote = {
+                            "nombre_lote": nombre_final,
+                            "descripcion": l_desc,
+                            "cabezas_iniciales": l_cabezas,
+                            "fecha_creacion": l_fecha.strftime('%Y-%m-%d'),
+                            "estatus": l_estatus
                         }
-                        if guardar_registro("lotes", registro_lote, "nombre_lote"):
-                            st.success(f"¡Lote {l_nombre} {'actualizado' if es_edicion else 'guardado'} correctamente!")
+                        if guardar_registro("lotes", datos_lote, "nombre_lote"):
+                            st.success(f"Lote '{nombre_final}' {'actualizado' if es_edicion else 'guardado'} correctamente!")
                             time.sleep(0.4)
                             st.rerun()
 
     # --- ENCABEZADO Y BARRA DE ACCIONES ---
     col_head, col_btns = st.columns([2.5, 1.5])
     with col_head:
-        st.title("🐂 Control de Lotes de Ganado")
-        st.caption("Inventario de animales, seguimiento por potrero, genética y distribución de cabezas.")
+        st.title("🐂 Control y Tracking de Lotes de Ganado")
+        st.caption("Administración de grupos de ganado, trazabilidad, registro de inventario y estado operativo.")
 
     with col_btns:
         st.write("") # Espaciador
@@ -1882,7 +1886,7 @@ elif modulo_activo == "🐂 Control de Lotes":
     if st.session_state.get("abrir_selector_edit_lote", False) and not df_lotes.empty:
         with st.container(border=True):
             st.markdown("##### ✏️ Selecciona el lote que deseas modificar:")
-            lote_a_mod = st.selectbox("Lote de Ganado:", df_lotes['nombre_lote'].dropna().unique(), key="sb_quick_edit_lote")
+            lote_a_mod = st.selectbox("Lote:", df_lotes['nombre_lote'].dropna().unique(), key="sb_quick_edit_lote")
             col_lm1, col_lm2 = st.columns(2)
             with col_lm1:
                 if st.button("Abrir Formulario", type="primary", use_container_width=True):
@@ -1899,72 +1903,87 @@ elif modulo_activo == "🐂 Control de Lotes":
     # --- TARJETAS DE MÉTRICAS (KPIs) ---
     if not df_lotes.empty:
         tot_lotes = len(df_lotes)
-        tot_cabezas = pd.to_numeric(df_lotes.get('cabezas', 0), errors='coerce').sum()
-        prom_cabezas = tot_cabezas / tot_lotes if tot_lotes > 0 else 0
+        lotes_act = len(df_lotes[df_lotes.get('estatus', 'Activo') == 'Activo'])
+        tot_cabezas = pd.to_numeric(df_lotes.get('cabezas_iniciales', 0), errors='coerce').sum()
 
         k1, k2, k3 = st.columns(3)
         with k1:
-            with st.container(border=True): st.metric("Total de Lotes", tot_lotes)
+            with st.container(border=True): st.metric("Total Lotes Registrados", tot_lotes)
         with k2:
-            with st.container(border=True): st.metric("Inventario Total de Cabezas", f"{int(tot_cabezas):,} cabezas")
+            with st.container(border=True): st.metric("Lotes Activos", lotes_act)
         with k3:
-            with st.container(border=True): st.metric("Promedio por Lote", f"{prom_cabezas:.1f} cabezas/lote")
+            with st.container(border=True): st.metric("Cabezas de Ganado (Registradas)", f"{int(tot_cabezas)} cabezas")
 
-    # --- CATÁLOGO DE LOTES EN CONTENEDOR ---
+    # --- TABLA Y BÚSQUEDA EN CONTENEDOR ---
     with st.container(border=True):
-        st.markdown("#### 📋 Inventario General de Lotes")
-        col_bus_lot, col_rep_lot = st.columns([3, 1.5])
+        st.markdown("#### 📋 Catálogo e Inventario de Lotes")
+        col_bus_lt, col_rep_lt = st.columns([3, 1])
         
-        with col_bus_lot:
-            buscar_lote = st.text_input("🔍 Buscar Lote por Código, Raza o Potrero:", key="bus_lote").strip()
+        with col_bus_lt:
+            buscar_lote = st.text_input("🔍 Buscar por Nombre, Descripción o Estatus:", key="bus_lote").strip()
 
         df_lotes_vista = df_lotes.copy()
         if not df_lotes_vista.empty:
             if buscar_lote:
                 df_lotes_vista = df_lotes_vista[df_lotes_vista.astype(str).apply(lambda x: x.str.contains(buscar_lote, case=False)).any(axis=1)]
 
-            with col_rep_lot:
+            with col_rep_lt:
                 st.write("")
-                html_lot = generar_html_docs(
-                    "Inventario de Lotes de Ganado", 
-                    ["Código Lote", "Cabezas", "Raza/Genética", "Notas/Potrero", "Fecha Creación"], 
-                    df_lotes_vista, 
-                    ["nombre_lote", "cabezas", "raza", "descripcion_notas", "fecha_creacion"]
-                )
-                st.download_button(
-                    label="📄 Exportar Reporte",
-                    data=html_lot,
-                    file_name=f"Reporte_Lotes_{datetime.now().strftime('%Y%m%d')}.doc",
-                    mime="application/msword",
-                    use_container_width=True
-                )
+                html_lotes = generar_html_docs("Control de Lotes de Ganado", ["Nombre / Código Lote", "Descripción", "Cabezas Iniciales", "Fecha Creación", "Estatus"], df_lotes_vista, ["nombre_lote", "descripcion", "cabezas_iniciales", "fecha_creacion", "estatus"])
+                st.download_button(label="📄 Exportar Reporte", data=html_lotes, file_name=f"Reporte_Lotes_{datetime.now().strftime('%Y%m%d')}.doc", mime="application/msword", use_container_width=True)
 
             st.dataframe(
                 df_lotes_vista, 
                 use_container_width=True, 
                 hide_index=True,
                 column_config={
-                    "nombre_lote": "Código del Lote",
-                    "cabezas": st.column_config.NumberColumn("Cabezas de Ganado", format="%d cabezas"),
-                    "raza": "Raza / Genética",
-                    "descripcion_notas": "Notas / Potrero",
-                    "fecha_creacion": st.column_config.DateColumn("Fecha Creación")
+                    "nombre_lote": "Nombre / Código Lote",
+                    "descripcion": "Descripción / Detalles",
+                    "cabezas_iniciales": st.column_config.NumberColumn("Cabezas", format="%d"),
+                    "fecha_creacion": "Fecha Creación",
+                    "estatus": "Estatus"
                 }
             )
-
-            st.divider()
-
-            # SECCIÓN DE ELIMINACIÓN EN TARJETA
-            with st.expander("🗑️ Eliminar Lote de Ganado"):
-                col_del1, col_del2 = st.columns([3, 1])
-                with col_del1:
-                    lote_sel_del = st.selectbox("Selecciona Lote a Eliminar:", df_lotes['nombre_lote'].unique(), key="sb_del_lote")
-                with col_del2:
-                    st.write("")
-                    if st.button("🗑️ Eliminar Lote Completo", type="primary", use_container_width=True):
-                        if eliminar_registro("lotes", "nombre_lote", lote_sel_del):
-                            st.success(f"Lote '{lote_sel_del}' eliminado correctamente.")
-                            time.sleep(0.4)
-                            st.rerun()
         else:
             st.info("No hay lotes de ganado registrados actualmente.")
+
+    # --- SECCIÓN DE ACCIONES RÁPIDAS Y BAJA ---
+    if not df_lotes.empty:
+        st.divider()
+        with st.container(border=True):
+            st.markdown("##### 🛠️ Balance Financiero Asociado y Gestión de Lotes")
+            lote_sel = st.selectbox("Selecciona un Lote para consultar movimientos o eliminar:", df_lotes['nombre_lote'].unique(), key="sel_lote_edit")
+            
+            if lote_sel:
+                st.markdown(f"###### 📊 Desglose del Lote: **{lote_sel}**")
+                
+                if not df_finanzas.empty and 'lote_asociado' in df_finanzas.columns:
+                    df_tx_lote = df_finanzas[df_finanzas['lote_asociado'] == lote_sel]
+                    if not df_tx_lote.empty:
+                        ing_lote = df_tx_lote[(df_tx_lote['tipo'] == 'Ingreso') & (df_tx_lote['estado_deuda'] == 'Pagado')]['monto'].sum()
+                        egr_lote = df_tx_lote[(df_tx_lote['tipo'] == 'Egreso') & (df_tx_lote['estado_deuda'] == 'Pagado')]['monto'].sum()
+                        bal_lote = ing_lote - egr_lote
+                        
+                        m_l1, m_l2, m_l3 = st.columns(3)
+                        with m_l1: st.success(f"Ingresos: $ {ing_lote:,.2f} MXN")
+                        with m_l2: st.error(f"Egresos: $ {egr_lote:,.2f} MXN")
+                        with m_l3: st.info(f"Balance Lote: $ {bal_lote:,.2f} MXN")
+                        
+                        st.dataframe(df_tx_lote[['id', 'fecha', 'tipo', 'categoria', 'concepto', 'monto', 'estado_deuda']], use_container_width=True)
+                    else:
+                        st.info("Este lote no registra transacciones financieras asociadas actualmente.")
+                else:
+                    st.info("No hay información de finanzas para relacionar.")
+
+                with st.expander(f"⚠️ Eliminar Registro del Lote {lote_sel}"):
+                    st.warning("Esta acción borrará el lote del catálogo. Las transacciones financieras asociadas conservarán el nombre del lote.")
+                    chk_confirmar_l = st.checkbox("Entiendo los riesgos y deseo eliminar este lote.", key=f"chk_del_lt_{lote_sel}")
+                    
+                    if st.button("🗑️ Eliminar Definitivamente", key=f"btn_del_lote_{lote_sel}", use_container_width=True, type="primary"):
+                        if not chk_confirmar_l:
+                            st.error("❌ Por favor marca la casilla de confirmación primero.")
+                        else:
+                            if eliminar_registro("lotes", "nombre_lote", lote_sel):
+                                st.success(f"Lote '{lote_sel}' eliminado correctamente.")
+                                time.sleep(0.4)
+                                st.rerun()
