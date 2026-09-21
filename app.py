@@ -1874,7 +1874,7 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
 
         st.divider()
 
-        # 4. BALANCE FINANCIERO ASOCIADO A LOTES
+       # 4. BALANCE FINANCIERO ASOCIADO A LOTES
         st.markdown("### 🛠️ Balance Financiero Asociado y Gestión de Lotes")
         st.caption("Selecciona un Lote para consultar movimientos o eliminar:")
         
@@ -1882,31 +1882,54 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
         if len(lotes_lista) > 0:
             lote_sel = st.selectbox("Lote a consultar:", lotes_lista, key="sb_balance_lote")
 
-            # Identificación segura del DataFrame financiero para prevenir NameError
+            # Identificación segura del DataFrame financiero
             df_fin = None
             for var_name in ['df_transacciones', 'df_finanzas', 'df_movimientos']:
                 if var_name in locals() or var_name in globals():
                     df_fin = eval(var_name)
                     break
 
-            # Cálculo de Balance por Lote Seleccionado
-            if df_fin is not None and not df_fin.empty and 'lote' in df_fin.columns:
-                df_lote_tx = df_fin[df_fin['lote'] == lote_sel]
-                ingresos_lote = df_lote_tx[df_lote_tx['tipo'] == 'Ingreso']['monto'].sum() if 'tipo' in df_lote_tx.columns and 'monto' in df_lote_tx.columns else 0
-                egresos_lote = df_lote_tx[df_lote_tx['tipo'] == 'Egreso']['monto'].sum() if 'tipo' in df_lote_tx.columns and 'monto' in df_lote_tx.columns else 0
-                balance_lote = ingresos_lote - egresos_lote
+            if df_fin is not None and not df_fin.empty:
+                # Detectar automáticamente la columna que hace referencia al lote
+                col_lote_fin = [c for c in df_fin.columns if 'lote' in c.lower()]
+                
+                if col_lote_fin:
+                    col_lote = col_lote_fin[0]
+                    # Filtrar limpiando espacios en blanco extras de ambos lados
+                    df_lote_tx = df_fin[df_fin[col_lote].astype(str).str.strip() == str(lote_sel).strip()]
+                else:
+                    df_lote_tx = pd.DataFrame()
 
-                st.markdown(f"#### 📊 Desglose del Lote: {lote_sel}")
-                b1, b2, b3 = st.columns(3)
-                with b1:
-                    st.success(f"Ingresos: ${ingresos_lote:,.2f} MXN")
-                with b2:
-                    st.error(f"Egresos: ${egresos_lote:,.2f} MXN")
-                with b3:
-                    st.info(f"Balance Lote: ${balance_lote:,.2f} MXN")
+                if not df_lote_tx.empty:
+                    # Detectar columnas de tipo y monto
+                    col_monto = [c for c in df_lote_tx.columns if 'monto' in c.lower() or 'total' in c.lower() or 'cantidad' in c.lower()]
+                    col_tipo = [c for c in df_lote_tx.columns if 'tipo' in c.lower() or 'categoria' in c.lower()]
 
-                st.dataframe(df_lote_tx, use_container_width=True)
+                    c_monto = col_monto[0] if col_monto else None
+                    c_tipo = col_tipo[0] if col_tipo else None
+
+                    if c_monto and c_tipo:
+                        ingresos_lote = pd.to_numeric(df_lote_tx[df_lote_tx[c_tipo].astype(str).str.contains('Ingreso|ingreso', na=False)][c_monto], errors='coerce').sum()
+                        egresos_lote = pd.to_numeric(df_lote_tx[df_lote_tx[c_tipo].astype(str).str.contains('Egreso|egreso|Gasto', na=False)][c_monto], errors='coerce').sum()
+                    else:
+                        ingresos_lote = 0
+                        egresos_lote = 0
+
+                    balance_lote = ingresos_lote - egresos_lote
+
+                    st.markdown(f"#### 📊 Desglose del Lote: {lote_sel}")
+                    b1, b2, b3 = st.columns(3)
+                    with b1:
+                        st.success(f"Ingresos: ${ingresos_lote:,.2f} MXN")
+                    with b2:
+                        st.error(f"Egresos: ${egresos_lote:,.2f} MXN")
+                    with b3:
+                        st.info(f"Balance Lote: ${balance_lote:,.2f} MXN")
+
+                    st.dataframe(df_lote_tx, use_container_width=True)
+                else:
+                    st.info("No hay movimientos financieros registrados para este lote.")
             else:
-                st.info("No hay movimientos financieros registrados para este lote.")
+                st.info("No hay registro de movimientos financieros disponible.")
     else:
         st.warning("No hay lotes registrados actualmente en el sistema.")
