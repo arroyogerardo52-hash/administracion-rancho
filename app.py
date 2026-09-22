@@ -1824,11 +1824,15 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
     
     df_lotes_ref = st.session_state["df_lotes"]
 
-    # Inicializar historial de transferencias
-    if "df_transferencias" not in st.session_state:
+    # Inicializar historial de transferencias con estructura garantizada
+    if "df_transferencias" not in st.session_state or st.session_state["df_transferencias"] is None:
         st.session_state["df_transferencias"] = pd.DataFrame(
             columns=["id_tr", "fecha", "lote_origen", "lote_destino", "cabezas", "valor_base_unidad", "valor_total_traspaso", "tipo_movimiento", "observaciones"]
         )
+    
+    # PARCHE DE SEGURIDAD: Asegurar que 'id_tr' exista en un df_transferencias previo
+    if not st.session_state["df_transferencias"].empty and "id_tr" not in st.session_state["df_transferencias"].columns:
+        st.session_state["df_transferencias"]["id_tr"] = [f"TR-{i+1:04d}" for i in range(len(st.session_state["df_transferencias"]))]
 
     # Identificar e inicializar el DataFrame financiero global
     df_fin_name = None
@@ -2058,65 +2062,65 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
             st.dataframe(st.session_state["df_transferencias"], use_container_width=True)
 
             with st.expander("🛠️ Editar o Eliminar Transferencias del Historial", expanded=False):
-                lista_ids = st.session_state["df_transferencias"]["id_tr"].dropna().tolist()
-                id_tr_sel = st.selectbox("Selecciona la Transferencia por ID:", lista_ids, key="sb_id_tr_gest")
-                
-                tr_data = st.session_state["df_transferencias"][st.session_state["df_transferencias"]["id_tr"] == id_tr_sel].iloc[0]
-                
-                col_g1, col_g2 = st.columns(2)
-                
-                # Modificar Transferencia
-                with col_g1:
-                    st.markdown("###### ✏️ Modificar Registro")
-                    with st.form("form_edit_tr"):
-                        nuevas_cabs_tr = st.number_input("Nuevas Cabezas:", min_value=1, step=1, value=int(tr_data["cabezas"]))
-                        nuevo_val_tr = st.number_input("Nuevo Valor Base ($):", min_value=0.0, step=100.0, value=float(tr_data["valor_base_unidad"]))
-                        nuevas_obs_tr = st.text_input("Nuevas Observaciones:", value=str(tr_data["observaciones"]))
-                        
-                        if st.form_submit_button("Guardar Cambios en Transferencia", type="primary", use_container_width=True):
-                            idx_tr = st.session_state["df_transferencias"][st.session_state["df_transferencias"]["id_tr"] == id_tr_sel].index[0]
-                            diff_cabs = nuevas_cabs_tr - int(tr_data["cabezas"])
+                if "id_tr" in st.session_state["df_transferencias"].columns:
+                    lista_ids = st.session_state["df_transferencias"]["id_tr"].dropna().tolist()
+                else:
+                    lista_ids = []
+
+                if lista_ids:
+                    id_tr_sel = st.selectbox("Selecciona la Transferencia por ID:", lista_ids, key="sb_id_tr_gest")
+                    
+                    tr_data = st.session_state["df_transferencias"][st.session_state["df_transferencias"]["id_tr"] == id_tr_sel].iloc[0]
+                    
+                    col_g1, col_g2 = st.columns(2)
+                    
+                    # Modificar Transferencia
+                    with col_g1:
+                        st.markdown("###### ✏️ Modificar Registro")
+                        with st.form("form_edit_tr"):
+                            nuevas_cabs_tr = st.number_input("Nuevas Cabezas:", min_value=1, step=1, value=int(tr_data.get("cabezas", 1)))
+                            nuevo_val_tr = st.number_input("Nuevo Valor Base ($):", min_value=0.0, step=100.0, value=float(tr_data.get("valor_base_unidad", 0.0)))
+                            nuevas_obs_tr = st.text_input("Nuevas Observaciones:", value=str(tr_data.get("observaciones", "")))
                             
-                            # Ajustar inventario
-                            if col_cabezas and diff_cabs != 0:
-                                st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == tr_data["lote_origen"], c_col] -= diff_cabs
-                                st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == tr_data["lote_destino"], c_col] += diff_cabs
+                            if st.form_submit_button("Guardar Cambios en Transferencia", type="primary", use_container_width=True):
+                                idx_tr = st.session_state["df_transferencias"][st.session_state["df_transferencias"]["id_tr"] == id_tr_sel].index[0]
+                                diff_cabs = nuevas_cabs_tr - int(tr_data["cabezas"])
+                                
+                                if col_cabezas and diff_cabs != 0:
+                                    st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == tr_data["lote_origen"], c_col] -= diff_cabs
+                                    st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == tr_data["lote_destino"], c_col] += diff_cabs
 
-                            # Actualizar historial
-                            st.session_state["df_transferencias"].loc[idx_tr, "cabezas"] = nuevas_cabs_tr
-                            st.session_state["df_transferencias"].loc[idx_tr, "valor_base_unidad"] = nuevo_val_tr
-                            st.session_state["df_transferencias"].loc[idx_tr, "valor_total_traspaso"] = nuevas_cabs_tr * nuevo_val_tr
-                            st.session_state["df_transferencias"].loc[idx_tr, "observaciones"] = nuevas_obs_tr
-                            
-                            st.success("Transferencia corregida con éxito.")
-                            st.rerun()
+                                st.session_state["df_transferencias"].loc[idx_tr, "cabezas"] = nuevas_cabs_tr
+                                st.session_state["df_transferencias"].loc[idx_tr, "valor_base_unidad"] = nuevo_val_tr
+                                st.session_state["df_transferencias"].loc[idx_tr, "valor_total_traspaso"] = nuevas_cabs_tr * nuevo_val_tr
+                                st.session_state["df_transferencias"].loc[idx_tr, "observaciones"] = nuevas_obs_tr
+                                
+                                st.success("Transferencia corregida con éxito.")
+                                st.rerun()
 
-                # Eliminar Transferencia
-                with col_g2:
-                    st.markdown("###### 🗑️ Revertir / Eliminar Registro")
-                    confirmar_del_tr = st.checkbox(f"Confirmar reversión de ID {id_tr_sel}", key="chk_del_tr")
-                    if st.button("Revertir y Eliminar Transferencia", type="primary", use_container_width=True):
-                        if confirmar_del_tr:
-                            # Devuelve el inventario de cabezas al estado original
-                            if col_cabezas:
-                                st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == tr_data["lote_origen"], c_col] += int(tr_data["cabezas"])
-                                st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == tr_data["lote_destino"], c_col] -= int(tr_data["cabezas"])
-                            
-                            # Eliminar del historial
-                            st.session_state["df_transferencias"] = st.session_state["df_transferencias"][
-                                st.session_state["df_transferencias"]["id_tr"] != id_tr_sel
-                            ].reset_index(drop=True)
+                    # Eliminar Transferencia
+                    with col_g2:
+                        st.markdown("###### 🗑️ Revertir / Eliminar Registro")
+                        confirmar_del_tr = st.checkbox(f"Confirmar reversión de ID {id_tr_sel}", key="chk_del_tr")
+                        if st.button("Revertir y Eliminar Transferencia", type="primary", use_container_width=True):
+                            if confirmar_del_tr:
+                                if col_cabezas:
+                                    st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == tr_data["lote_origen"], c_col] += int(tr_data["cabezas"])
+                                    st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == tr_data["lote_destino"], c_col] -= int(tr_data["cabezas"])
+                                
+                                st.session_state["df_transferencias"] = st.session_state["df_transferencias"][
+                                    st.session_state["df_transferencias"]["id_tr"] != id_tr_sel
+                                ].reset_index(drop=True)
 
-                            # Eliminar del estado financiero global si existía el concepto
-                            df_fin_obj = st.session_state.get(df_fin_name, pd.DataFrame())
-                            if not df_fin_obj.empty and "concepto" in df_fin_obj.columns:
-                                st.session_state[df_fin_name] = df_fin_obj[~df_fin_obj["concepto"].str.contains(id_tr_sel, na=False)].reset_index(drop=True)
-                                globals()[df_fin_name] = st.session_state[df_fin_name]
+                                df_fin_obj = st.session_state.get(df_fin_name, pd.DataFrame())
+                                if not df_fin_obj.empty and "concepto" in df_fin_obj.columns:
+                                    st.session_state[df_fin_name] = df_fin_obj[~df_fin_obj["concepto"].str.contains(id_tr_sel, na=False)].reset_index(drop=True)
+                                    globals()[df_fin_name] = st.session_state[df_fin_name]
 
-                            st.success("Transferencia revertida e inventario restaurado.")
-                            st.rerun()
-                        else:
-                            st.warning("Marca la casilla para confirmar.")
+                                st.success("Transferencia revertida e inventario restaurado.")
+                                st.rerun()
+                            else:
+                                st.warning("Marca la casilla para confirmar.")
 
         st.divider()
 
