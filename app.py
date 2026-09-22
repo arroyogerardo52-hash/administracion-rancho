@@ -1818,13 +1818,20 @@ elif modulo_activo == "🚜 Proveedores":
 elif modulo_activo and "Control de Lotes" in modulo_activo:
     st.title("🐂 Control de Lotes e Inventario de Activos")
 
+    # 0. ASEGURAR PERSISTENCIA EN SESSION STATE
+    if "df_lotes" not in st.session_state or st.session_state["df_lotes"] is None:
+        st.session_state["df_lotes"] = df_lotes.copy()
+    
+    # Trabajamos directamente con la referencia persistente
+    df_lotes_ref = st.session_state["df_lotes"]
+
     # Inicialización de historial de transferencias internas en st.session_state
     if "df_transferencias" not in st.session_state:
         st.session_state["df_transferencias"] = pd.DataFrame(
             columns=["fecha", "lote_origen", "lote_destino", "cabezas", "valor_base_unidad", "valor_total_traspaso", "tipo_movimiento", "observaciones"]
         )
 
-    # 1. GESTIÓN DE LOTES (FORMULARIO PARA CREAR Y EDITAR)
+    # 1. GESTIÓN DE LOTES (CREAR Y EDITAR) CON PERSISTENCIA REAL
     col_acc1, col_acc2 = st.columns(2)
 
     with col_acc1:
@@ -1847,8 +1854,11 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                             "cabezas": cabs_nuevas,
                             "estatus": "Activo"
                         }
-                        df_lotes = pd.concat([df_lotes, pd.DataFrame([nuevo_registro])], ignore_index=True)
-                        st.session_state["df_lotes"] = df_lotes
+                        # Agregar al DataFrame de session_state y sincronizar variable global
+                        nuevo_df = pd.concat([st.session_state["df_lotes"], pd.DataFrame([nuevo_registro])], ignore_index=True)
+                        st.session_state["df_lotes"] = nuevo_df
+                        df_lotes = nuevo_df
+                        
                         st.success(f"¡Lote '{nombre_nuevo}' registrado correctamente!")
                         st.rerun()
                     else:
@@ -1856,34 +1866,35 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
 
     with col_acc2:
         with st.expander("✏️ Editar Lote Existente", expanded=False):
-            if not df_lotes.empty:
+            if not df_lotes_ref.empty:
                 lote_sel_mod = st.selectbox(
                     "Selecciona el lote a editar:", 
-                    df_lotes['nombre_lote'].dropna().unique(),
+                    df_lotes_ref['nombre_lote'].dropna().unique(),
                     key="sb_mod_lote_exp"
                 )
-                datos_lote_actual = df_lotes[df_lotes['nombre_lote'] == lote_sel_mod].iloc[0]
+                datos_lote_actual = df_lotes_ref[df_lotes_ref['nombre_lote'] == lote_sel_mod].iloc[0]
 
                 with st.form("form_edit_lote_directo"):
                     nuevo_nombre_e = st.text_input("Nombre del Lote:", value=str(datos_lote_actual.get('nombre_lote', '')))
                     nueva_desc_e = st.text_area("Descripción / Notas:", value=str(datos_lote_actual.get('descripcion_notas', '')))
                     nueva_raza_e = st.text_input("Raza:", value=str(datos_lote_actual.get('raza', '')))
                     
-                    # Columna de cabezas flexible
-                    col_cab_nombre = [c for c in df_lotes.columns if any(k in c.lower() for k in ['cabeza', 'cantidad', 'num'])][0] if [c for c in df_lotes.columns if any(k in c.lower() for k in ['cabeza', 'cantidad', 'num'])] else 'cabezas'
+                    # Identificar la columna exacta de cabezas
+                    col_cab_nombre = [c for c in df_lotes_ref.columns if any(k in c.lower() for k in ['cabeza', 'cantidad', 'num'])][0] if [c for c in df_lotes_ref.columns if any(k in c.lower() for k in ['cabeza', 'cantidad', 'num'])] else 'cabezas'
                     val_cabs_act = int(pd.to_numeric(datos_lote_actual.get(col_cab_nombre, 0), errors='coerce') or 0)
                     nuevas_cabs_e = st.number_input("Cabezas de Ganado:", min_value=0, step=1, value=val_cabs_act)
                     
                     btn_actualizar_lote = st.form_submit_button("Actualizar Lote", type="primary", use_container_width=True)
 
                     if btn_actualizar_lote:
-                        idx_lote = df_lotes[df_lotes['nombre_lote'] == lote_sel_mod].index[0]
-                        df_lotes.loc[idx_lote, 'nombre_lote'] = nuevo_nombre_e.strip()
-                        df_lotes.loc[idx_lote, 'descripcion_notas'] = nueva_desc_e
-                        df_lotes.loc[idx_lote, 'raza'] = nueva_raza_e
-                        df_lotes.loc[idx_lote, col_cab_nombre] = nuevas_cabs_e
+                        # Modificar directamente en st.session_state
+                        idx_lote = st.session_state["df_lotes"][st.session_state["df_lotes"]['nombre_lote'] == lote_sel_mod].index[0]
+                        st.session_state["df_lotes"].loc[idx_lote, 'nombre_lote'] = nuevo_nombre_e.strip()
+                        st.session_state["df_lotes"].loc[idx_lote, 'descripcion_notas'] = nueva_desc_e
+                        st.session_state["df_lotes"].loc[idx_lote, 'raza'] = nueva_raza_e
+                        st.session_state["df_lotes"].loc[idx_lote, col_cab_nombre] = nuevas_cabs_e
                         
-                        st.session_state["df_lotes"] = df_lotes
+                        df_lotes = st.session_state["df_lotes"]
                         st.success(f"¡Lote '{nuevo_nombre_e}' actualizado exitosamente!")
                         st.rerun()
             else:
@@ -1891,18 +1902,19 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
 
     st.divider()
 
-    # 2. TARJETAS DE MÉTRICAS (KPIs)
-    if not df_lotes.empty:
-        tot_lotes = len(df_lotes)
-        
-        # Búsqueda segura de estatus
-        col_estatus = [c for c in df_lotes.columns if 'estatus' in c.lower() or 'estado' in c.lower()]
-        lotes_act = len(df_lotes[df_lotes[col_estatus[0]] == 'Activo']) if col_estatus else tot_lotes
+    # Usamos la referencia persistente para renderizar la vista
+    df_lotes_view = st.session_state["df_lotes"]
 
-        # Búsqueda flexible de la columna de cabezas de ganado
-        col_cabezas = [c for c in df_lotes.columns if any(k in c.lower() for k in ['cabeza', 'cantidad', 'inicial', 'num'])]
+    # 2. TARJETAS DE MÉTRICAS (KPIs)
+    if not df_lotes_view.empty:
+        tot_lotes = len(df_lotes_view)
+        
+        col_estatus = [c for c in df_lotes_view.columns if 'estatus' in c.lower() or 'estado' in c.lower()]
+        lotes_act = len(df_lotes_view[df_lotes_view[col_estatus[0]] == 'Activo']) if col_estatus else tot_lotes
+
+        col_cabezas = [c for c in df_lotes_view.columns if any(k in c.lower() for k in ['cabeza', 'cantidad', 'inicial', 'num'])]
         if col_cabezas:
-            tot_cabezas = pd.to_numeric(df_lotes[col_cabezas[0]], errors='coerce').fillna(0).sum()
+            tot_cabezas = pd.to_numeric(df_lotes_view[col_cabezas[0]], errors='coerce').fillna(0).sum()
         else:
             tot_cabezas = 0
 
@@ -1921,7 +1933,7 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
 
         # 3. CATÁLOGO / TABLA DE INVENTARIO DE LOTES
         st.markdown("### 📋 Catálogo de Lotes Registrados")
-        st.dataframe(df_lotes, use_container_width=True)
+        st.dataframe(df_lotes_view, use_container_width=True)
 
         st.divider()
 
@@ -1929,7 +1941,7 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
         st.markdown("### 🔄 Transferencias de Inventario / Reclasificación de Activos")
         st.caption("Registra movimientos de ganado entre lotes asignando su Valor Contable / Costo Base sin generar movimientos de caja falsos.")
 
-        lotes_lista = df_lotes['nombre_lote'].dropna().unique().tolist()
+        lotes_lista = df_lotes_view['nombre_lote'].dropna().unique().tolist()
         
         if len(lotes_lista) >= 2:
             with st.expander("➕ Registrar Nueva Transferencia de Lote", expanded=False):
@@ -1959,20 +1971,17 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                     if btn_guardar_tr:
                         val_total_tr = num_cabezas_tr * val_unitario
                         
-                        # Actualizar número de cabezas en df_lotes si existe la columna
                         if col_cabezas:
                             c_col = col_cabezas[0]
-                            # Restar al origen
-                            df_lotes.loc[df_lotes['nombre_lote'] == lote_origen, c_col] = (
-                                pd.to_numeric(df_lotes.loc[df_lotes['nombre_lote'] == lote_origen, c_col], errors='coerce').fillna(0) - num_cabezas_tr
+                            # Actualización con persistencia directa en session_state
+                            st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == lote_origen, c_col] = (
+                                pd.to_numeric(st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == lote_origen, c_col], errors='coerce').fillna(0) - num_cabezas_tr
                             )
-                            # Sumar al destino
-                            df_lotes.loc[df_lotes['nombre_lote'] == lote_destino, c_col] = (
-                                pd.to_numeric(df_lotes.loc[df_lotes['nombre_lote'] == lote_destino, c_col], errors='coerce').fillna(0) + num_cabezas_tr
+                            st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == lote_destino, c_col] = (
+                                pd.to_numeric(st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == lote_destino, c_col], errors='coerce').fillna(0) + num_cabezas_tr
                             )
-                            st.session_state["df_lotes"] = df_lotes
+                            df_lotes = st.session_state["df_lotes"]
 
-                        # Registrar la transferencia en el historial de activos
                         nueva_tr = pd.DataFrame([{
                             "fecha": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
                             "lote_origen": lote_origen,
@@ -1988,7 +1997,6 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                         st.success(f"Transferencia de {num_cabezas_tr} cabezas ejecutada de '{lote_origen}' a '{lote_destino}'.")
                         st.rerun()
 
-        # Tabla de historial de transferencias internas
         if not st.session_state["df_transferencias"].empty:
             st.markdown("##### 📜 Historial de Transferencias Internas de Activos")
             st.dataframe(st.session_state["df_transferencias"], use_container_width=True)
