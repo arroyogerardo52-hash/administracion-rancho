@@ -1822,7 +1822,6 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
     if "df_lotes" not in st.session_state or st.session_state["df_lotes"] is None:
         st.session_state["df_lotes"] = df_lotes.copy()
     
-    # Trabajamos directamente con la referencia persistente
     df_lotes_ref = st.session_state["df_lotes"]
 
     # Inicialización de historial de transferencias internas en st.session_state
@@ -1831,9 +1830,10 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
             columns=["fecha", "lote_origen", "lote_destino", "cabezas", "valor_base_unidad", "valor_total_traspaso", "tipo_movimiento", "observaciones"]
         )
 
-    # 1. GESTIÓN DE LOTES (CREAR Y EDITAR) CON PERSISTENCIA REAL
-    col_acc1, col_acc2 = st.columns(2)
+    # 1. GESTIÓN DE LOTES (CREAR, EDITAR Y ELIMINAR)
+    col_acc1, col_acc2, col_acc3 = st.columns(3)
 
+    # A) CREAR LOTE
     with col_acc1:
         with st.expander("➕ Registrar Nuevo Lote", expanded=False):
             with st.form("form_nuevo_lote_directo", clear_on_submit=True):
@@ -1854,21 +1854,20 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                             "cabezas": cabs_nuevas,
                             "estatus": "Activo"
                         }
-                        # Agregar al DataFrame de session_state y sincronizar variable global
                         nuevo_df = pd.concat([st.session_state["df_lotes"], pd.DataFrame([nuevo_registro])], ignore_index=True)
                         st.session_state["df_lotes"] = nuevo_df
                         df_lotes = nuevo_df
-                        
                         st.success(f"¡Lote '{nombre_nuevo}' registrado correctamente!")
                         st.rerun()
                     else:
                         st.error("El nombre del lote no puede estar vacío.")
 
+    # B) EDITAR LOTE
     with col_acc2:
-        with st.expander("✏️ Editar Lote Existente", expanded=False):
+        with st.expander("✏️ Editar Lote", expanded=False):
             if not df_lotes_ref.empty:
                 lote_sel_mod = st.selectbox(
-                    "Selecciona el lote a editar:", 
+                    "Selecciona lote a editar:", 
                     df_lotes_ref['nombre_lote'].dropna().unique(),
                     key="sb_mod_lote_exp"
                 )
@@ -1879,7 +1878,6 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                     nueva_desc_e = st.text_area("Descripción / Notas:", value=str(datos_lote_actual.get('descripcion_notas', '')))
                     nueva_raza_e = st.text_input("Raza:", value=str(datos_lote_actual.get('raza', '')))
                     
-                    # Identificar la columna exacta de cabezas
                     col_cab_nombre = [c for c in df_lotes_ref.columns if any(k in c.lower() for k in ['cabeza', 'cantidad', 'num'])][0] if [c for c in df_lotes_ref.columns if any(k in c.lower() for k in ['cabeza', 'cantidad', 'num'])] else 'cabezas'
                     val_cabs_act = int(pd.to_numeric(datos_lote_actual.get(col_cab_nombre, 0), errors='coerce') or 0)
                     nuevas_cabs_e = st.number_input("Cabezas de Ganado:", min_value=0, step=1, value=val_cabs_act)
@@ -1887,7 +1885,6 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                     btn_actualizar_lote = st.form_submit_button("Actualizar Lote", type="primary", use_container_width=True)
 
                     if btn_actualizar_lote:
-                        # Modificar directamente en st.session_state
                         idx_lote = st.session_state["df_lotes"][st.session_state["df_lotes"]['nombre_lote'] == lote_sel_mod].index[0]
                         st.session_state["df_lotes"].loc[idx_lote, 'nombre_lote'] = nuevo_nombre_e.strip()
                         st.session_state["df_lotes"].loc[idx_lote, 'descripcion_notas'] = nueva_desc_e
@@ -1900,9 +1897,36 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
             else:
                 st.info("No hay lotes para editar.")
 
+    # C) ELIMINAR LOTE
+    with col_acc3:
+        with st.expander("🗑️ Eliminar Lote", expanded=False):
+            if not df_lotes_ref.empty:
+                lote_a_borrar = st.selectbox(
+                    "Selecciona lote a borrar:", 
+                    df_lotes_ref['nombre_lote'].dropna().unique(),
+                    key="sb_del_lote_exp"
+                )
+                
+                # Checkbox de confirmación de seguridad
+                confirmar_del = st.checkbox(f"Confirmar eliminación de '{lote_a_borrar}'", key="chk_del_lote")
+                
+                if st.button("🗑️ Borrar Lote Definativamente", type="primary", use_container_width=True):
+                    if confirmar_del:
+                        # Filtrar eliminando el lote seleccionado
+                        st.session_state["df_lotes"] = st.session_state["df_lotes"][
+                            st.session_state["df_lotes"]['nombre_lote'] != lote_a_borrar
+                        ].reset_index(drop=True)
+                        df_lotes = st.session_state["df_lotes"]
+                        st.success(f"El lote '{lote_a_borrar}' fue eliminado correctamente.")
+                        st.rerun()
+                    else:
+                        st.warning("Debes marcar la casilla de confirmación para eliminar el lote.")
+            else:
+                st.info("No hay lotes para eliminar.")
+
     st.divider()
 
-    # Usamos la referencia persistente para renderizar la vista
+    # Vista persistente de la tabla de lotes
     df_lotes_view = st.session_state["df_lotes"]
 
     # 2. TARJETAS DE MÉTRICAS (KPIs)
@@ -1973,7 +1997,6 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                         
                         if col_cabezas:
                             c_col = col_cabezas[0]
-                            # Actualización con persistencia directa en session_state
                             st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == lote_origen, c_col] = (
                                 pd.to_numeric(st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == lote_origen, c_col], errors='coerce').fillna(0) - num_cabezas_tr
                             )
