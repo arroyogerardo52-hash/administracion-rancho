@@ -1868,7 +1868,7 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
             if not df_lotes_ref.empty:
                 lote_sel_mod = st.selectbox(
                     "Selecciona lote a editar:", 
-                    df_lotes_ref['nombre_lote'].dropna().unique(),
+                    sorted(df_lotes_ref['nombre_lote'].dropna().unique().tolist()),
                     key="sb_mod_lote_exp"
                 )
                 datos_lote_actual = df_lotes_ref[df_lotes_ref['nombre_lote'] == lote_sel_mod].iloc[0]
@@ -1903,16 +1903,14 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
             if not df_lotes_ref.empty:
                 lote_a_borrar = st.selectbox(
                     "Selecciona lote a borrar:", 
-                    df_lotes_ref['nombre_lote'].dropna().unique(),
+                    sorted(df_lotes_ref['nombre_lote'].dropna().unique().tolist()),
                     key="sb_del_lote_exp"
                 )
                 
-                # Checkbox de confirmación de seguridad
                 confirmar_del = st.checkbox(f"Confirmar eliminación de '{lote_a_borrar}'", key="chk_del_lote")
                 
-                if st.button("🗑️ Borrar Lote Definativamente", type="primary", use_container_width=True):
+                if st.button("🗑️ Borrar Lote Definitivamente", type="primary", use_container_width=True):
                     if confirmar_del:
-                        # Filtrar eliminando el lote seleccionado
                         st.session_state["df_lotes"] = st.session_state["df_lotes"][
                             st.session_state["df_lotes"]['nombre_lote'] != lote_a_borrar
                         ].reset_index(drop=True)
@@ -1926,7 +1924,6 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
 
     st.divider()
 
-    # Vista persistente de la tabla de lotes
     df_lotes_view = st.session_state["df_lotes"]
 
     # 2. TARJETAS DE MÉTRICAS (KPIs)
@@ -1965,17 +1962,20 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
         st.markdown("### 🔄 Transferencias de Inventario / Reclasificación de Activos")
         st.caption("Registra movimientos de ganado entre lotes asignando su Valor Contable / Costo Base sin generar movimientos de caja falsos.")
 
-        lotes_lista = df_lotes_view['nombre_lote'].dropna().unique().tolist()
+        # Obtención y limpieza estricta de todos los lotes
+        lotes_lista = sorted([str(l).strip() for l in df_lotes_view['nombre_lote'].dropna().unique() if str(l).strip() != ""])
         
         if len(lotes_lista) >= 2:
             with st.expander("➕ Registrar Nueva Transferencia de Lote", expanded=False):
+                
+                # Cargar Origen fuera del formulario para permitir filtrado dinámico en Destino
+                lote_origen = st.selectbox("Lote Origen (Sale ganado):", lotes_lista, key="tr_origen_select")
+                
+                # Filtrar Lote Destino eliminando dinámicamente el Origen seleccionado
+                lotes_dest_opt = [l for l in lotes_lista if l != lote_origen]
+
                 with st.form("form_transferencia_lote", clear_on_submit=True):
-                    c_origen, c_destino = st.columns(2)
-                    with c_origen:
-                        lote_origen = st.selectbox("Lote Origen (Sale ganado):", lotes_lista, key="tr_origen")
-                    with c_destino:
-                        lotes_dest_opt = [l for l in lotes_lista if l != lote_origen]
-                        lote_destino = st.selectbox("Lote Destino (Entra ganado):", lotes_dest_opt, key="tr_destino")
+                    lote_destino = st.selectbox("Lote Destino (Entra ganado):", lotes_dest_opt, key="tr_destino_form")
 
                     c_tipo, c_cabs, c_val = st.columns(3)
                     with c_tipo:
