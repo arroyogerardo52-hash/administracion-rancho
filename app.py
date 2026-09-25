@@ -1952,8 +1952,8 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
         st.markdown("### 📋 Resumen del Inventario de Lotes")
         if not df_lotes_ref.empty:
             total_cabezas_global = pd.to_numeric(df_lotes_ref.get('cabezas', 0), errors='coerce').sum()
-            lotes_activos_cnt = len(df_lotes_ref[df_lotes_ref.get('estatus', 'Activo') == 'Activo'])
-
+            lotes_activos_cnt = len(df_lotes_ref[df_lotes_ref['estatus'] == 'Activo']) if 'estatus' in df_lotes_ref.columns else len(df_lotes_ref)
+            
             k1, k2 = st.columns(2)
             with k1:
                 with st.container(border=True):
