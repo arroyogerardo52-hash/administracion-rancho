@@ -443,13 +443,14 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
     return html
 
 # ==========================================
-# MÓDULO 1: DASHBOARD Y FINANZAS (DISEÑO MEJORADO)
+# MÓDULO 1: DASHBOARD Y FINANZAS (CORREGIDO Y OPTIMIZADO)
 # ==========================================
 if modulo_activo == "📊 Dashboard & Finanzas":
 
     cat_ingresos = ["Venta de ganado", "Varios (Ingresos)", "Préstamo / Crédito recibido"]
-    cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)", "Traspaso de Activo / Reclasificación"]
+    cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)"]
     cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Pago / Abono Préstamo", "Varios (Gastos operativos)"]
+    cat_especiales = ["Traspaso de Activo / Reclasificación"]
 
     lista_clientes = ["Público en general"]
     if not df_clientes.empty:
@@ -472,7 +473,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         if not df_finanzas.empty and col not in df_finanzas.columns:
             df_finanzas[col] = 0.0 if col == 'abono_acumulado' else ""
 
-    # --- ENCABEZADO DE PANTALLA MEJORADO ---
+    # --- ENCABEZADO DE PANTALLA ---
     col_head, col_btn_new = st.columns([3, 1])
     with col_head:
         st.title("📊 Balance y Control General Financiero")
@@ -486,7 +487,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             col_f1, col_f2 = st.columns(2)
             with col_f1:
                 f_fecha = st.date_input("Fecha Transacción", datetime.today(), key="f_fec_pos").strftime('%Y-%m-%d')
-                opciones_categorias = cat_ingresos if f_tipo_dinamico == "Ingreso" else cat_costos_directos + cat_gastos_operativos
+                opciones_categorias = cat_ingresos if f_tipo_dinamico == "Ingreso" else cat_costos_directos + cat_gastos_operativos + cat_especiales
                 f_cat = st.selectbox("Categoría", opciones_categorias, key="f_cat_pos")
                 f_concepto = st.text_input("Concepto / Descripción", key="f_con_pos").strip()
                 f_monto = st.number_input("Monto Total ($ MXN)", min_value=0.0, step=50.0, key="f_mon_pos")
@@ -540,12 +541,13 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         "lote_asociado": f_lote,
                         "estado_deuda": f_estado,
                         "fecha_vencimiento": f_venc,
+                        "id_origen_abono": "",
                         "es_edicion": False
                     }
                     st.rerun()
 
     with col_btn_new:
-        st.write("") # Espaciador
+        st.write("") 
         if st.button("➕ Registrar Movimiento", type="primary", use_container_width=True):
             modal_captura_registro()
 
@@ -560,7 +562,8 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         df_finanzas = df_finanzas.dropna(subset=['fecha'])
         
         hoy_dt = datetime.today()
-        df_pendientes = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
+        # Se excluyen registros hijos de abonos de las alertas parentales
+        df_pendientes = df_finanzas[(df_finanzas['estado_deuda'] == 'Pendiente') & (df_finanzas['id_origen_abono'].fillna('') == '')].copy()
         
         if not df_pendientes.empty:
             df_pendientes['saldo_pendiente'] = df_pendientes['monto'] - df_pendientes['abono_acumulado']
@@ -591,7 +594,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         else:
                             st.success("No tienes deudas vencidas pendientes.")
 
-        # --- FILTROS DE CONSULTA ESTILIZADOS EN CONTENEDOR ---
+        # --- FILTROS DE CONSULTA ---
         with st.container(border=True):
             st.markdown("##### 📆 Filtros de Consulta")
             col_filtro, col_lote_filtro, col_estado_filtro, col_fechas = st.columns([2, 2, 2, 3])
@@ -650,14 +653,17 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         if filtro_estado != "Todos":
             df_filtrado = df_filtrado[df_filtrado['estado_deuda'] == filtro_estado]
 
-        ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')]['monto'].sum()
-        egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
+        # CORRECCIÓN DE CÁLCULO DE CAJA Y CONTABILIDAD REAL
+        es_traspaso = df_filtrado['categoria'].astype(str).str.contains("Traspaso", case=False, na=False)
+        
+        ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido') & (~es_traspaso)]['monto'].sum()
+        egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado') & (~es_traspaso)]['monto'].sum()
         balance_neto = ingresos - egresos
         
-        df_pend_ing = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')]
+        df_pend_ing = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido') & (df_filtrado['id_origen_abono'].fillna('') == '')]
         por_cobrar = (df_pend_ing['monto'] - df_pend_ing['abono_acumulado']).sum() if not df_pend_ing.empty else 0.0
 
-        df_pend_egr = df_filtrado[((df_filtrado['tipo'] == 'Egreso') | (df_filtrado['categoria'] == 'Préstamo / Crédito recibido')) & (df_filtrado['estado_deuda'] == 'Pendiente')]
+        df_pend_egr = df_filtrado[((df_filtrado['tipo'] == 'Egreso') | (df_filtrado['categoria'] == 'Préstamo / Crédito recibido')) & (df_filtrado['estado_deuda'] == 'Pendiente') & (df_filtrado['id_origen_abono'].fillna('') == '')]
         por_pagar = (df_pend_egr['monto'] - df_pend_egr['abono_acumulado']).sum() if not df_pend_egr.empty else 0.0
 
         tab_resumen, tab_abonos, tab_graficas, tab_rentabilidad = st.tabs([
@@ -665,7 +671,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         ])
         
         with tab_resumen:
-            # KPIS TARJETAS
             m1, m2, m3, m4, m5 = st.columns(5)
             with m1:
                 with st.container(border=True): st.metric("Ingresos Reales", f"$ {ingresos:,.2f}")
@@ -712,7 +717,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
             st.markdown("#### 💵 Realizar Abonos a Cuentas Pendientes y Préstamos")
             st.caption("Selecciona una cuenta con saldo pendiente para abonar a la deuda o liquidarla por completo.")
 
-            df_cuentas_abono = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
+            df_cuentas_abono = df_finanzas[(df_finanzas['estado_deuda'] == 'Pendiente') & (df_finanzas['id_origen_abono'].fillna('') == '')].copy()
             if not df_cuentas_abono.empty:
                 df_cuentas_abono['saldo_restante'] = df_cuentas_abono['monto'] - df_cuentas_abono['abono_acumulado']
                 df_cuentas_abono = df_cuentas_abono[df_cuentas_abono['saldo_restante'] > 0]
@@ -796,19 +801,19 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 with cg1:
                     with st.container(border=True):
                         st.markdown("**💰 Ingresos vs Egresos Reales (MXN)**")
-                        df_pie = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].groupby('tipo')['monto'].sum().reset_index()
+                        df_pie = df_filtrado[(df_filtrado['estado_deuda'] == 'Pagado') & (~es_traspaso)].groupby('tipo')['monto'].sum().reset_index()
                         if not df_pie.empty:
                             st.bar_chart(data=df_pie, x='tipo', y='monto', color='tipo', use_container_width=True)
                 with cg2:
                     with st.container(border=True):
                         st.markdown("**📌 Flujo por Categoría (MXN)**")
                         col_cat = 'categoria' if 'categoria' in df_filtrado.columns else 'tipo'
-                        df_cat = df_filtrado.groupby([col_cat, 'tipo'])['monto'].sum().unstack().fillna(0.0)
+                        df_cat = df_filtrado[~es_traspaso].groupby([col_cat, 'tipo'])['monto'].sum().unstack().fillna(0.0)
                         st.bar_chart(df_cat, use_container_width=True)
                 
                 with st.container(border=True):
                     st.markdown("**📈 Tendencia Financiera Histórica (MXN)**")
-                    df_linea = df_filtrado.copy()
+                    df_linea = df_filtrado[~es_traspaso].copy()
                     df_linea['Fecha'] = df_linea['fecha'].dt.date
                     df_tendencia = df_linea.groupby(['Fecha', 'tipo'])['monto'].sum().unstack().fillna(0.0)
                     if 'Ingreso' not in df_tendencia.columns: df_tendencia['Ingreso'] = 0.0
@@ -842,7 +847,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
             # MÓDULO 2: PROYECCIÓN DE CASH FLOW
             st.markdown("**📉 Proyección de Cash Flow (Liquidez Futura)**")
-            df_cf = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
+            df_cf = df_finanzas[(df_finanzas['estado_deuda'] == 'Pendiente') & (df_finanzas['id_origen_abono'].fillna('') == '')].copy()
             
             if not df_cf.empty and 'fecha_vencimiento' in df_cf.columns:
                 df_cf['saldo_pendiente'] = df_cf['monto'] - df_cf['abono_acumulado']
@@ -872,18 +877,21 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
             st.divider()
 
-            # MÓDULO 3: ESTADO DE RESULTADOS
+            # MÓDULO 3: ESTADO DE RESULTADOS (P&L EXCLUYENDO TRASPASOS DE ACTIVO)
             df_pagados = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].copy()
             
             if not df_pagados.empty:
-                tot_ingresos = df_pagados[(df_pagados['tipo'] == 'Ingreso') & (df_pagados['categoria'] != 'Préstamo / Crédito recibido') & (~df_pagados['categoria'].astype(str).str.contains("Traspaso", case=False, na=False))]['monto'].sum()
-                tot_costos_directos = df_pagados[df_pagados['categoria'].isin(cat_costos_directos) & (~df_pagados['categoria'].astype(str).str.contains("Traspaso", case=False, na=False))]['monto'].sum()
-                tot_gastos_operativos = df_pagados[df_pagados['categoria'].isin(cat_gastos_operativos)]['monto'].sum()
+                es_traspaso_pnl = df_pagados['categoria'].astype(str).str.contains("Traspaso", case=False, na=False)
+                
+                tot_ingresos = df_pagados[(df_pagados['tipo'] == 'Ingreso') & (df_pagados['categoria'] != 'Préstamo / Crédito recibido') & (~es_traspaso_pnl)]['monto'].sum()
+                tot_costos_directos = df_pagados[df_pagados['categoria'].isin(cat_costos_directos) & (~es_traspaso_pnl)]['monto'].sum()
+                tot_gastos_operativos = df_pagados[df_pagados['categoria'].isin(cat_gastos_operativos) & (~es_traspaso_pnl)]['monto'].sum()
                 
                 tot_otros = df_pagados[
                     (df_pagados['tipo'] == 'Egreso') & 
                     (~df_pagados['categoria'].isin(cat_costos_directos)) & 
-                    (~df_pagados['categoria'].isin(cat_gastos_operativos))
+                    (~df_pagados['categoria'].isin(cat_gastos_operativos)) &
+                    (~es_traspaso_pnl)
                 ]['monto'].sum()
                 
                 utilidad_bruta = tot_ingresos - tot_costos_directos
@@ -907,7 +915,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 
                 st.divider()
                 
-                # --- TABLA DE COSTOS Y RENTABILIDAD POR LOTE (CORREGIDA) ---
+                # --- TABLA DE COSTOS Y RENTABILIDAD POR LOTE ---
                 if 'lote_asociado' in df_pagados.columns:
                     st.markdown("##### 🐄 Costos y Rentabilidad Analítica por Lote")
                     df_lotes_val = df_pagados[(df_pagados['lote_asociado'] != 'Ninguno') & (df_pagados['lote_asociado'] != '')].copy()
@@ -915,21 +923,15 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     if not df_lotes_val.empty:
                         es_traspaso_lote = df_lotes_val['categoria'].astype(str).str.contains("Traspaso", case=False, na=False)
 
-                        # Ventas y Costos OPERATIVOS REALES (Excluyendo traspasos)
                         df_ventas = df_lotes_val[(df_lotes_val['tipo'] == 'Ingreso') & (~es_traspaso_lote)].groupby('lote_asociado')['monto'].sum().rename('Ventas Reales ($)')
                         df_costos = df_lotes_val[(df_lotes_val['tipo'] == 'Egreso') & (~es_traspaso_lote)].groupby('lote_asociado')['monto'].sum().rename('Costos Directos ($)')
                         
-                        # MOVIMIENTOS INTERNOS DE ACTIVO (Traspasos entre lotes)
                         df_traspaso_sal = df_lotes_val[(df_lotes_val['tipo'] == 'Ingreso') & (es_traspaso_lote)].groupby('lote_asociado')['monto'].sum().rename('Valor Trasladado Salida ($)')
                         df_traspaso_ent = df_lotes_val[(df_lotes_val['tipo'] == 'Egreso') & (es_traspaso_lote)].groupby('lote_asociado')['monto'].sum().rename('Valor Trasladado Entrada ($)')
 
-                        # Unir todas las variables
                         df_lotes_pnl = pd.concat([df_ventas, df_costos, df_traspaso_sal, df_traspaso_ent], axis=1).fillna(0.0)
 
-                        # 1. Flujo de Caja en Efectivo
                         df_lotes_pnl['Flujo Caja ($)'] = df_lotes_pnl['Ventas Reales ($)'] - df_lotes_pnl['Costos Directos ($)']
-
-                        # 2. Resultado Neto Ajustado por Traspaso
                         df_lotes_pnl['Resultado Neto Lote ($)'] = (
                             (df_lotes_pnl['Ventas Reales ($)'] + df_lotes_pnl['Valor Trasladado Salida ($)']) - 
                             (df_lotes_pnl['Costos Directos ($)'] + df_lotes_pnl['Valor Trasladado Entrada ($)'])
@@ -1018,7 +1020,8 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             "empleado_responsable": emp_seleccionado,
                             "lote_asociado": tx["lote_asociado"],
                             "estado_deuda": tx["estado_deuda"],
-                            "fecha_vencimiento": tx["fecha_vencimiento"]
+                            "fecha_vencimiento": tx["fecha_vencimiento"],
+                            "id_origen_abono": tx.get("id_origen_abono", "")
                         }
                         if guardar_registro("finanzas", registro_final, "id"):
                             st.success(f"¡Transacción procesada exitosamente! Registró/Modificó: {emp_seleccionado}")
@@ -1062,7 +1065,8 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             "empleado_responsable": emp_seleccionado,
                             "lote_asociado": tx["lote_asociado"],
                             "estado_deuda": tx["estado_deuda"],
-                            "fecha_vencimiento": tx["fecha_vencimiento"]
+                            "fecha_vencimiento": tx["fecha_vencimiento"],
+                            "id_origen_abono": tx.get("id_origen_abono", "")
                         }
                         if guardar_registro("finanzas", registro_final, "id"):
                             st.success(f"¡Transacción procesada exitosamente! Registró/Modificó: {emp_seleccionado}")
@@ -1074,7 +1078,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         del st.session_state["transaccion_pendiente"]
                         st.rerun()
 
-    # --- EDITOR/ELIMINADOR ESTILIZADO EN CONTENEDOR ---
+    # --- EDITOR/ELIMINADOR ---
     if not df_finanzas.empty:
         st.divider()
         with st.container(border=True):
@@ -1103,7 +1107,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 with ec1:
                     edit_fecha = st.date_input("Fecha Transacción", value=fecha_orig, key=f"ed_fec_{id_seleccionado}").strftime('%Y-%m-%d')
                     
-                    cats_posibles = cat_ingresos if edit_tipo == "Ingreso" else cat_costos_directos + cat_gastos_operativos
+                    cats_posibles = cat_ingresos if edit_tipo == "Ingreso" else cat_costos_directos + cat_gastos_operativos + cat_especiales
                     cat_actual = fila_sel.get('categoria', '')
                     idx_cat = cats_posibles.index(cat_actual) if cat_actual in cats_posibles else 0
                     edit_cat = st.selectbox("Categoría", cats_posibles, index=idx_cat, key=f"ed_cat_{id_seleccionado}")
@@ -1176,6 +1180,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                                 "lote_asociado": edit_lote,
                                 "estado_deuda": edit_estado,
                                 "fecha_vencimiento": edit_venc,
+                                "id_origen_abono": fila_sel.get('id_origen_abono', ''),
                                 "es_edicion": True
                             }
                             st.rerun()
@@ -1215,7 +1220,8 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                                         "empleado_responsable": fila_padre.get('empleado_responsable', ''),
                                         "lote_asociado": fila_padre.get('lote_asociado', 'Ninguno'),
                                         "estado_deuda": nuevo_est_padre,
-                                        "fecha_vencimiento": str(fila_padre.get('fecha_vencimiento', ''))[:10]
+                                        "fecha_vencimiento": str(fila_padre.get('fecha_vencimiento', ''))[:10],
+                                        "id_origen_abono": fila_padre.get('id_origen_abono', '')
                                     }
                                     guardar_registro("finanzas", reg_padre_revertido, "id")
 
@@ -1231,7 +1237,6 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         if st.button("❌ Cancelar", use_container_width=True, key=f"confirm_no_{id_seleccionado}"):
                             st.session_state[f"confirmar_eliminar_{id_seleccionado}"] = False
                             st.rerun()
-
 # ==========================================
 # MÓDULO 2: EMPLEADOS (DISEÑO MEJORADO)
 # ==========================================
