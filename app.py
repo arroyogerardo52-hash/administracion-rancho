@@ -448,8 +448,8 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
 # ==========================================
 if modulo_activo == "📊 Dashboard & Finanzas":
 
-    cat_ingresos = ["Venta de ganado", "Varios (Ingresos)", "Préstamo / Crédito recibido"]
-    cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)", "Traspaso de Activo / Reclasificación"]
+    cat_ingresos = ["Venta de ganado", "Varios (Ingresos)", "Préstamo / Crédito recibido", "Traspaso Interno / Recalculo"]
+    cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)", "Traspaso de Activo / Reclasificación", "Traspaso Interno / Costo Entrante"]
     cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Pago / Abono Préstamo", "Varios (Gastos operativos)"]
 
     lista_clientes = ["Público en general"]
@@ -651,14 +651,17 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         if filtro_estado != "Todos":
             df_filtrado = df_filtrado[df_filtrado['estado_deuda'] == filtro_estado]
 
-        ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')]['monto'].sum()
-        egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado')]['monto'].sum()
+        # SE EXCLUYEN LOS TRASPASOS INTERNOS DE LOS INGRESOS/EGRESOS REALES GLOBALES
+        es_traspaso = df_filtrado['categoria'].astype(str).str.contains("Traspaso", case=False, na=False)
+
+        ingresos = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pagado') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido') & (~es_traspaso)]['monto'].sum()
+        egresos = df_filtrado[(df_filtrado['tipo'] == 'Egreso') & (df_filtrado['estado_deuda'] == 'Pagado') & (~es_traspaso)]['monto'].sum()
         balance_neto = ingresos - egresos
         
-        df_pend_ing = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido')]
+        df_pend_ing = df_filtrado[(df_filtrado['tipo'] == 'Ingreso') & (df_filtrado['estado_deuda'] == 'Pendiente') & (df_filtrado['categoria'] != 'Préstamo / Crédito recibido') & (~es_traspaso)]
         por_cobrar = (df_pend_ing['monto'] - df_pend_ing['abono_acumulado']).sum() if not df_pend_ing.empty else 0.0
 
-        df_pend_egr = df_filtrado[((df_filtrado['tipo'] == 'Egreso') | (df_filtrado['categoria'] == 'Préstamo / Crédito recibido')) & (df_filtrado['estado_deuda'] == 'Pendiente')]
+        df_pend_egr = df_filtrado[((df_filtrado['tipo'] == 'Egreso') | (df_filtrado['categoria'] == 'Préstamo / Crédito recibido')) & (df_filtrado['estado_deuda'] == 'Pendiente') & (~es_traspaso)]
         por_pagar = (df_pend_egr['monto'] - df_pend_egr['abono_acumulado']).sum() if not df_pend_egr.empty else 0.0
 
         tab_resumen, tab_abonos, tab_graficas, tab_rentabilidad = st.tabs([
@@ -793,23 +796,24 @@ if modulo_activo == "📊 Dashboard & Finanzas":
         with tab_graficas:
             st.markdown("#### 📊 Visualización de Rendimiento")
             if not df_filtrado.empty:
+                df_graf_filtrado = df_filtrado[~df_filtrado['categoria'].astype(str).str.contains("Traspaso", case=False, na=False)]
                 cg1, cg2 = st.columns(2)
                 with cg1:
                     with st.container(border=True):
                         st.markdown("**💰 Ingresos vs Egresos Reales (MXN)**")
-                        df_pie = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].groupby('tipo')['monto'].sum().reset_index()
+                        df_pie = df_graf_filtrado[df_graf_filtrado['estado_deuda'] == 'Pagado'].groupby('tipo')['monto'].sum().reset_index()
                         if not df_pie.empty:
                             st.bar_chart(data=df_pie, x='tipo', y='monto', color='tipo', use_container_width=True)
                 with cg2:
                     with st.container(border=True):
                         st.markdown("**📌 Flujo por Categoría (MXN)**")
-                        col_cat = 'categoria' if 'categoria' in df_filtrado.columns else 'tipo'
-                        df_cat = df_filtrado.groupby([col_cat, 'tipo'])['monto'].sum().unstack().fillna(0.0)
+                        col_cat = 'categoria' if 'categoria' in df_graf_filtrado.columns else 'tipo'
+                        df_cat = df_graf_filtrado.groupby([col_cat, 'tipo'])['monto'].sum().unstack().fillna(0.0)
                         st.bar_chart(df_cat, use_container_width=True)
                 
                 with st.container(border=True):
                     st.markdown("**📈 Tendencia Financiera Histórica (MXN)**")
-                    df_linea = df_filtrado.copy()
+                    df_linea = df_graf_filtrado.copy()
                     df_linea['Fecha'] = df_linea['fecha'].dt.date
                     df_tendencia = df_linea.groupby(['Fecha', 'tipo'])['monto'].sum().unstack().fillna(0.0)
                     if 'Ingreso' not in df_tendencia.columns: df_tendencia['Ingreso'] = 0.0
@@ -843,7 +847,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
             # MÓDULO 2: PROYECCIÓN DE CASH FLOW
             st.markdown("**📉 Proyección de Cash Flow (Liquidez Futura)**")
-            df_cf = df_finanzas[df_finanzas['estado_deuda'] == 'Pendiente'].copy()
+            df_cf = df_finanzas[(df_finanzas['estado_deuda'] == 'Pendiente') & (~df_finanzas['categoria'].astype(str).str.contains("Traspaso", case=False, na=False))].copy()
             
             if not df_cf.empty and 'fecha_vencimiento' in df_cf.columns:
                 df_cf['saldo_pendiente'] = df_cf['monto'] - df_cf['abono_acumulado']
@@ -873,18 +877,21 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
             st.divider()
 
-            # MÓDULO 3: ESTADO DE RESULTADOS
+            # MÓDULO 3: ESTADO DE RESULTADOS (PL)
             df_pagados = df_filtrado[df_filtrado['estado_deuda'] == 'Pagado'].copy()
             
             if not df_pagados.empty:
-                tot_ingresos = df_pagados[(df_pagados['tipo'] == 'Ingreso') & (df_pagados['categoria'] != 'Préstamo / Crédito recibido')]['monto'].sum()
-                tot_costos_directos = df_pagados[df_pagados['categoria'].isin(cat_costos_directos)]['monto'].sum()
-                tot_gastos_operativos = df_pagados[df_pagados['categoria'].isin(cat_gastos_operativos)]['monto'].sum()
+                # Excluir traspasos de los totales generales del P&L
+                df_pagados_reales = df_pagados[~df_pagados['categoria'].astype(str).str.contains("Traspaso", case=False, na=False)]
                 
-                tot_otros = df_pagados[
-                    (df_pagados['tipo'] == 'Egreso') & 
-                    (~df_pagados['categoria'].isin(cat_costos_directos)) & 
-                    (~df_pagados['categoria'].isin(cat_gastos_operativos))
+                tot_ingresos = df_pagados_reales[(df_pagados_reales['tipo'] == 'Ingreso') & (df_pagados_reales['categoria'] != 'Préstamo / Crédito recibido')]['monto'].sum()
+                tot_costos_directos = df_pagados_reales[df_pagados_reales['categoria'].isin(cat_costos_directos)]['monto'].sum()
+                tot_gastos_operativos = df_pagados_reales[df_pagados_reales['categoria'].isin(cat_gastos_operativos)]['monto'].sum()
+                
+                tot_otros = df_pagados_reales[
+                    (df_pagados_reales['tipo'] == 'Egreso') & 
+                    (~df_pagados_reales['categoria'].isin(cat_costos_directos)) & 
+                    (~df_pagados_reales['categoria'].isin(cat_gastos_operativos))
                 ]['monto'].sum()
                 
                 utilidad_bruta = tot_ingresos - tot_costos_directos
@@ -908,6 +915,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 
                 st.divider()
                 
+                # SECCIÓN DE COSTOS Y RENTABILIDAD POR LOTE REGISTRADO (INCLUYE LOS TRASPASOS)
                 if 'lote_asociado' in df_pagados.columns:
                     st.markdown("##### 🐄 Costos y Rentabilidad por Lote Registrado")
                     df_lotes_val = df_pagados[df_pagados['lote_asociado'] != 'Ninguno']
@@ -1954,8 +1962,8 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                     else:
                         st.error("❌ Escribe el nombre del lote.")
 
-  # ---------------------------------------------------------
-    # TAB 3: TRANSFERENCIAS (CONTABILIDAD NEUTRA / TRASPASO REAL)
+# ---------------------------------------------------------
+    # TAB 3: TRANSFERENCIAS CON IMPACTO EN RENTABILIDAD POR LOTE
     # ---------------------------------------------------------
     with tab_trans:
         with st.container(border=True):
@@ -2015,7 +2023,7 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                                 "fecha_creacion": datetime.now().strftime("%Y-%m-%d")
                             })
 
-                            # Actualización de inventario físico
+                            # Actualización de inventario de cabezas
                             row_origen_dict = df_lotes_clean[df_lotes_clean['nombre_lote'].astype(str).str.strip() == lote_origen].iloc[0].to_dict()
                             nuevas_cabs_origen = int(row_origen_dict['cabezas']) - int(num_cabezas_tr)
                             row_origen_dict['cabezas'] = nuevas_cabs_origen
@@ -2045,30 +2053,48 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                                 "observaciones": obs_tr
                             }
 
-                            # ASIENTO CONTABLE NEUTRO (Tipo 'Traspaso' para no contaminar Ventas/Ingresos Reales)
-                            fin_traspaso_neutro = {
-                                "id": f"FIN-TR-{id_tr_nuevo}",
+                            # 1) INGRESO POR TRASPASO AL LOTE ORIGEN (Recuperación contable de costo)
+                            fin_origen = {
+                                "id": f"FIN-TR-ORI-{id_tr_nuevo}",
                                 "fecha": f_fecha_tr,
-                                "tipo": "Traspaso Interno",
-                                "categoria": "Reclasificación de Ganado",
-                                "concepto": f"[TRASPASO DE GANADO] {num_cabezas_tr} cab. de {lote_origen} a {lote_destino}. {obs_tr}",
-                                "monto": 0.0, # Efecto neutro en el flujo global
-                                "abono_acumulado": 0.0,
+                                "tipo": "Ingreso",
+                                "categoria": "Traspaso Interno / Recalculo",
+                                "concepto": f"[TRASPASO SALIDA] {num_cabezas_tr} cab. enviadas a {lote_destino}. {obs_tr}",
+                                "monto": valor_total_transferencia,
+                                "abono_acumulado": valor_total_transferencia,
                                 "metodo_pago": "Interno",
-                                "asociado": f"{lote_origen} -> {lote_destino}",
+                                "asociado": f"Destino: {lote_destino}",
+                                "empleado_responsable": st.session_state.get("usuario_actual", "Sistema"),
+                                "lote_asociado": lote_origen,
+                                "estado_deuda": "Pagado",
+                                "fecha_vencimiento": f_fecha_tr
+                            }
+
+                            # 2) EGRESO POR TRASPASO AL LOTE DESTINO (Asignación de costo inicial al nuevo lote)
+                            fin_destino = {
+                                "id": f"FIN-TR-DES-{id_tr_nuevo}",
+                                "fecha": f_fecha_tr,
+                                "tipo": "Egreso",
+                                "categoria": "Traspaso Interno / Costo Entrante",
+                                "concepto": f"[TRASPASO ENTRADA] {num_cabezas_tr} cab. recibidas de {lote_origen}. {obs_tr}",
+                                "monto": valor_total_transferencia,
+                                "abono_acumulado": valor_total_transferencia,
+                                "metodo_pago": "Interno",
+                                "asociado": f"Origen: {lote_origen}",
                                 "empleado_responsable": st.session_state.get("usuario_actual", "Sistema"),
                                 "lote_asociado": lote_destino,
                                 "estado_deuda": "Pagado",
                                 "fecha_vencimiento": f_fecha_tr
                             }
 
-                            # GUARDAR REGISTROS
+                            # GUARDAR EN BD
                             ok_origen = guardar_registro("lotes", row_origen_dict, "nombre_lote")
                             ok_destino = guardar_registro("lotes", row_destino_dict, "nombre_lote")
                             ok_tr = guardar_registro("transferencias", reg_transferencia, "id_tr")
-                            guardar_registro("finanzas", fin_traspaso_neutro, "id")
+                            guardar_registro("finanzas", fin_origen, "id")
+                            guardar_registro("finanzas", fin_destino, "id")
 
-                            if ok_origen and ok_destino:
+                            if ok_origen and ok_destino and ok_tr:
                                 idx_orig = st.session_state["df_lotes"][st.session_state["df_lotes"]['nombre_lote'].astype(str).str.strip() == lote_origen].index
                                 idx_dest = st.session_state["df_lotes"][st.session_state["df_lotes"]['nombre_lote'].astype(str).str.strip() == lote_destino].index
                                 st.session_state["df_lotes"].loc[idx_orig, 'cabezas'] = nuevas_cabs_origen
@@ -2077,14 +2103,14 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                                 new_df_tr = pd.concat([st.session_state["df_transferencias"], pd.DataFrame([reg_transferencia])], ignore_index=True)
                                 st.session_state["df_transferencias"] = new_df_tr
 
-                                st.success("✅ ¡Transferencia registrada correctamente sin alterar las ventas reales!")
+                                st.success("✅ ¡Transferencia y balances por lote actualizados correctamente!")
                                 time.sleep(0.8)
                                 st.rerun()
                             else:
-                                st.error("❌ Ocurrió un error al actualizar los lotes en la base de datos.")
+                                st.error("❌ Error al guardar la transferencia en Supabase.")
             else:
                 st.info("💡 Necesitas tener al menos **2 lotes registrados** para realizar transferencias entre ellos.")
-
+  
     # ---------------------------------------------------------
     # TAB 4: GESTIÓN (EDICIÓN Y BORRADO DE TRANSFERENCIAS)
     # ---------------------------------------------------------
