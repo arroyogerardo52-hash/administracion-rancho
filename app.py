@@ -449,7 +449,7 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
 if modulo_activo == "📊 Dashboard & Finanzas":
 
     cat_ingresos = ["Venta de ganado", "Varios (Ingresos)", "Préstamo / Crédito recibido"]
-    cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)"]
+    cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)", "Traspaso de Activo / Reclasificación"]
     cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Pago / Abono Préstamo", "Varios (Gastos operativos)"]
 
     lista_clientes = ["Público en general"]
@@ -1822,51 +1822,40 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
     if "df_lotes" not in st.session_state or st.session_state["df_lotes"] is None:
         st.session_state["df_lotes"] = df_lotes.copy()
     
+    # Cargar transferencias históricas desde Supabase si existe la tabla
+    df_transferencias_bd = cargar_tabla("transferencias")
+    if "df_transferencias" not in st.session_state or st.session_state["df_transferencias"] is None:
+        if not df_transferencias_bd.empty:
+            st.session_state["df_transferencias"] = df_transferencias_bd.copy()
+        else:
+            st.session_state["df_transferencias"] = pd.DataFrame(
+                columns=["id_tr", "fecha", "lote_origen", "lote_destino", "cabezas", "valor_base_unidad", "valor_total_traspaso", "tipo_movimiento", "observaciones"]
+            )
+
     df_lotes_ref = st.session_state["df_lotes"]
 
-    # Inicializar historial de transferencias con estructura garantizada
-    if "df_transferencias" not in st.session_state or st.session_state["df_transferencias"] is None:
-        st.session_state["df_transferencias"] = pd.DataFrame(
-            columns=["id_tr", "fecha", "lote_origen", "lote_destino", "cabezas", "valor_base_unidad", "valor_total_traspaso", "tipo_movimiento", "observaciones"]
-        )
-    
-    # PARCHE DE SEGURIDAD: Asegurar que 'id_tr' exista en un df_transferencias previo
-    if not st.session_state["df_transferencias"].empty and "id_tr" not in st.session_state["df_transferencias"].columns:
-        st.session_state["df_transferencias"]["id_tr"] = [f"TR-{i+1:04d}" for i in range(len(st.session_state["df_transferencias"]))]
-
-    # Identificar e inicializar el DataFrame financiero global
-    df_fin_name = None
-    for vname in ['df_transacciones', 'df_finanzas', 'df_movimientos']:
-        if vname in st.session_state or vname in globals() or vname in locals():
-            df_fin_name = vname
-            break
-    if df_fin_name is None:
-        df_fin_name = "df_transacciones"
-        if "df_transacciones" not in st.session_state:
-            st.session_state["df_transacciones"] = pd.DataFrame()
-
-    # 1. GESTIÓN DE LOTES (CREAR, EDITAR Y ELIMINAR)
-    col_acc1, col_acc2, col_acc3 = st.columns(3)
+    # 1. GESTIÓN DE LOTES (CREAR, TRANSFERIR, EDITAR Y ELIMINAR)
+    col_acc1, col_acc2 = st.columns([1, 2])
 
     # A) CREAR LOTE
     with col_acc1:
         with st.expander("➕ Registrar Nuevo Lote", expanded=False):
             with st.form("form_nuevo_lote_directo", clear_on_submit=True):
-                nombre_nuevo = st.text_input("Nombre del Lote:", placeholder="Ej. Criadora 2026")
-                desc_nueva = st.text_area("Descripción / Notas:", placeholder="Notas sobre este lote...")
-                raza_nueva = st.text_input("Raza:", placeholder="Ej. SARDO NEGRO")
+                nombre_nuevo = st.text_input("Nombre del Lote:", placeholder="Ej. Criadora 2026").strip()
+                desc_nueva = st.text_area("Descripción / Notas:", placeholder="Notas sobre este lote...").strip()
+                raza_nueva = st.text_input("Raza:", placeholder="Ej. SARDO NEGRO").strip()
                 cabs_nuevas = st.number_input("Cabezas Iniciales:", min_value=0, step=1, value=0)
                 
                 btn_crear_lote = st.form_submit_button("Guardar Nuevo Lote", type="primary", use_container_width=True)
                 
                 if btn_crear_lote:
-                    if nombre_nuevo.strip():
+                    if nombre_nuevo:
                         nuevo_registro = {
-                            "nombre_lote": nombre_nuevo.strip(),
+                            "nombre_lote": nombre_nuevo,
                             "descripcion_notas": desc_nueva,
-                            "fecha_creacion": pd.Timestamp.now().strftime("%Y-%m-%d"),
+                            "fecha_creacion": datetime.now().strftime("%Y-%m-%d"),
                             "raza": raza_nueva,
-                            "cabezas": cabs_nuevas,
+                            "cabezas": int(cabs_nuevas),
                             "estatus": "Activo"
                         }
                         if guardar_registro("lotes", nuevo_registro, "nombre_lote"):
@@ -1876,195 +1865,227 @@ elif modulo_activo and "Control de Lotes" in modulo_activo:
                             time.sleep(0.4)
                             st.rerun()
                     else:
-                        st.error("El nombre del lote no puede estar vacío.")
+                        st.error("❌ Escribe el nombre del lote.")
 
-    # B) EDITAR LOTE
+    # B) TRANSFERENCIA DE CABEZAS ENTRE LOTES (LÓGICA REPARADA COMPLETA)
     with col_acc2:
-        with st.expander("✏️ Editar Lote", expanded=False):
+        with st.expander("🔄 Transferencia / Traspaso de Cabezas entre Lotes", expanded=True):
             if not df_lotes_ref.empty and 'nombre_lote' in df_lotes_ref.columns:
-                lista_lotes_edit = sorted(df_lotes_ref['nombre_lote'].dropna().unique().tolist())
-                lote_sel_mod = st.selectbox(
-                    "Selecciona lote a editar:", 
-                    lista_lotes_edit,
-                    key="sb_mod_lote_exp"
-                )
-                datos_lote_actual = df_lotes_ref[df_lotes_ref['nombre_lote'] == lote_sel_mod].iloc[0]
-
-                with st.form("form_edit_lote_directo"):
-                    nuevo_nombre_e = st.text_input("Nombre del Lote:", value=str(datos_lote_actual.get('nombre_lote', '')))
-                    desc_e = st.text_area("Descripción / Notas:", value=str(datos_lote_actual.get('descripcion_notas', '')))
-                    raza_e = st.text_input("Raza:", value=str(datos_lote_actual.get('raza', '')))
-                    cabs_e = st.number_input("Cabezas Totales:", min_value=0, step=1, value=int(datos_lote_actual.get('cabezas', 0)))
-                    estatus_e = st.selectbox("Estatus:", ["Activo", "Inactivo", "Cerrado"], index=["Activo", "Inactivo", "Cerrado"].index(datos_lote_actual.get('estatus', 'Activo')) if datos_lote_actual.get('estatus') in ["Activo", "Inactivo", "Cerrado"] else 0)
-
-                    btn_guardar_edit = st.form_submit_button("Guardar Cambios", type="primary", use_container_width=True)
-
-                    if btn_guardar_edit:
-                        registro_editado = {
-                            "nombre_lote": nuevo_nombre_e.strip(),
-                            "descripcion_notas": desc_e,
-                            "raza": raza_e,
-                            "cabezas": cabs_e,
-                            "estatus": estatus_e,
-                            "fecha_creacion": str(datos_lote_actual.get('fecha_creacion', pd.Timestamp.now().strftime("%Y-%m-%d")))
-                        }
-                        if guardar_registro("lotes", registro_editado, "nombre_lote"):
-                            st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == lote_sel_mod, list(registro_editado.keys())] = list(registro_editado.values())
-                            st.success(f"¡Lote '{lote_sel_mod}' actualizado correctamente!")
-                            time.sleep(0.4)
-                            st.rerun()
+                lista_lotes_disp = list(df_lotes_ref['nombre_lote'].dropna().unique())
             else:
-                st.info("No hay lotes disponibles para editar.")
+                lista_lotes_disp = []
 
-    # C) ELIMINAR LOTE
-    with col_acc3:
-        with st.expander("🗑️ Eliminar Lote", expanded=False):
-            if not df_lotes_ref.empty and 'nombre_lote' in df_lotes_ref.columns:
-                lote_sel_del = st.selectbox(
-                    "Selecciona lote a eliminar:", 
-                    sorted(df_lotes_ref['nombre_lote'].dropna().unique().tolist()),
-                    key="sb_del_lote_exp"
-                )
-                chk_del_lote = st.checkbox("Confirmar eliminación permanente del lote.", key="chk_del_lote_conf")
-                if st.button("Eliminar Lote Definitivamente", type="primary", use_container_width=True):
-                    if chk_del_lote:
-                        if eliminar_registro("lotes", "nombre_lote", lote_sel_del):
-                            st.session_state["df_lotes"] = st.session_state["df_lotes"][st.session_state["df_lotes"]['nombre_lote'] != lote_sel_del]
-                            st.success(f"¡Lote '{lote_sel_del}' eliminado correctamente!")
-                            time.sleep(0.4)
-                            st.rerun()
-                    else:
-                        st.error("Por favor marca la casilla de confirmación.")
+            if len(lista_lotes_disp) >= 2:
+                with st.form("form_transferencia_activos", clear_on_submit=False):
+                    tf_col1, tf_col2 = st.columns(2)
+                    with tf_col1:
+                        lote_origen = st.selectbox("Lote Origen (Sale Ganado):", lista_lotes_disp, index=0)
+                        
+                        # Obtener cabezas actuales disponibles en origen
+                        row_orig = df_lotes_ref[df_lotes_ref['nombre_lote'] == lote_origen]
+                        cabs_origen_act = int(row_orig.iloc[0]['cabezas']) if not row_orig.empty and pd.notnull(row_orig.iloc[0]['cabezas']) else 0
+                        st.caption(f"Cabezas disponibles en origen: **{cabs_origen_act}**")
+
+                        num_cabezas_tr = st.number_input("Cantidad de Cabezas a Transferir:", min_value=1, max_value=max(1, cabs_origen_act), value=1, step=1)
+                        f_fecha_tr = st.date_input("Fecha de Transferencia:", datetime.today()).strftime('%Y-%m-%d')
+
+                    with tf_col2:
+                        opciones_destino = [l for l in lista_lotes_disp if l != lote_origen]
+                        lote_destino = st.selectbox("Lote Destino (Entra Ganado):", opciones_destino, index=0)
+
+                        valor_unitario_tr = st.number_input("Valor Estimado / Cabeza ($ MXN):", min_value=0.0, value=0.0, step=500.0)
+                        obs_tr = st.text_input("Observaciones / Motivo del Traspaso:", placeholder="Ej. Cambio a etapa de engorda").strip()
+
+                    st.divider()
+                    btn_procesar_tr = st.form_submit_button("🚀 Confirmar y Procesar Transferencia", type="primary", use_container_width=True)
+
+                    if btn_procesar_tr:
+                        if cabs_origen_act < num_cabezas_tr:
+                            st.error(f"❌ El lote origen no tiene suficientes cabezas ({cabs_origen_act} disponibles).")
+                        elif lote_origen == lote_destino:
+                            st.error("❌ El lote origen y el lote destino no pueden ser el mismo.")
+                        else:
+                            # 1. ACTUALIZAR LOTE ORIGEN (- cabezas)
+                            row_origen_dict = df_lotes_ref[df_lotes_ref['nombre_lote'] == lote_origen].iloc[0].to_dict()
+                            nuevas_cabs_origen = int(row_origen_dict['cabezas']) - int(num_cabezas_tr)
+                            row_origen_dict['cabezas'] = nuevas_cabs_origen
+                            
+                            # 2. ACTUALIZAR LOTE DESTINO (+ cabezas)
+                            row_destino_dict = df_lotes_ref[df_lotes_ref['nombre_lote'] == lote_destino].iloc[0].to_dict()
+                            cabs_dest_act = int(row_destino_dict['cabezas']) if pd.notnull(row_destino_dict.get('cabezas')) else 0
+                            nuevas_cabs_destino = cabs_dest_act + int(num_cabezas_tr)
+                            row_destino_dict['cabezas'] = nuevas_cabs_destino
+
+                            # 3. REGISTRO EN HISTORIAL DE TRANSFERENCIAS
+                            id_tr_nuevo = f"TR-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}"
+                            valor_total_transferencia = float(num_cabezas_tr) * float(valor_unitario_tr)
+                            
+                            reg_transferencia = {
+                                "id_tr": id_tr_nuevo,
+                                "fecha": f_fecha_tr,
+                                "lote_origen": lote_origen,
+                                "lote_destino": lote_destino,
+                                "cabezas": int(num_cabezas_tr),
+                                "valor_base_unidad": float(valor_unitario_tr),
+                                "valor_total_traspaso": valor_total_transferencia,
+                                "tipo_movimiento": "Transferencia entre lotes",
+                                "observaciones": obs_tr
+                            }
+
+                            # 4. REGISTRO CONTABLE EN FINANZAS (Para reflejarse en P&L / Estado Financiero)
+                            reg_finanzas_traspaso = {
+                                "id": f"TR-FIN-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}",
+                                "fecha": f_fecha_tr,
+                                "tipo": "Egreso",
+                                "categoria": "Traspaso de Activo / Reclasificación",
+                                "concepto": f"[TRASPASO DE GANADO] {num_cabezas_tr} cabeza(s) desde {lote_origen} a {lote_destino}. {obs_tr}",
+                                "monto": valor_total_transferencia,
+                                "abono_acumulado": valor_total_transferencia,
+                                "metodo_pago": "Interno",
+                                "asociado": f"Origen: {lote_origen}",
+                                "empleado_responsable": st.session_state.get("usuario_actual", "Sistema"),
+                                "lote_asociado": lote_destino,
+                                "estado_deuda": "Pagado",
+                                "fecha_vencimiento": f_fecha_tr
+                            }
+
+                            # Guardar cambios en Supabase y Session State
+                            ok_origen = guardar_registro("lotes", row_origen_dict, "nombre_lote")
+                            ok_destino = guardar_registro("lotes", row_destino_dict, "nombre_lote")
+                            ok_tr = guardar_registro("transferencias", reg_transferencia, "id_tr")
+                            ok_fin = guardar_registro("finanzas", reg_finanzas_traspaso, "id")
+
+                            if ok_origen and ok_destino:
+                                # Actualizar DF local de Lotes
+                                idx_orig = st.session_state["df_lotes"][st.session_state["df_lotes"]['nombre_lote'] == lote_origen].index
+                                idx_dest = st.session_state["df_lotes"][st.session_state["df_lotes"]['nombre_lote'] == lote_destino].index
+                                st.session_state["df_lotes"].loc[idx_orig, 'cabezas'] = nuevas_cabs_origen
+                                st.session_state["df_lotes"].loc[idx_dest, 'cabezas'] = nuevas_cabs_destino
+
+                                # Actualizar DF local de transferencias
+                                new_df_tr = pd.concat([st.session_state["df_transferencias"], pd.DataFrame([reg_transferencia])], ignore_index=True)
+                                st.session_state["df_transferencias"] = new_df_tr
+
+                                st.success(f"✅ ¡Transferencia de {num_cabezas_tr} cabeza(s) de '{lote_origen}' a '{lote_destino}' completada con éxito!")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("❌ Ocurrió un error al intentar guardar los cambios en Supabase.")
             else:
-                st.info("No hay lotes disponibles para eliminar.")
+                st.info("💡 Necesitas tener al menos **2 lotes registrados** para realizar transferencias entre ellos.")
 
     st.divider()
 
-    # 2. PESTAÑAS DEL MÓDULO DE LOTES
-    tab_inv_lotes, tab_transf_lotes, tab_hist_transf = st.tabs([
-        "🐄 Inventario y Estado de Lotes", 
-        "🔄 Transferencias y Traspasos entre Lotes", 
-        "📜 Historial de Transferencias"
-    ])
+    # 2. KPIS Y TARJETAS RESUMEN DE INVENTARIO
+    if not st.session_state["df_lotes"].empty:
+        df_lotes_vis = st.session_state["df_lotes"].copy()
+        df_lotes_vis['cabezas'] = pd.to_numeric(df_lotes_vis['cabezas'], errors='coerce').fillna(0).astype(int)
+        
+        tot_lotes = len(df_lotes_vis)
+        tot_cabezas_global = df_lotes_vis['cabezas'].sum()
+        lotes_activos = len(df_lotes_vis[df_lotes_vis.get('estatus', 'Activo') == 'Activo'])
 
-    # A) TAB: INVENTARIO DE LOTES
-    with tab_inv_lotes:
-        st.markdown("### 📋 Resumen del Inventario de Lotes")
-        if not df_lotes_ref.empty:
-            total_cabezas_global = pd.to_numeric(df_lotes_ref.get('cabezas', 0), errors='coerce').sum()
-            lotes_activos_cnt = len(df_lotes_ref[df_lotes_ref['estatus'] == 'Activo']) if 'estatus' in df_lotes_ref.columns else len(df_lotes_ref)
-            
-            k1, k2 = st.columns(2)
-            with k1:
-                with st.container(border=True):
-                    st.metric("Total de Lotes Activos", lotes_activos_cnt)
-            with k2:
-                with st.container(border=True):
-                    st.metric("Total de Cabezas en Inventario", f"{total_cabezas_global:,} cabezas")
+        k1, k2, k3 = st.columns(3)
+        with k1:
+            with st.container(border=True): st.metric("Lotes Totales", tot_lotes)
+        with k2:
+            with st.container(border=True): st.metric("Total Cabezas de Ganado", f"{tot_cabezas_global:,} cabezas")
+        with k3:
+            with st.container(border=True): st.metric("Lotes Activos", lotes_activos)
+
+    # 3. TABLA DE CONTROL Y EDICIÓN DE LOTES
+    with st.container(border=True):
+        st.markdown("#### 📋 Inventario Actual por Lotes")
+        
+        col_bus_lt, col_exp_lt = st.columns([3, 1])
+        with col_bus_lt:
+            buscar_lt = st.text_input("🔍 Buscar por Nombre de Lote, Raza o Notas:", key="bus_lotes_inp").strip()
+
+        if not st.session_state["df_lotes"].empty:
+            df_lt_display = st.session_state["df_lotes"].copy()
+            if buscar_lt:
+                df_lt_display = df_lt_display[df_lt_display.astype(str).apply(lambda x: x.str.contains(buscar_lt, case=False)).any(axis=1)]
+
+            with col_exp_lt:
+                st.write("")
+                html_lotes = generar_html_docs("Inventario de Lotes", ["Nombre Lote", "Raza", "Cabezas", "Fecha Creación", "Estatus", "Notas"], df_lt_display, ["nombre_lote", "raza", "cabezas", "fecha_creacion", "estatus", "descripcion_notas"])
+                st.download_button("📄 Exportar Reporte", data=html_lotes, file_name=f"Reporte_Lotes_{datetime.now().strftime('%Y%m%d')}.doc", mime="application/msword", use_container_width=True)
 
             st.dataframe(
-                df_lotes_ref,
+                df_lt_display,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
                     "nombre_lote": "Nombre del Lote",
-                    "descripcion_notas": "Descripción / Notas",
                     "raza": "Raza",
-                    "cabezas": st.column_config.NumberColumn("Cabezas", format="%d"),
+                    "cabezas": st.column_config.NumberColumn("Cabezas", format="%d cab."),
+                    "fecha_creacion": "Fecha Registro",
                     "estatus": "Estatus",
-                    "fecha_creacion": "Fecha Creación"
+                    "descripcion_notas": "Descripción / Notas"
                 }
             )
         else:
-            st.info("No hay lotes registrados actualmente en el sistema.")
+            st.info("No hay lotes de ganado registrados actualmente.")
 
-    # B) TAB: TRANSFERENCIAS ENTRE LOTES
-    with tab_transf_lotes:
-        st.markdown("### 🔄 Mover Activos entre Lotes")
-        st.caption("Registra el traspaso de cabezas de ganado de un lote de origen a un lote de destino.")
-
-        if not df_lotes_ref.empty and len(df_lotes_ref['nombre_lote'].dropna().unique()) >= 2:
-            lotes_disponibles = sorted(df_lotes_ref['nombre_lote'].dropna().unique().tolist())
-
-            with st.form("form_transferencia_activos"):
-                col_tr1, col_tr2 = st.columns(2)
-                with col_tr1:
-                    f_fecha_tr = st.date_input("Fecha del Movimiento", datetime.today()).strftime('%Y-%m-%d')
-                    lote_origen = st.selectbox("Lote de Origen (Salida)", lotes_disponibles, index=0)
-                    
-                    # Obtener saldo de cabezas de origen
-                    cabs_disp_origen = int(df_lotes_ref[df_lotes_ref['nombre_lote'] == lote_origen]['cabezas'].iloc[0]) if not df_lotes_ref[df_lotes_ref['nombre_lote'] == lote_origen].empty else 0
-                    st.info(f"Cabezas disponibles en lote origen **{lote_origen}**: **{cabs_disp_origen}**")
-
-                    cant_cabezas_tr = st.number_input("Número de Cabezas a Trasladar", min_value=1, max_value=max(1, cabs_disp_origen), step=1, value=1)
-
-                with col_tr2:
-                    lotes_destino_opt = [l for l in lotes_disponibles if l != lote_origen]
-                    lote_destino = st.selectbox("Lote de Destino (Entrada)", lotes_destino_opt, index=0)
-
-                    val_unidad_tr = st.number_input("Valor Estimado por Cabeza ($ MXN)", min_value=0.0, step=100.0, value=0.0)
-                    total_val_tr = cant_cabezas_tr * val_unidad_tr
-                    st.success(f"Valor Total del Traspaso: **$ {total_val_tr:,.2f} MXN**")
-
-                    obs_tr = st.text_input("Observaciones / Motivo del Traspaso", placeholder="Ej. Cambio de etapa productiva").strip()
-
-                st.divider()
-                submit_traspaso = st.form_submit_button("🔄 Confirmar y Procesar Transferencia", type="primary", use_container_width=True)
-
-                if submit_traspaso:
-                    if cant_cabezas_tr > cabs_disp_origen:
-                        st.error(f"❌ No puedes trasladar {cant_cabezas_tr} cabezas; el lote de origen solo cuenta con {cabs_disp_origen}.")
-                    else:
-                        # 1. Actualizar inventario de origen y destino
-                        st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == lote_origen, 'cabezas'] -= cant_cabezas_tr
-                        st.session_state["df_lotes"].loc[st.session_state["df_lotes"]['nombre_lote'] == lote_destino, 'cabezas'] += cant_cabezas_tr
-
-                        # Guardar actualización de origen y destino en Supabase
-                        row_orig = st.session_state["df_lotes"][st.session_state["df_lotes"]['nombre_lote'] == lote_origen].iloc[0].to_dict()
-                        row_dest = st.session_state["df_lotes"][st.session_state["df_lotes"]['nombre_lote'] == lote_destino].iloc[0].to_dict()
-                        guardar_registro("lotes", row_orig, "nombre_lote")
-                        guardar_registro("lotes", row_dest, "nombre_lote")
-
-                        # 2. Registrar en historial de transferencias
-                        nuevo_id_tr = f"TR-{len(st.session_state['df_transferencias']) + 1:04d}"
-                        reg_transferencia = {
-                            "id_tr": nuevo_id_tr,
-                            "fecha": f_fecha_tr,
-                            "lote_origen": lote_origen,
-                            "lote_destino": lote_destino,
-                            "cabezas": cant_cabezas_tr,
-                            "valor_base_unidad": val_unidad_tr,
-                            "valor_total_traspaso": total_val_tr,
-                            "tipo_movimiento": "Traspaso Interno",
-                            "observaciones": obs_tr
-                        }
-                        st.session_state["df_transferencias"] = pd.concat([st.session_state["df_transferencias"], pd.DataFrame([reg_transferencia])], ignore_index=True)
-
-                        st.success(f"¡Traspaso {nuevo_id_tr} de {cant_cabezas_tr} cabezas procesado exitosamente!")
-                        time.sleep(0.5)
-                        st.rerun()
-        else:
-            st.warning("⚠️ Se requieren al menos dos lotes registrados para habilitar el módulo de transferencias entre lotes.")
-
-    # C) TAB: HISTORIAL DE TRANSFERENCIAS
-    with tab_hist_transf:
-        st.markdown("### 📜 Bitácora de Transferencias de Activos")
-        if not st.session_state["df_transferencias"].empty:
+    # 4. HISTORIAL DE TRANSFERENCIAS REGISTRADAS
+    st.divider()
+    with st.container(border=True):
+        st.markdown("#### 📜 Historial Registro de Transferencias y Traspasos")
+        if "df_transferencias" in st.session_state and not st.session_state["df_transferencias"].empty:
+            df_tr_hist = st.session_state["df_transferencias"].copy()
             st.dataframe(
-                st.session_state["df_transferencias"],
+                df_tr_hist,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
                     "id_tr": "ID Traspaso",
-                    "fecha": "Fecha Movimiento",
+                    "fecha": "Fecha",
                     "lote_origen": "Lote Origen",
                     "lote_destino": "Lote Destino",
-                    "cabezas": st.column_config.NumberColumn("Cabezas", format="%d"),
-                    "valor_base_unidad": st.column_config.NumberColumn("Valor Unidad ($)", format="$%.2f"),
-                    "valor_total_traspaso": st.column_config.NumberColumn("Total Traspaso ($)", format="$%.2f"),
-                    "tipo_movimiento": "Tipo Movimiento",
+                    "cabezas": st.column_config.NumberColumn("Cabezas Movidas", format="%d cab."),
+                    "valor_base_unidad": st.column_config.NumberColumn("Valor Unitario", format="$%.2f"),
+                    "valor_total_traspaso": st.column_config.NumberColumn("Monto Total ($)", format="$%.2f"),
                     "observaciones": "Observaciones"
                 }
             )
         else:
-            st.info("No hay registro de transferencias internas realizadas en esta sesión.")
+            st.info("Aún no se han realizado transferencias de ganado entre lotes.")
+
+    # 5. MODIFICACIÓN Y BAJA MANUALLY DE LOTES
+    if not st.session_state["df_lotes"].empty:
+        st.divider()
+        with st.container(border=True):
+            st.markdown("##### 🛠️ Edición o Inactivación de Lote")
+            sel_lote_mod = st.selectbox("Selecciona Lote a Modificar:", st.session_state["df_lotes"]['nombre_lote'].unique(), key="sb_mod_lote_sel")
+            
+            if sel_lote_mod:
+                fila_lote_m = st.session_state["df_lotes"][st.session_state["df_lotes"]['nombre_lote'] == sel_lote_mod].iloc[0]
+                
+                with st.expander(f"📝 Editar Parámetros de '{sel_lote_mod}'"):
+                    with st.form(f"form_ed_lt_{sel_lote_mod}"):
+                        med1, med2 = st.columns(2)
+                        with med1:
+                            e_raza = st.text_input("Raza", value=str(fila_lote_m.get('raza', ''))).strip()
+                            e_cabs = st.number_input("Cabezas Totales (Ajuste Manual)", min_value=0, value=int(fila_lote_m.get('cabezas', 0)))
+                        with med2:
+                            e_desc = st.text_area("Descripción / Notas", value=str(fila_lote_m.get('descripcion_notas', ''))).strip()
+                            e_est = st.selectbox("Estatus Lote", ["Activo", "Inactivo", "Vendido", "Cerrado"], index=0 if fila_lote_m.get('estatus') == 'Activo' else 1)
+
+                        if st.form_submit_button("💾 Guardar Cambios en Lote", use_container_width=True, type="primary"):
+                            reg_lote_actualizado = {
+                                "nombre_lote": sel_lote_mod,
+                                "descripcion_notas": e_desc,
+                                "fecha_creacion": fila_lote_m.get('fecha_creacion', datetime.now().strftime('%Y-%m-%d')),
+                                "raza": e_raza,
+                                "cabezas": int(e_cabs),
+                                "estatus": e_est
+                            }
+                            if guardar_registro("lotes", reg_lote_actualizado, "nombre_lote"):
+                                idx_lt_df = st.session_state["df_lotes"][st.session_state["df_lotes"]['nombre_lote'] == sel_lote_mod].index
+                                st.session_state["df_lotes"].loc[idx_lt_df, 'raza'] = e_raza
+                                st.session_state["df_lotes"].loc[idx_lt_df, 'cabezas'] = int(e_cabs)
+                                st.session_state["df_lotes"].loc[idx_lt_df, 'descripcion_notas'] = e_desc
+                                st.session_state["df_lotes"].loc[idx_lt_df, 'estatus'] = e_est
+                                st.success("Lote actualizado con éxito.")
+                                time.sleep(0.4)
+                                st.rerun()
