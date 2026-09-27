@@ -447,6 +447,12 @@ def generar_reporte_finanzas_profesional(df_datos, periodo, lote, ing, egr, net,
 # ==========================================
 if modulo_activo == "📊 Dashboard & Finanzas":
 
+    def limpiar_val_json(val, defecto=""):
+        """Limpia los valores NaN/None de Pandas para evitar errores de JSON."""
+        if pd.isna(val) or val is None:
+            return defecto
+        return val
+
     cat_ingresos = ["Venta de ganado", "Varios (Ingresos)", "Préstamo / Crédito recibido"]
     cat_costos_directos = ["Compra de ganado", "Alimentos", "Medicamentos", "Servicios veterinarios", "Dosis de semen", "Varios (Costos directos)"]
     cat_gastos_operativos = ["Gastos de oficina", "Arriendo", "Nomina", "Combustible", "Mantenimiento", "Pago / Abono Préstamo", "Varios (Gastos operativos)"]
@@ -753,19 +759,19 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                         nuevo_estado = "Pagado" if nuevo_abono_acumulado >= float(fila_abono['monto']) else "Pendiente"
                         
                         registro_padre_actualizado = {
-                            "id": fila_abono['id'],
+                            "id": str(fila_abono['id']),
                             "fecha": fila_abono['fecha'].strftime('%Y-%m-%d') if hasattr(fila_abono['fecha'], 'strftime') else str(fila_abono['fecha']),
-                            "tipo": fila_abono['tipo'],
-                            "categoria": fila_abono['categoria'],
-                            "concepto": fila_abono['concepto'],
+                            "tipo": str(fila_abono['tipo']),
+                            "categoria": str(fila_abono['categoria']),
+                            "concepto": str(fila_abono['concepto']),
                             "monto": float(fila_abono['monto']),
                             "abono_acumulado": nuevo_abono_acumulado,
-                            "metodo_pago": fila_abono.get('metodo_pago', 'Efectivo'),
-                            "asociado": fila_abono.get('asociado', ''),
-                            "empleado_responsable": fila_abono.get('empleado_responsable', ''),
-                            "lote_asociado": fila_abono.get('lote_asociado', 'Ninguno'),
+                            "metodo_pago": str(limpiar_val_json(fila_abono.get('metodo_pago'), 'Efectivo')),
+                            "asociado": str(limpiar_val_json(fila_abono.get('asociado'), '')),
+                            "empleado_responsable": str(limpiar_val_json(fila_abono.get('empleado_responsable'), '')),
+                            "lote_asociado": str(limpiar_val_json(fila_abono.get('lote_asociado'), 'Ninguno')),
                             "estado_deuda": nuevo_estado,
-                            "fecha_vencimiento": fila_abono['fecha_vencimiento'].strftime('%Y-%m-%d') if hasattr(fila_abono['fecha_vencimiento'], 'strftime') else str(fila_abono.get('fecha_vencimiento', ''))
+                            "fecha_vencimiento": fila_abono['fecha_vencimiento'].strftime('%Y-%m-%d') if hasattr(fila_abono['fecha_vencimiento'], 'strftime') else str(limpiar_val_json(fila_abono.get('fecha_vencimiento'), ''))
                         }
 
                         tipo_movimiento_abono = "Egreso" if fila_abono['tipo'] == "Egreso" else "Ingreso"
@@ -775,16 +781,16 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             "id": f"AB-{datetime.now().strftime('%Y%m%d')}-{int(datetime.now().timestamp() * 1000) % 1000}",
                             "fecha": fecha_abono,
                             "tipo": tipo_movimiento_abono,
-                            "categoria": categoria_abono,
+                            "categoria": str(categoria_abono),
                             "concepto": f"[ABONO PARCIAL] {concepto_abono} (Ref: {fila_abono['id']})",
                             "monto": float(monto_abono),
                             "abono_acumulado": float(monto_abono),
-                            "metodo_pago": metodo_pago_abono,
-                            "asociado": fila_abono.get('asociado', ''),
-                            "empleado_responsable": fila_abono.get('empleado_responsable', ''),
-                            "lote_asociado": fila_abono.get('lote_asociado', 'Ninguno'),
+                            "metodo_pago": str(metodo_pago_abono),
+                            "asociado": str(limpiar_val_json(fila_abono.get('asociado'), '')),
+                            "empleado_responsable": str(limpiar_val_json(fila_abono.get('empleado_responsable'), '')),
+                            "lote_asociado": str(limpiar_val_json(fila_abono.get('lote_asociado'), 'Ninguno')),
                             "estado_deuda": "Pagado",
-                            "id_origen_abono": fila_abono['id']
+                            "id_origen_abono": str(fila_abono['id'])
                         }
 
                         if guardar_registro("finanzas", registro_padre_actualizado, "id") and guardar_registro("finanzas", registro_hijo_abono, "id"):
@@ -980,7 +986,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
     else:
         st.warning("No se encontraron registros financieros para procesar en el sistema.")
 
-    # --- LÓGICA DE CONFIRMACIÓN DE EMPLEADO ---
+    # --- LÓGICA DE CONFIRMACIÓN DE EMPLEADO Y SANITIZACIÓN JSON ---
     if "transaccion_pendiente" in st.session_state:
         tx = st.session_state["transaccion_pendiente"]
         
@@ -1007,21 +1013,24 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 with c_mod1:
                     es_invalido = (emp_seleccionado == "-- Seleccionar Empleado --")
                     if st.button("✅ Confirmar y Guardar", disabled=es_invalido, use_container_width=True, type="primary", key="modal_btn_guardar"):
+                        monto_limpio = float(limpiar_val_json(tx.get("monto"), 0.0))
+                        abono_limpio = float(limpiar_val_json(tx.get("abono_acumulado"), 0.0))
+
                         registro_final = {
-                            "id": tx["id"],
-                            "fecha": tx["fecha"],
-                            "tipo": tx["tipo"],
-                            "categoria": tx["categoria"],
-                            "concepto": tx["concepto"],
-                            "monto": tx["monto"],
-                            "abono_acumulado": tx.get("abono_acumulado", 0.0),
-                            "metodo_pago": tx["metodo_pago"],
-                            "asociado": tx["asociado"],
-                            "empleado_responsable": emp_seleccionado,
-                            "lote_asociado": tx["lote_asociado"],
-                            "estado_deuda": tx["estado_deuda"],
-                            "fecha_vencimiento": tx["fecha_vencimiento"],
-                            "id_origen_abono": tx.get("id_origen_abono", "")
+                            "id": str(tx["id"]),
+                            "fecha": str(tx["fecha"]),
+                            "tipo": str(tx["tipo"]),
+                            "categoria": str(tx["categoria"]),
+                            "concepto": str(tx["concepto"]),
+                            "monto": monto_limpio,
+                            "abono_acumulado": abono_limpio,
+                            "metodo_pago": str(limpiar_val_json(tx.get("metodo_pago"), "Efectivo")),
+                            "asociado": str(limpiar_val_json(tx.get("asociado"), "")),
+                            "empleado_responsable": str(emp_seleccionado),
+                            "lote_asociado": str(limpiar_val_json(tx.get("lote_asociado"), "Ninguno")),
+                            "estado_deuda": str(limpiar_val_json(tx.get("estado_deuda"), "Pagado")),
+                            "fecha_vencimiento": str(limpiar_val_json(tx.get("fecha_vencimiento"), tx["fecha"])),
+                            "id_origen_abono": str(limpiar_val_json(tx.get("id_origen_abono"), ""))
                         }
                         if guardar_registro("finanzas", registro_final, "id"):
                             st.success(f"¡Transacción procesada exitosamente! Registró/Modificó: {emp_seleccionado}")
@@ -1052,21 +1061,24 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                 
                 with col_exp1:
                     if st.button("✅ Confirmar y Guardar", disabled=es_invalido, use_container_width=True, type="primary", key="btn_conf_exp"):
+                        monto_limpio = float(limpiar_val_json(tx.get("monto"), 0.0))
+                        abono_limpio = float(limpiar_val_json(tx.get("abono_acumulado"), 0.0))
+
                         registro_final = {
-                            "id": tx["id"],
-                            "fecha": tx["fecha"],
-                            "tipo": tx["tipo"],
-                            "categoria": tx["categoria"],
-                            "concepto": tx["concepto"],
-                            "monto": tx["monto"],
-                            "abono_acumulado": tx.get("abono_acumulado", 0.0),
-                            "metodo_pago": tx["metodo_pago"],
-                            "asociado": tx["asociado"],
-                            "empleado_responsable": emp_seleccionado,
-                            "lote_asociado": tx["lote_asociado"],
-                            "estado_deuda": tx["estado_deuda"],
-                            "fecha_vencimiento": tx["fecha_vencimiento"],
-                            "id_origen_abono": tx.get("id_origen_abono", "")
+                            "id": str(tx["id"]),
+                            "fecha": str(tx["fecha"]),
+                            "tipo": str(tx["tipo"]),
+                            "categoria": str(tx["categoria"]),
+                            "concepto": str(tx["concepto"]),
+                            "monto": monto_limpio,
+                            "abono_acumulado": abono_limpio,
+                            "metodo_pago": str(limpiar_val_json(tx.get("metodo_pago"), "Efectivo")),
+                            "asociado": str(limpiar_val_json(tx.get("asociado"), "")),
+                            "empleado_responsable": str(emp_seleccionado),
+                            "lote_asociado": str(limpiar_val_json(tx.get("lote_asociado"), "Ninguno")),
+                            "estado_deuda": str(limpiar_val_json(tx.get("estado_deuda"), "Pagado")),
+                            "fecha_vencimiento": str(limpiar_val_json(tx.get("fecha_vencimiento"), tx["fecha"])),
+                            "id_origen_abono": str(limpiar_val_json(tx.get("id_origen_abono"), ""))
                         }
                         if guardar_registro("finanzas", registro_final, "id"):
                             st.success(f"¡Transacción procesada exitosamente! Registró/Modificó: {emp_seleccionado}")
@@ -1112,17 +1124,18 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     idx_cat = cats_posibles.index(cat_actual) if cat_actual in cats_posibles else 0
                     edit_cat = st.selectbox("Categoría", cats_posibles, index=idx_cat, key=f"ed_cat_{id_seleccionado}")
                     
-                    edit_concepto = st.text_input("Concepto / Descripción", value=str(fila_sel.get('concepto', '')), key=f"ed_con_{id_seleccionado}").strip()
+                    edit_concepto = st.text_input("Concepto / Descripción", value=str(limpiar_val_json(fila_sel.get('concepto'), '')), key=f"ed_con_{id_seleccionado}").strip()
                 
                 with ec2:
-                    edit_monto = st.number_input("Monto ($ MXN)", value=float(fila_sel.get('monto', 0.0)), min_value=0.0, step=50.0, key=f"ed_mon_{id_seleccionado}")
+                    monto_defecto = float(limpiar_val_json(fila_sel.get('monto'), 0.0))
+                    edit_monto = st.number_input("Monto ($ MXN)", value=monto_defecto, min_value=0.0, step=50.0, key=f"ed_mon_{id_seleccionado}")
                     
                     metodos_pago = ["Efectivo", "Transferencia", "Cheque", "Crédito"]
-                    met_actual = fila_sel.get('metodo_pago', 'Efectivo')
+                    met_actual = str(limpiar_val_json(fila_sel.get('metodo_pago'), 'Efectivo'))
                     idx_met = metodos_pago.index(met_actual) if met_actual in metodos_pago else 0
                     edit_pago = st.selectbox("Método de Pago", metodos_pago, index=idx_met, key=f"ed_pag_{id_seleccionado}")
                     
-                    asociado_previo = str(fila_sel.get('asociado', ''))
+                    asociado_previo = str(limpiar_val_json(fila_sel.get('asociado'), ''))
                     
                     if edit_tipo == "Ingreso":
                         lista_opciones_aso = lista_clientes
@@ -1147,12 +1160,12 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     opciones_lotes_ed = ["Ninguno"]
                     if not df_lotes.empty and 'nombre_lote' in df_lotes.columns:
                         opciones_lotes_ed += list(df_lotes['nombre_lote'].dropna().unique())
-                    lote_actual = fila_sel.get('lote_asociado', 'Ninguno')
+                    lote_actual = str(limpiar_val_json(fila_sel.get('lote_asociado'), 'Ninguno'))
                     idx_lote = opciones_lotes_ed.index(lote_actual) if lote_actual in opciones_lotes_ed else 0
                     edit_lote = st.selectbox("Lote Asociado", opciones_lotes_ed, index=idx_lote, key=f"ed_lot_{id_seleccionado}")
                     
                     estados = ["Pagado", "Pendiente"]
-                    est_actual = fila_sel.get('estado_deuda', 'Pagado')
+                    est_actual = str(limpiar_val_json(fila_sel.get('estado_deuda'), 'Pagado'))
                     idx_est = estados.index(est_actual) if est_actual in estados else 0
                     edit_estado = st.selectbox("Estado del Pago", estados, index=idx_est, key=f"ed_est_{id_seleccionado}")
                     edit_venc = st.date_input("Fecha Vencimiento", value=f_venc_orig, key=f"ed_venc_{id_seleccionado}").strftime('%Y-%m-%d')
@@ -1166,21 +1179,21 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                             st.error("❌ Por favor escribe un Concepto o Descripción.")
                         else:
                             st.session_state["transaccion_pendiente"] = {
-                                "id": id_seleccionado,
-                                "fecha": edit_fecha,
-                                "tipo": edit_tipo,
-                                "categoria": edit_cat,
-                                "concepto": edit_concepto,
+                                "id": str(id_seleccionado),
+                                "fecha": str(edit_fecha),
+                                "tipo": str(edit_tipo),
+                                "categoria": str(edit_cat),
+                                "concepto": str(edit_concepto),
                                 "monto": float(edit_monto),
-                                "abono_acumulado": float(fila_sel.get('abono_acumulado', 0.0)),
-                                "metodo_pago": edit_pago,
-                                "asociado": edit_asociado,
-                                "etiqueta_asociado": etiqueta_asociado_ed,
-                                "empleado_responsable": fila_sel.get('empleado_responsable', ''),
-                                "lote_asociado": edit_lote,
-                                "estado_deuda": edit_estado,
-                                "fecha_vencimiento": edit_venc,
-                                "id_origen_abono": fila_sel.get('id_origen_abono', ''),
+                                "abono_acumulado": float(limpiar_val_json(fila_sel.get('abono_acumulado'), 0.0)),
+                                "metodo_pago": str(edit_pago),
+                                "asociado": str(edit_asociado),
+                                "etiqueta_asociado": str(etiqueta_asociado_ed),
+                                "empleado_responsable": str(limpiar_val_json(fila_sel.get('empleado_responsable'), '')),
+                                "lote_asociado": str(edit_lote),
+                                "estado_deuda": str(edit_estado),
+                                "fecha_vencimiento": str(edit_venc),
+                                "id_origen_abono": str(limpiar_val_json(fila_sel.get('id_origen_abono'), '')),
                                 "es_edicion": True
                             }
                             st.rerun()
@@ -1195,7 +1208,7 @@ if modulo_activo == "📊 Dashboard & Finanzas":
                     with col_del_si:
                         if st.button("🔴 Sí, Eliminar", use_container_width=True, key=f"confirm_si_{id_seleccionado}"):
                             try:
-                                id_origen = str(fila_sel.get('id_origen_abono', ''))
+                                id_origen = str(limpiar_val_json(fila_sel.get('id_origen_abono'), ''))
                                 if not id_origen and '[ABONO PARCIAL]' in str(fila_sel.get('concepto', '')):
                                     try:
                                         id_origen = fila_sel.get('concepto', '').split('(Ref: ')[1].replace(')', '').strip()
@@ -1204,24 +1217,28 @@ if modulo_activo == "📊 Dashboard & Finanzas":
 
                                 if id_origen and id_origen in df_finanzas['id'].values:
                                     fila_padre = df_finanzas[df_finanzas['id'] == id_origen].iloc[0]
-                                    nuevo_acumulado = max(0.0, float(fila_padre.get('abono_acumulado', 0.0)) - float(fila_sel.get('monto', 0.0)))
-                                    nuevo_est_padre = "Pagado" if nuevo_acumulado >= float(fila_padre.get('monto', 0.0)) else "Pendiente"
+                                    monto_padre = float(limpiar_val_json(fila_padre.get('monto'), 0.0))
+                                    abono_padre = float(limpiar_val_json(fila_padre.get('abono_acumulado'), 0.0))
+                                    monto_hijo = float(limpiar_val_json(fila_sel.get('monto'), 0.0))
+                                    
+                                    nuevo_acumulado = max(0.0, abono_padre - monto_hijo)
+                                    nuevo_est_padre = "Pagado" if nuevo_acumulado >= monto_padre else "Pendiente"
                                     
                                     reg_padre_revertido = {
-                                        "id": fila_padre['id'],
+                                        "id": str(fila_padre['id']),
                                         "fecha": str(fila_padre['fecha'])[:10],
-                                        "tipo": fila_padre['tipo'],
-                                        "categoria": fila_padre['categoria'],
-                                        "concepto": fila_padre['concepto'],
-                                        "monto": float(fila_padre['monto']),
+                                        "tipo": str(fila_padre['tipo']),
+                                        "categoria": str(fila_padre['categoria']),
+                                        "concepto": str(fila_padre['concepto']),
+                                        "monto": monto_padre,
                                         "abono_acumulado": nuevo_acumulado,
-                                        "metodo_pago": fila_padre.get('metodo_pago', 'Efectivo'),
-                                        "asociado": fila_padre.get('asociado', ''),
-                                        "empleado_responsable": fila_padre.get('empleado_responsable', ''),
-                                        "lote_asociado": fila_padre.get('lote_asociado', 'Ninguno'),
+                                        "metodo_pago": str(limpiar_val_json(fila_padre.get('metodo_pago'), 'Efectivo')),
+                                        "asociado": str(limpiar_val_json(fila_padre.get('asociado'), '')),
+                                        "empleado_responsable": str(limpiar_val_json(fila_padre.get('empleado_responsable'), '')),
+                                        "lote_asociado": str(limpiar_val_json(fila_padre.get('lote_asociado'), 'Ninguno')),
                                         "estado_deuda": nuevo_est_padre,
-                                        "fecha_vencimiento": str(fila_padre.get('fecha_vencimiento', ''))[:10],
-                                        "id_origen_abono": fila_padre.get('id_origen_abono', '')
+                                        "fecha_vencimiento": str(limpiar_val_json(fila_padre.get('fecha_vencimiento'), ''))[:10],
+                                        "id_origen_abono": str(limpiar_val_json(fila_padre.get('id_origen_abono'), ''))
                                     }
                                     guardar_registro("finanzas", reg_padre_revertido, "id")
 
